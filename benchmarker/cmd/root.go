@@ -7,44 +7,40 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	queries    int
-	limit      int
-	parallel   int
-	className  string
-	dimensions int
-	db         string
-	api        string
-)
+var globalConfig Config
 
 func init() {
 	rootCmd.AddCommand(randomTextCmd)
-	randomTextCmd.PersistentFlags().IntVarP(&queries,
+	randomTextCmd.PersistentFlags().IntVarP(&globalConfig.Queries,
 		"queries", "q", 100, "Set the number of queries the benchmarker should run")
-	randomTextCmd.PersistentFlags().IntVarP(&parallel,
+	randomTextCmd.PersistentFlags().IntVarP(&globalConfig.Parallel,
 		"parallel", "p", 8, "Set the number of parallel threads which send queries")
-	randomTextCmd.PersistentFlags().IntVarP(&limit,
+	randomTextCmd.PersistentFlags().IntVarP(&globalConfig.Limit,
 		"limit", "l", 10, "Set the query limit (top_k)")
-	randomTextCmd.PersistentFlags().StringVarP(&className,
+	randomTextCmd.PersistentFlags().StringVarP(&globalConfig.ClassName,
 		"className", "c", "", "The Weaviate class to run the benchmark against")
-	randomTextCmd.PersistentFlags().StringVarP(&api,
+	randomTextCmd.PersistentFlags().StringVarP(&globalConfig.API,
 		"api", "a", "graphql", "The API to use on benchmarks")
+	randomTextCmd.PersistentFlags().StringVarP(&globalConfig.Origin,
+		"origin", "u", "http://localhost:8080", "The origin that Weaviate is running at")
 
 	rootCmd.AddCommand(randomVectorsCmd)
-	randomVectorsCmd.PersistentFlags().IntVarP(&queries,
+	randomVectorsCmd.PersistentFlags().IntVarP(&globalConfig.Queries,
 		"queries", "q", 100, "Set the number of queries the benchmarker should run")
-	randomVectorsCmd.PersistentFlags().IntVarP(&parallel,
+	randomVectorsCmd.PersistentFlags().IntVarP(&globalConfig.Parallel,
 		"parallel", "p", 8, "Set the number of parallel threads which send queries")
-	randomVectorsCmd.PersistentFlags().IntVarP(&limit,
+	randomVectorsCmd.PersistentFlags().IntVarP(&globalConfig.Limit,
 		"limit", "l", 10, "Set the query limit (top_k)")
-	randomVectorsCmd.PersistentFlags().IntVarP(&dimensions,
+	randomVectorsCmd.PersistentFlags().IntVarP(&globalConfig.Dimensions,
 		"dimensions", "d", 768, "Set the vector dimensions (must match your data)")
-	randomVectorsCmd.PersistentFlags().StringVarP(&className,
+	randomVectorsCmd.PersistentFlags().StringVarP(&globalConfig.ClassName,
 		"className", "c", "", "The Weaviate class to run the benchmark against")
-	randomVectorsCmd.PersistentFlags().StringVar(&db,
+	randomVectorsCmd.PersistentFlags().StringVar(&globalConfig.DB,
 		"db", "weaviate", "The tool you're benchmarking")
-	randomVectorsCmd.PersistentFlags().StringVarP(&api,
+	randomVectorsCmd.PersistentFlags().StringVarP(&globalConfig.API,
 		"api", "a", "graphql", "The API to use on benchmarks")
+	randomVectorsCmd.PersistentFlags().StringVarP(&globalConfig.Origin,
+		"origin", "u", "http://localhost:8080", "The origin that Weaviate is running at")
 }
 
 var rootCmd = &cobra.Command{
@@ -52,8 +48,7 @@ var rootCmd = &cobra.Command{
 	Short: "Weaviate Benchmarker",
 	Long:  `A Weaviate Benchmarker`,
 	Run: func(cmd *cobra.Command, args []string) {
-		// Do Stuff Here
-		fmt.Printf("running the root command\n")
+		fmt.Printf("running the root command, see help or -h for available commands\n")
 	},
 }
 

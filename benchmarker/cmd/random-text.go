@@ -14,11 +14,14 @@ var randomTextCmd = &cobra.Command{
 	Short: "Benchmark nearText searches",
 	Long:  `Benchmark random nearText searches`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if className == "" {
-			fmt.Printf("className must be set\n")
+		cfg := globalConfig
+
+		cfg.Mode = "random-text"
+		if err := cfg.Validate(); err != nil {
+			fmt.Println(err)
 			os.Exit(1)
 		}
-		benchmarkNearText()
+		benchmarkNearText(cfg)
 	},
 }
 
@@ -38,8 +41,8 @@ func nearTextQueryJSON(className string, query string) []byte {
 }`, className, query))
 }
 
-func benchmarkNearText() {
-	benchmark(func(className string) []byte {
+func benchmarkNearText(cfg Config) {
+	benchmark(cfg, func(className string) []byte {
 		return nearTextQueryJSON(className, randomSearchString(4))
 	})
 }

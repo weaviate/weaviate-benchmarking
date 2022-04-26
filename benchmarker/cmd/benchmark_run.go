@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-func benchmark(getQueryFn func(className string) []byte) {
+func benchmark(cfg Config, getQueryFn func(className string) []byte) {
 	var times []time.Duration
 	m := &sync.Mutex{}
 
@@ -36,13 +36,13 @@ func benchmark(getQueryFn func(className string) []byte) {
 
 	c := &http.Client{Transport: t}
 
-	queues := make([][][]byte, parallel)
+	queues := make([][][]byte, cfg.Parallel)
 	rand.Seed(time.Now().UnixNano())
 
-	for i := 0; i < queries; i++ {
-		query := getQueryFn(className)
+	for i := 0; i < cfg.Queries; i++ {
+		query := getQueryFn(cfg.ClassName)
 
-		worker := i % parallel
+		worker := i % cfg.Parallel
 		queues[worker] = append(queues[worker], query)
 	}
 
@@ -57,13 +57,10 @@ func benchmark(getQueryFn func(className string) []byte) {
 				r := bytes.NewReader(query)
 				before := time.Now()
 				var url string
-				if api == "graphql" {
-					url = "http://localhost:8080/v1/graphql"
-				} else if api == "rest" {
-					url = fmt.Sprintf("http://localhost:8080/v1/objects/%s/_search", className)
-				} else {
-					fmt.Printf("unknown api\n")
-					os.Exit(1)
+				if cfg.API == "graphql" {
+					url = cfg.Origin + "/v1/graphql"
+				} else if cfg.API == "rest" {
+					url = fmt.Sprintf("%s/v1/objects/%s/_search", cfg.Origin, cfg.ClassName)
 				}
 				req, err := http.NewRequest("POST", url, r)
 				if err != nil {
@@ -85,7 +82,7 @@ func benchmark(getQueryFn func(className string) []byte) {
 				if err := json.Unmarshal(bytes, &result); err != nil {
 					fmt.Printf("JSON error: %v\n", err)
 				}
-				if api == "graphql" {
+				if cfg.API == "graphql" {
 					if result["data"] != nil && result["errors"] == nil {
 						m.Lock()
 						times = append(times, took)
@@ -119,17 +116,18 @@ func benchmark(getQueryFn func(className string) []byte) {
 var targetPercentiles = []int{50, 90, 95, 98, 99}
 
 type results struct {
-	min              time.Duration
-	max              time.Duration
-	successful       int
-	mean             time.Duration
-	took             time.Duration
-	queriesPerSecond float64
-	percentiles      []time.Duration
+	min               time.Duration   `json:"min"`
+	max               time.Duration   `json:"max"`
+	successful        int             `json:"successful"`
+	mean              time.Duration   `json:"mean"`
+	took              time.Duration   `json:"took"`
+	queriesPerSecond  float64         `json:"queriesPerSecond"`
+	percentiles       []time.Duration `json:"percentiles"`
+	percentilesLabels []int           `json:"percentilesLabels"`
 }
 
 func analyze(times []time.Duration, total time.Duration) results {
-	out := results{min: math.MaxInt64}
+	out := results{min: math.MaxInt64, percentilesLabels: targetPercentiles}
 	var sum time.Duration
 
 	for _, time := range times {
