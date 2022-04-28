@@ -12,7 +12,7 @@ var globalConfig Config
 func init() {
 	rootCmd.AddCommand(randomTextCmd)
 	randomTextCmd.PersistentFlags().IntVarP(&globalConfig.Queries,
-		"queries", "q", 100, "Set the number of queries the benchmarker should run")
+		"queries-file", "f", 100, "Set the number of queries the benchmarker should run")
 	randomTextCmd.PersistentFlags().IntVarP(&globalConfig.Parallel,
 		"parallel", "p", 8, "Set the number of parallel threads which send queries")
 	randomTextCmd.PersistentFlags().IntVarP(&globalConfig.Limit,
@@ -41,6 +41,9 @@ func init() {
 		"api", "a", "graphql", "The API to use on benchmarks")
 	randomVectorsCmd.PersistentFlags().StringVarP(&globalConfig.Origin,
 		"origin", "u", "http://localhost:8080", "The origin that Weaviate is running at")
+
+	rootCmd.AddCommand(datasetCmd)
+	initDataset()
 }
 
 var rootCmd = &cobra.Command{

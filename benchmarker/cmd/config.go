@@ -5,16 +5,19 @@ import (
 )
 
 type Config struct {
-	Mode       string
-	Origin     string
-	Queries    int
-	Parallel   int
-	Limit      int
-	ClassName  string
-	API        string
-	Dimensions int
-	DB         string
-	Output     string
+	Mode         string
+	Origin       string
+	Queries      int
+	QueriesFile  string
+	Parallel     int
+	Limit        int
+	ClassName    string
+	API          string
+	Dimensions   int
+	DB           string
+	WhereFilter  string
+	OutputFormat string
+	OutputFile   string
 }
 
 func (c Config) Validate() error {

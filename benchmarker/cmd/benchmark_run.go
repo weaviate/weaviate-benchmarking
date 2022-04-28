@@ -157,7 +157,11 @@ func analyze(times []time.Duration, total time.Duration) results {
 
 	out.percentiles = make([]time.Duration, len(targetPercentiles))
 	for i, percentile := range targetPercentiles {
-		out.percentiles[i] = times[percentilePos(percentile)]
+		pos := percentilePos(percentile)
+		if pos >= len(times) {
+			pos = len(times) - 1
+		}
+		out.percentiles[i] = times[pos]
 	}
 
 	return out
