@@ -9,6 +9,22 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func initRandomText() {
+	rootCmd.AddCommand(randomTextCmd)
+	randomTextCmd.PersistentFlags().IntVarP(&globalConfig.Queries,
+		"queries-file", "f", 100, "Set the number of queries the benchmarker should run")
+	randomTextCmd.PersistentFlags().IntVarP(&globalConfig.Parallel,
+		"parallel", "p", 8, "Set the number of parallel threads which send queries")
+	randomTextCmd.PersistentFlags().IntVarP(&globalConfig.Limit,
+		"limit", "l", 10, "Set the query limit (top_k)")
+	randomTextCmd.PersistentFlags().StringVarP(&globalConfig.ClassName,
+		"className", "c", "", "The Weaviate class to run the benchmark against")
+	randomTextCmd.PersistentFlags().StringVarP(&globalConfig.API,
+		"api", "a", "graphql", "The API to use on benchmarks")
+	randomTextCmd.PersistentFlags().StringVarP(&globalConfig.Origin,
+		"origin", "u", "http://localhost:8080", "The origin that Weaviate is running at")
+}
+
 var randomTextCmd = &cobra.Command{
 	Use:   "random-text",
 	Short: "Benchmark nearText searches",
