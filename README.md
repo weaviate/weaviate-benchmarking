@@ -27,6 +27,7 @@ or the same command with the long-style flags:
 
 ```
 go run . \
+  random-vectors \
   --className MyClass \
   --dimensions 384 \
   --queries 10000 \
@@ -55,6 +56,7 @@ or the same command with the long-style flags:
 
 ```
 benchmarker \
+  random-vectors \
   --className MyClass \
   --dimensions 384 \
   --queries 10000 \
