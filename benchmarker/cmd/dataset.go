@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"encoding/json"
-	"fmt"
+	"io"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -14,23 +14,41 @@ var datasetCmd = &cobra.Command{
 	Long:  `Specify an existing dataset as a list of query vectors in a .json file to parse the query vectors and then query them with the specified parallelism`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := globalConfig
-		cfg.Mode = "random-vectors"
+		cfg.Mode = "dataset"
 
 		if err := cfg.Validate(); err != nil {
-			fmt.Println(err)
-			os.Exit(1)
+			fatal(err)
 		}
 
 		q, err := parseVectorsFromFile(cfg)
 		if err != nil {
-			fmt.Println(err.Error())
-			os.Exit(1)
+			fatal(err)
 		}
 
-		benchmarkDataset(cfg, q)
+		var w io.Writer
+		if cfg.OutputFile == "" {
+			w = os.Stdout
+		} else {
+			f, err := os.Create(cfg.OutputFile)
+			if err != nil {
+				fatal(err)
+			}
 
-		fmt.Println("not implemented yet")
-		os.Exit(1)
+			defer f.Close()
+			w = f
+
+		}
+
+		result := benchmarkDataset(cfg, q)
+		if cfg.OutputFormat == "json" {
+			result.WriteJSONTo(w)
+		} else if cfg.OutputFormat == "text" {
+			result.WriteTextTo(w)
+		}
+
+		if cfg.OutputFile != "" {
+			infof("results succesfully written to %q", cfg.OutputFile)
+		}
 	},
 }
 
@@ -53,7 +71,7 @@ func initDataset() {
 	datasetCmd.PersistentFlags().StringVarP(&globalConfig.OutputFormat,
 		"format", "f", "text", "Output format, one of [text, json]")
 	datasetCmd.PersistentFlags().StringVarP(&globalConfig.OutputFile,
-		"output", "o", "output", "Filename for an output file. If none provided, output to stdout only")
+		"output", "o", "", "Filename for an output file. If none provided, output to stdout only")
 }
 
 type Queries [][]float32
@@ -73,11 +91,11 @@ func parseVectorsFromFile(cfg Config) (Queries, error) {
 	return q, nil
 }
 
-func benchmarkDataset(cfg Config, queries Queries) {
+func benchmarkDataset(cfg Config, queries Queries) Results {
 	cfg.Queries = len(queries)
 
 	i := 0
-	benchmark(cfg, func(className string) []byte {
+	return benchmark(cfg, func(className string) []byte {
 		defer func() { i++ }()
 
 		if cfg.API == "graphql" {

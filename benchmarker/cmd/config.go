@@ -21,15 +21,8 @@ type Config struct {
 }
 
 func (c Config) Validate() error {
-	// validate common
-	if c.Origin == "" {
-		return errors.Errorf("origin must be set")
-	}
-
-	switch c.API {
-	case "graphql", "nearvector":
-	default:
-		return errors.Errorf("unsupported API %q", c.API)
+	if err := c.validateCommon(); err != nil {
+		return err
 	}
 
 	// validate specific
@@ -38,27 +31,56 @@ func (c Config) Validate() error {
 		return c.validateRandomVectors()
 	case "random-text":
 		return c.validateRandomText()
+	case "dataset":
+		return c.validateDataset()
 	default:
 		return errors.Errorf("unrecognized mode %q", c.Mode)
-
 	}
 }
 
-func (c Config) validateRandomText() error {
+func (c Config) validateCommon() error {
+	if c.Origin == "" {
+		return errors.Errorf("origin must be set")
+	}
+
 	if c.ClassName == "" {
 		return errors.Errorf("className must be set\n")
+	}
+
+	switch c.API {
+	case "graphql", "nearvector":
+	default:
+		return errors.Errorf("unsupported API %q", c.API)
+	}
+
+	switch c.OutputFormat {
+	case "text", "":
+		c.OutputFormat = "text"
+	case "json":
+	default:
+		return errors.Errorf("unsupported output format %q, must be one of [text, json]",
+			c.OutputFormat)
+
 	}
 
 	return nil
 }
 
-func (c Config) validateRandomVectors() error {
-	if c.ClassName == "" {
-		return errors.Errorf("className must be set\n")
-	}
+func (c Config) validateRandomText() error {
+	return nil
+}
 
+func (c Config) validateRandomVectors() error {
 	if c.Dimensions == 0 {
 		return errors.Errorf("dimenstions must be set and larger than 0\n")
+	}
+
+	return nil
+}
+
+func (c Config) validateDataset() error {
+	if c.QueriesFile == "" {
+		return errors.Errorf("a queries input file must be provided")
 	}
 
 	return nil

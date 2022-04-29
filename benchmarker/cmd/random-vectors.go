@@ -23,7 +23,8 @@ var randomVectorsCmd = &cobra.Command{
 		}
 
 		if cfg.DB == "weaviate" {
-			benchmarkNearVector(cfg)
+			result := benchmarkNearVector(cfg)
+			result.WriteTextTo(os.Stdout)
 			return
 		}
 
@@ -62,8 +63,8 @@ func nearVectorQueryJSONRest(className string, vec []float32, limit int) []byte 
 }`, string(vecJSON), limit))
 }
 
-func benchmarkNearVector(cfg Config) {
-	benchmark(cfg, func(className string) []byte {
+func benchmarkNearVector(cfg Config) Results {
+	return benchmark(cfg, func(className string) []byte {
 		if cfg.API == "graphql" {
 			return nearVectorQueryJSONGraphQL(cfg.ClassName, randomVector(cfg.Dimensions), cfg.Limit)
 		}

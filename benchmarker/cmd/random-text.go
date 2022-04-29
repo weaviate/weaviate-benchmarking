@@ -21,7 +21,8 @@ var randomTextCmd = &cobra.Command{
 			fmt.Println(err)
 			os.Exit(1)
 		}
-		benchmarkNearText(cfg)
+		result := benchmarkNearText(cfg)
+		result.WriteTextTo(os.Stdout)
 	},
 }
 
@@ -41,8 +42,8 @@ func nearTextQueryJSON(className string, query string) []byte {
 }`, className, query))
 }
 
-func benchmarkNearText(cfg Config) {
-	benchmark(cfg, func(className string) []byte {
+func benchmarkNearText(cfg Config) Results {
+	return benchmark(cfg, func(className string) []byte {
 		return nearTextQueryJSON(className, randomSearchString(4))
 	})
 }

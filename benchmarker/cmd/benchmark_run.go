@@ -10,14 +10,13 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
-	"os"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 )
 
-func benchmark(cfg Config, getQueryFn func(className string) []byte) {
+func benchmark(cfg Config, getQueryFn func(className string) []byte) Results {
 	var times []time.Duration
 	m := &sync.Mutex{}
 
@@ -109,43 +108,48 @@ func benchmark(cfg Config, getQueryFn func(className string) []byte) {
 
 	wg.Wait()
 
-	results := analyze(times, time.Since(before))
-	results.WriteTo(os.Stdout)
+	return analyze(cfg, times, time.Since(before))
 }
 
 var targetPercentiles = []int{50, 90, 95, 98, 99}
 
-type results struct {
-	min               time.Duration   `json:"min"`
-	max               time.Duration   `json:"max"`
-	successful        int             `json:"successful"`
-	mean              time.Duration   `json:"mean"`
-	took              time.Duration   `json:"took"`
-	queriesPerSecond  float64         `json:"queriesPerSecond"`
-	percentiles       []time.Duration `json:"percentiles"`
-	percentilesLabels []int           `json:"percentilesLabels"`
+type Results struct {
+	Min               time.Duration
+	Max               time.Duration
+	Mean              time.Duration
+	Took              time.Duration
+	QueriesPerSecond  float64
+	Percentiles       []time.Duration
+	PercentilesLabels []int
+	Total             int
+	Successful        int
+	Failed            int
+	Parallelization   int
 }
 
-func analyze(times []time.Duration, total time.Duration) results {
-	out := results{min: math.MaxInt64, percentilesLabels: targetPercentiles}
+func analyze(cfg Config, times []time.Duration, total time.Duration) Results {
+	out := Results{Min: math.MaxInt64, PercentilesLabels: targetPercentiles}
 	var sum time.Duration
 
 	for _, time := range times {
-		if time < out.min {
-			out.min = time
+		if time < out.Min {
+			out.Min = time
 		}
 
-		if time > out.max {
-			out.max = time
+		if time > out.Max {
+			out.Max = time
 		}
 
-		out.successful++
+		out.Successful++
 		sum += time
 	}
 
-	out.mean = sum / time.Duration(len(times))
-	out.took = total
-	out.queriesPerSecond = float64(len(times)) / float64(float64(total)/float64(time.Second))
+	out.Total = cfg.Queries
+	out.Failed = cfg.Queries - out.Successful
+	out.Parallelization = cfg.Parallel
+	out.Mean = sum / time.Duration(len(times))
+	out.Took = total
+	out.QueriesPerSecond = float64(len(times)) / float64(float64(total)/float64(time.Second))
 
 	sort.Slice(times, func(a, b int) bool {
 		return times[a] < times[b]
@@ -155,29 +159,85 @@ func analyze(times []time.Duration, total time.Duration) results {
 		return int(float64(len(times)*percentile)/100) + 1
 	}
 
-	out.percentiles = make([]time.Duration, len(targetPercentiles))
+	out.Percentiles = make([]time.Duration, len(targetPercentiles))
 	for i, percentile := range targetPercentiles {
 		pos := percentilePos(percentile)
 		if pos >= len(times) {
 			pos = len(times) - 1
 		}
-		out.percentiles[i] = times[pos]
+		out.Percentiles[i] = times[pos]
 	}
 
 	return out
 }
 
-func (r results) WriteTo(w io.Writer) (int64, error) {
+func (r Results) WriteTextTo(w io.Writer) (int64, error) {
 	b := strings.Builder{}
 
 	for i, percentile := range targetPercentiles {
 		b.WriteString(
-			fmt.Sprintf("p%d: %s\n", percentile, r.percentiles[i]),
+			fmt.Sprintf("p%d: %s\n", percentile, r.Percentiles[i]),
 		)
 	}
 
 	n, err := w.Write([]byte(fmt.Sprintf(
 		"Results\nSuccessful: %d\nMin: %s\nMean: %s\n%sTook: %s\nQPS: %f\n",
-		r.successful, r.min, r.mean, b.String(), r.took, r.queriesPerSecond)))
+		r.Successful, r.Min, r.Mean, b.String(), r.Took, r.QueriesPerSecond)))
 	return int64(n), err
+}
+
+type resultsJSON struct {
+	Metadata           resultsJSONMetadata   `json:"metadata"`
+	Latencies          map[string]int64      `json:"latencies"`
+	LatenciesFormatted map[string]string     `json:"latenciesFormatted"`
+	Throughput         resultsJSONThroughput `json:"throughput"`
+}
+
+type resultsJSONMetadata struct {
+	Successful      int    `json:"successful"`
+	Failed          int    `json:"failed"`
+	Total           int    `json:"total"`
+	Parallelization int    `json:"parallelization"`
+	Took            int64  `json:"took"`
+	TookFormatted   string `json:"tookFormatted"`
+}
+
+type resultsJSONThroughput struct {
+	QPS float64 `json:"qps"`
+}
+
+func (r Results) WriteJSONTo(w io.Writer) (int, error) {
+	obj := resultsJSON{
+		Metadata: resultsJSONMetadata{
+			Successful:      r.Successful,
+			Total:           r.Total,
+			Failed:          r.Failed,
+			Parallelization: r.Parallelization,
+			Took:            int64(r.Took),
+			TookFormatted:   fmt.Sprint(r.Took),
+		},
+		Latencies: map[string]int64{
+			"mean": int64(r.Mean),
+			"min":  int64(r.Min),
+		},
+		LatenciesFormatted: map[string]string{
+			"mean": fmt.Sprint(r.Mean),
+			"min":  fmt.Sprint(r.Min),
+		},
+		Throughput: resultsJSONThroughput{
+			QPS: r.QueriesPerSecond,
+		},
+	}
+
+	for i, percentile := range targetPercentiles {
+		obj.Latencies[fmt.Sprintf("p%d", percentile)] = int64(r.Percentiles[i])
+		obj.LatenciesFormatted[fmt.Sprintf("p%d", percentile)] = fmt.Sprint(r.Percentiles[i])
+	}
+
+	bytes, err := json.MarshalIndent(obj, "", "  ")
+	if err != nil {
+		return 0, err
+	}
+
+	return w.Write(bytes)
 }
