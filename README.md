@@ -112,3 +112,13 @@ benchmarker \
 ## Use benchmarking API programmatically
 
 TODO
+
+## Roadmap
+
+* [x] support random vectors
+* [x] support specific vectors from json input file
+* [ ] print results as json
+* [ ] store results to file
+* [ ] take in ground-truth file to calculate recall
+* [ ] add versioning
+* [ ] pre-build binaries on CI and attach them to releases
