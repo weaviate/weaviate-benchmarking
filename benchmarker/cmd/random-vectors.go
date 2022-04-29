@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 
@@ -27,6 +28,10 @@ func initRandomVectors() {
 		"api", "a", "graphql", "The API to use on benchmarks")
 	randomVectorsCmd.PersistentFlags().StringVarP(&globalConfig.Origin,
 		"origin", "u", "http://localhost:8080", "The origin that Weaviate is running at")
+	randomVectorsCmd.PersistentFlags().StringVarP(&globalConfig.OutputFormat,
+		"format", "f", "text", "Output format, one of [text, json]")
+	randomVectorsCmd.PersistentFlags().StringVarP(&globalConfig.OutputFile,
+		"output", "o", "", "Filename for an output file. If none provided, output to stdout only")
 }
 
 var randomVectorsCmd = &cobra.Command{
@@ -43,8 +48,30 @@ var randomVectorsCmd = &cobra.Command{
 		}
 
 		if cfg.DB == "weaviate" {
+			var w io.Writer
+			if cfg.OutputFile == "" {
+				w = os.Stdout
+			} else {
+				f, err := os.Create(cfg.OutputFile)
+				if err != nil {
+					fatal(err)
+				}
+
+				defer f.Close()
+				w = f
+
+			}
+
 			result := benchmarkNearVector(cfg)
-			result.WriteTextTo(os.Stdout)
+			if cfg.OutputFormat == "json" {
+				result.WriteJSONTo(w)
+			} else if cfg.OutputFormat == "text" {
+				result.WriteTextTo(w)
+			}
+
+			if cfg.OutputFile != "" {
+				infof("results succesfully written to %q", cfg.OutputFile)
+			}
 			return
 		}
 
