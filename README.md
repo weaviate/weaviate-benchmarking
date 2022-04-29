@@ -3,7 +3,51 @@
 This repo contains both a library for benchmarking Weaviate e2e as well as a
 CLI tool that makes use of the same library
 
-## Running the CLI
+## Documentation
+
+Once installed (see-below), the tools tries to be entirely self-documenting. Every command has a `-h` help option that can tell you where to go from there. For example, start with a root help command running `benchmarker -h` and it will print something like the following output to tell you where to go from there:
+
+```
+A Weaviate Benchmarker
+
+Usage:
+  benchmarker [flags]
+  benchmarker [command]
+
+Available Commands:
+  dataset        Benchmark vectors from an existing dataset
+  help           Help about any command
+  random-text    Benchmark nearText searches
+  random-vectors Benchmark nearVector searches
+
+Flags:
+  -h, --help   help for benchmarker
+
+Use "benchmarker [command] --help" for more information about a command.
+```
+
+Once you picked the command you're interested in, you can again use the help command to learn about the flags, for example running `benchmarker dataset -h` results in the following output:
+
+```
+Specify an existing dataset as a list of query vectors in a .json file to parse the query vectors and then query them with the specified parallelism
+
+Usage:
+  benchmarker dataset [flags]
+
+Flags:
+  -a, --api string         The API to use on benchmarks (default "graphql")
+  -c, --className string   The Weaviate class to run the benchmark against
+  -f, --format string      Output format, one of [text, json] (default "text")
+  -h, --help               help for dataset
+  -l, --limit int          Set the query limit (top_k) (default 10)
+  -u, --origin string      The origin that Weaviate is running at (default "http://localhost:8080")
+  -o, --output string      Filename for an output file. If none provided, output to stdout only
+  -p, --parallel int       Set the number of parallel threads which send queries (default 8)
+  -q, --queries string     Point to the queries file, (.json)
+  -w, --where string       An entire where filter as a string
+```
+
+## Installation / Running the CLI
 
 ### Option 1: Download a pre-compiled binary
 
