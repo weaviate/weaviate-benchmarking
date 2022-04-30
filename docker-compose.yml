@@ -1,0 +1,34 @@
+---
+version: '3.4'
+services:
+  benchmark-ann:
+    build: 
+      context: ./
+      dockerfile: Dockerfile-ann
+    depends_on:
+      - weaviate
+    volumes:
+      - $PWD/benchmark-data:/var/hdf5
+      - $PWD/results:/var/lib/benchmark/results
+  weaviate:
+    command:
+    - --host
+    - 0.0.0.0
+    - --port
+    - '8080'
+    - --scheme
+    - http
+    image: docker.io/semitechnologies/weaviate:latest@sha256:63d97416fb01c4c87a77c8a8371419ed2750e89716fe21063341d7d8932fa73a
+    ports:
+      - 8080:8080
+    volumes:
+      - $PWD/weaviate-data:/var/lib/weaviate
+    restart: on-failure:0
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
+      DEFAULT_VECTORIZER_MODULE: 'none'
+      ENABLE_MODULES: ''
+      CLUSTER_HOSTNAME: 'benchmark_node'
+...

@@ -1,9 +1,114 @@
-# weaviate-benchmarking
+# Weaviate Benchmarking
 
 This repo contains both a library for benchmarking Weaviate e2e as well as a
 CLI tool that makes use of the same library
 
-## Documentation
+## Documentation for benchmarker
+
+📊 results can be found in the [Weaviate documentation](https://weaviate.io).
+
+### ANN benchmark
+
+Spin up a beefy machine, we've used a 32 CPU, 400GB Memory, 1000 GB SSD persistent disk that has Docker installed.
+
+Clone this repo and cd into it `$ git clone https://github.com/semi-technologies/weaviate-benchmarking && cd weaviate-benchmarking`
+
+Download the files into a benchmark-data folder as outlined below.
+
+```sh
+$ mkdir benchmark-data && \
+    curl -o ./benchmark-data/deep-image-96-angular.hdf5 http://ann-benchmarks.com/deep-image-96-angular.hdf5 && \
+    curl -o ./benchmark-data/glove-200-angular.hdf5 http://ann-benchmarks.com/glove-200-angular.hdf5 && \
+    curl -o ./benchmark-data/glove-50-angular.hdf5 http://ann-benchmarks.com/glove-50-angular.hdf5 && \
+    curl -o ./benchmark-data/nytimes-256-angular.hdf5 http://ann-benchmarks.com/nytimes-256-angular.hdf5 && \
+    curl -o ./benchmark-data/glove-100-angular.hdf5 http://ann-benchmarks.com/glove-100-angular.hdf5 && \
+    curl -o ./benchmark-data/glove-25-angular.hdf5 http://ann-benchmarks.com/glove-25-angular.hdf5 && \
+    curl -o ./benchmark-data/lastfm-64-dot.hdf5 http://ann-benchmarks.com/lastfm-64-dot.hdf5 && \
+    curl -o ./benchmark-data/sift-128-euclidean.hdf5 http://ann-benchmarks.com/sift-128-euclidean.hdf5 && \
+    curl -o ./benchmark-data/mnist-784-euclidean.hdf5 http://ann-benchmarks.com/mnist-784-euclidean.hdf5
+```
+
+Update the following lines in [docker-compose.yml](docker-compose.yml).
+
+```yaml
+services:
+  benchmark-ann:
+      dockerfile: Dockerfile-ann # <== update this line
+```
+
+Build the container: `$ docker-compose build --no-cache`
+
+Run the container: `$ docker-compose up -d`
+
+The benchmark container will ouput files in the format: `results/weaviate_benchmark__{benchmark file}__{ef constructuin}__{max connections}.json`
+
+#### Update the benchmark config
+
+You can update the HNSW build config for this benchmark [here](benchmark-scripts/ann/benchmark.py).
+
+### ANN 1B benchmark
+
+#### Kubernetes cluster
+
+Follow [these steps](https://weaviate.io/developers/weaviate/current/getting-started/installation.html#kubernetes-k8s) in the Weaviate docs to create a Weaviate Kubernetes cluster. 
+
+Our K8s setup:
+
+* 5 pods
+* Per pod
+  * 320 RAM - 80 CPU
+  * SSD 960gb
+
+Update `weaviate_url` in [benchmark-scripts/ann-1B/benchmark.py](./benchmark-scripts/ann-1B/benchmark.py) to reflect the URL of the cluster.
+
+#### Import machine
+
+Create a machine with >= 16 CPUs, 16 GB in memory, and a 200 GB SSD. The import will run from this machine.
+
+Clone this repo and cd into it `$ git clone https://github.com/semi-technologies/weaviate-benchmarking && cd weaviate-benchmarking`
+
+Download the files into a benchmark-data folder as outlined below.
+
+```sh
+$ mkdir benchmark-data && \
+    curl -o ./benchmark-data/sift-128-euclidean.hdf5 https://storage.googleapis.com/semi-technologies-public-data/sift-1B-128-euclidean.hdf5
+```
+
+Update the following lines in [docker-compose.yml](docker-compose.yml).
+
+```yaml
+services:
+  benchmark-ann:
+      dockerfile: Dockerfile-ann1b # <== update this line
+```
+
+Build the container: `$ docker-compose build --no-cache`
+
+Run the container: `$ docker-compose up -d`
+
+The benchmark container will ouput files in the format: `results/weaviate_benchmark__{benchmark file}__{ef constructuin}__{max connections}.json`
+
+### Inverted index benchmark
+
+Clone this repo and cd into it `$ git clone https://github.com/semi-technologies/weaviate-benchmarking && cd weaviate-benchmarking`
+
+Spin up a beefy machine, we've used a 32 CPU, 400GB Memory, 1000 GB SSD persistent disk that has Docker installed.
+
+```yaml
+services:
+  benchmark-ann:
+      dockerfile: Dockerfile-ii # <== update this line
+```
+
+### ANN + inverted index benchmark
+
+...
+
+### Import transformers module benchmark
+
+...
+
+## Documentation for speed benchmarker
 
 Once installed (see-below), the tools tries to be entirely self-documenting. Every command has a `-h` help option that can tell you where to go from there. For example, start with a root help command running `benchmarker -h` and it will print something like the following output to tell you where to go from there:
 
@@ -47,13 +152,13 @@ Flags:
   -w, --where string       An entire where filter as a string
 ```
 
-## Installation / Running the CLI
+### Installation / Running the CLI
 
-### Option 1: Download a pre-compiled binary
+#### Option 1: Download a pre-compiled binary
 
 Not supported yet, there is no CI pipeline yet that pushes artifacts
 
-### Option 2: With a local Go runtime, compiling on the fly
+#### Option 2: With a local Go runtime, compiling on the fly
 
 Print the available commands
 ```
@@ -80,7 +185,7 @@ go run . \
   --limit 10
 ```
 
-### Option 3: With a local Go runtime, compile and install just once
+#### Option 3: With a local Go runtime, compile and install just once
 
 Install:
 
@@ -109,11 +214,11 @@ benchmarker \
   --limit 10
 ```
 
-## Use benchmarking API programmatically
+### Use benchmarking API programmatically
 
 TODO
 
-## Roadmap
+### Roadmap
 
 * [x] support random vectors
 * [x] support specific vectors from json input file

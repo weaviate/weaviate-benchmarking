@@ -1,0 +1,12 @@
+FROM python:3
+
+WORKDIR /var/lib/benchmark
+
+RUN pip3 install weaviate-client loguru
+
+RUN mkdir /var/ii
+
+RUN curl -o /var/ii/signalmedia-1m.jsonl.gz https://research.signal-ai.com/newsir16/signalmedia-1m.jsonl.gz && \
+    gzip -d /var/ii/signalmedia-1m.jsonl.gz
+
+CMD [ "python", "./benchmark.py" ]
