@@ -22,7 +22,7 @@ Clone this repo and cd into it `$ git clone https://github.com/semi-technologies
 
 Run the following command to spin up Weaviate: `$ docker-compose up weaviate -d`
 
-Copy the interal IP address and CPU core this machine has.
+Copy the interal IP address and amount of CPU cores this machine has.
 
 #### Prepare the benchmark machine
 
