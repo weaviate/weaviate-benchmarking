@@ -5,14 +5,7 @@ CLI tool that makes use of the same library
 
 ## Documentation for benchmarker
 
-📊 results can be found in the [Weaviate documentation](https://weaviate.io).
-
-Ground principles:
-
-- Same region
-- Seperate Weaviate instance from import instance
-- N2 CPU architecture
-- SSD
+📊 results and context can be found in the [Weaviate documentation](https://weaviate.io).
 
 ### ANN benchmark
 
