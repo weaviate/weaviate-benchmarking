@@ -14,4 +14,4 @@ if __name__ == '__main__':
     ]   
  
     # Starts the actual benchmark, prints "completed" when done
-    run_the_benchmarks(weaviate_url, efConstruction_array, maxConnections_array, ef_array, benchmark_file_array)
+    run_the_benchmarks(weaviate_url, CPUs, efConstruction_array, maxConnections_array, ef_array, benchmark_file_array)

@@ -7,9 +7,33 @@ CLI tool that makes use of the same library
 
 📊 results can be found in the [Weaviate documentation](https://weaviate.io).
 
+Ground principles:
+
+- Same region
+- Seperate Weaviate instance from import instance
+- N2 CPU architecture
+- SSD
+
 ### ANN benchmark
 
-Spin up a beefy machine, we've used a 32 CPU, 400GB Memory, 1000 GB SSD persistent disk that has Docker installed.
+Spin up two machines:
+
+| Machine description | CPU type | CPUs | Memory | Disk size | Disk type | Misc. |
+| --- | --- | --- | --- | --- | --- | --- |
+| Machine to run Weaviate | N2 | 32 | 256GB | 500GB | SSD | [Ubuntu 22.04 with Docker-compose](https://gist.github.com/bobvanluijt/04f6d97916244a7de59fead84ef63cd4) |
+| Machine to run benchmark script | N2 | 16 | 64GB | 500GB | SSD | [Ubuntu 22.04 with Docker-compose](https://gist.github.com/bobvanluijt/04f6d97916244a7de59fead84ef63cd4) |
+
+#### Prepare the Weaviate machine
+
+Clone this repo and cd into it `$ git clone https://github.com/semi-technologies/weaviate-benchmarking && cd weaviate-benchmarking`
+
+Run the following command to spin up Weaviate: `$ docker-compose up weaviate -d`
+
+Copy the interal IP address and CPU core this machine has.
+
+#### Prepare the benchmark machine
+
+Check if the Weaviate machine is available: `$ http://{IP OF WEAVIATE INSTANCE}/v1/meta`. Note that the instance runs on port `8080`, e.g., `http://10.128.15.12:8080/v1/meta`
 
 Clone this repo and cd into it `$ git clone https://github.com/semi-technologies/weaviate-benchmarking && cd weaviate-benchmarking`
 
@@ -36,9 +60,11 @@ services:
       dockerfile: Dockerfile-ann # <== update this line
 ```
 
+Update the file: `./benchmark-scripts/ann/benchmark.py`. `weaviate_url` should be set to the Weaviate instance and `CPUs` should be set to the amount of CPUs on the machine running Weaviate.
+
 Build the container: `$ docker-compose build --no-cache`
 
-Run the container: `$ docker-compose up -d`
+Run the container: `$ docker-compose up benchmark-ann -d`
 
 The benchmark container will ouput files in the format: `results/weaviate_benchmark__{benchmark file}__{ef constructuin}__{max connections}.json`
 

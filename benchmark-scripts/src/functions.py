@@ -1,120 +1,10 @@
-import h5py, weaviate, uuid, datetime, json, loguru, subprocess, os, re
-
-
-def available_cpu_count():
-    """ Number of available virtual or physical CPUs on this system, i.e.
-    user/real as output by time(1) when called with an optimally scaling
-    userspace-only program"""
-
-    # cpuset
-    # cpuset may restrict the number of *available* processors
-    try:
-        m = re.search(r'(?m)^Cpus_allowed:\s*(.*)$',
-                      open('/proc/self/status').read())
-        if m:
-            res = bin(int(m.group(1).replace(',', ''), 16)).count('1')
-            if res > 0:
-                return res
-    except IOError:
-        pass
-
-    # Python 2.6+
-    try:
-        import multiprocessing
-        return multiprocessing.cpu_count()
-    except (ImportError, NotImplementedError):
-        pass
-
-    # https://github.com/giampaolo/psutil
-    try:
-        import psutil
-        return psutil.cpu_count()   # psutil.NUM_CPUS on old versions
-    except (ImportError, AttributeError):
-        pass
-
-    # POSIX
-    try:
-        res = int(os.sysconf('SC_NPROCESSORS_ONLN'))
-
-        if res > 0:
-            return res
-    except (AttributeError, ValueError):
-        pass
-
-    # Windows
-    try:
-        res = int(os.environ['NUMBER_OF_PROCESSORS'])
-
-        if res > 0:
-            return res
-    except (KeyError, ValueError):
-        pass
-
-    # jython
-    try:
-        from java.lang import Runtime
-        runtime = Runtime.getRuntime()
-        res = runtime.availableProcessors()
-        if res > 0:
-            return res
-    except ImportError:
-        pass
-
-    # BSD
-    try:
-        sysctl = subprocess.Popen(['sysctl', '-n', 'hw.ncpu'],
-                                  stdout=subprocess.PIPE)
-        scStdout = sysctl.communicate()[0]
-        res = int(scStdout)
-
-        if res > 0:
-            return res
-    except (OSError, ValueError):
-        pass
-
-    # Linux
-    try:
-        res = open('/proc/cpuinfo').read().count('processor\t:')
-
-        if res > 0:
-            return res
-    except IOError:
-        pass
-
-    # Solaris
-    try:
-        pseudoDevices = os.listdir('/devices/pseudo/')
-        res = 0
-        for pd in pseudoDevices:
-            if re.match(r'^cpuid@[0-9]+$', pd):
-                res += 1
-
-        if res > 0:
-            return res
-    except OSError:
-        pass
-
-    # Other UNIXes (heuristic)
-    try:
-        try:
-            dmesg = open('/var/run/dmesg.boot').read()
-        except IOError:
-            dmesgProcess = subprocess.Popen(['dmesg'], stdout=subprocess.PIPE)
-            dmesg = dmesgProcess.communicate()[0]
-
-        res = 0
-        while '\ncpu' + str(res) + ':' in dmesg:
-            res += 1
-
-        if res > 0:
-            return res
-    except OSError:
-        pass
-
-    raise Exception('Can not determine number of CPUs on this system')
+import h5py, weaviate, uuid, datetime, json, loguru, subprocess, os, time
 
 
 def add_batch(client, c, vector_len):
+    '''Adds batch to Weaviate and returns
+       the time it took to complete in seconds.'''
+
     start_time = datetime.datetime.now()
     results = client.batch.create_objects()
     stop_time = datetime.datetime.now()
@@ -126,6 +16,8 @@ def add_batch(client, c, vector_len):
 
 
 def handle_results(results):
+    '''Handle error message from batch requests
+       logs the message as an info message.'''
     if results is not None:
         for result in results:
             if 'result' in result and 'errors' in result['result'] and  'error' in result['result']['errors']:
@@ -134,6 +26,10 @@ def handle_results(results):
 
 
 def match_results(test_set, weaviate_result_set):
+    '''Match the reults from Weaviate to the benchmark data.
+       If a result is in the returned set, score goes +1.
+       Because there is checked for 100 neighbors a score
+       of 100 == perfect'''
 
     # set score
     score = 0
@@ -155,7 +51,9 @@ def match_results(test_set, weaviate_result_set):
     return score
 
 
-def conduct_benchmark(weaviate_url, ef, client, benchmark_file, efConstruction, maxConnections):
+def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruction, maxConnections):
+    '''Conducts the benchmark, note that the NN results
+       and speed test run seperatly from each other'''
 
     # result obj
     results = {
@@ -221,7 +119,7 @@ def conduct_benchmark(weaviate_url, ef, client, benchmark_file, efConstruction, 
             vector_write_array.append(vector.tolist())
         with open('queries.json', 'w', encoding='utf-8') as jf:
             json.dump(vector_write_array, jf, indent=2)
-        process = subprocess.Popen(['./benchmarker','dataset', '-u', weaviate_url, '-c', 'Benchmark', '-q', 'queries.json', '-p', str(available_cpu_count()), '-f', 'json', '-l', '100'], stdout=subprocess.PIPE)
+        process = subprocess.Popen(['./benchmarker','dataset', '-u', weaviate_url, '-c', 'Benchmark', '-q', 'queries.json', '-p', str(CPUs), '-f', 'json', '-l', '100'], stdout=subprocess.PIPE)
         result_raw = process.communicate()[0].decode('utf-8')
         results['requestTimes'] = json.loads(result_raw)
 
@@ -234,6 +132,7 @@ def conduct_benchmark(weaviate_url, ef, client, benchmark_file, efConstruction, 
 
 
 def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file):
+    '''Imports the data into Weaviate'''
     
     # variables
     benchmark_import_batch_size = 1000
@@ -244,6 +143,9 @@ def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file)
     current_schema = client.schema.get()
     if len(current_schema['classes']) > 0:
         client.schema.delete_all()
+        # Sleeping to avoid load timeouts
+        time.sleep(120)
+        loguru.logger.info('Sleep to clean Weaviate by removing the benchmark class')
 
     # Create schema
     schema = {
@@ -297,7 +199,9 @@ def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file)
     return import_time
 
 
-def run_the_benchmarks(weaviate_url, efConstruction_array, maxConnections_array, ef_array, benchmark_file_array):
+def run_the_benchmarks(weaviate_url, CPUs, efConstruction_array, maxConnections_array, ef_array, benchmark_file_array):
+    '''Runs the actual benchmark.
+       Results are stored in a JSON file'''
 
     # Connect to Weaviate Weaviate
     try:
@@ -317,7 +221,7 @@ def run_the_benchmarks(weaviate_url, efConstruction_array, maxConnections_array,
                 # Find neighbors based on UUID and ef settings
                 results = []
                 for ef in ef_array:
-                    result = conduct_benchmark(weaviate_url, ef, client, benchmark_file, efConstruction, maxConnections)
+                    result = conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruction, maxConnections)
                     result['importTime'] = import_time
                     results.append(result)
                 

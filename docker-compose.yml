@@ -5,8 +5,6 @@ services:
     build: 
       context: ./
       dockerfile: Dockerfile-ann
-    depends_on:
-      - weaviate
     volumes:
       - $PWD/benchmark-data:/var/hdf5
       - $PWD/results:/var/lib/benchmark/results
