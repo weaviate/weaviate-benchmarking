@@ -91,7 +91,6 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
     with h5py.File('/var/hdf5/' + benchmark_file[0], 'r') as f:
         test_vectors = f['test']
         test_vectors_len = len(f['test'])
-        train_vectors_len = len(f['train'])
         for test_vector in test_vectors:
 
             # set certainty for  l2-squared
@@ -120,7 +119,9 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
     # Run the speed test
     ##
     loguru.logger.info('Run the speed test')
+    train_vectors_len = 0
     with h5py.File('/var/hdf5/' + benchmark_file[0], 'r') as f:
+        train_vectors_len = len(f['train'])
         test_vectors_len = len(f['test'])
         vector_write_array = []
         for vector in f['test']:
