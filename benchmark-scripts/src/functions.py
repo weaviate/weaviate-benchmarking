@@ -131,6 +131,17 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
     return results
 
 
+def remove_weaviate_class(client):
+    '''Removes the main class and tries again on error'''
+    try:
+        client.schema.delete_all()
+        # Sleeping to avoid load timeouts
+    except:
+        loguru.logger.info('Something is wrong with removing the class, sleep and try again')
+        time.sleep(240)
+        remove_weaviate_class(client)
+
+
 def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file):
     '''Imports the data into Weaviate'''
     
@@ -142,10 +153,7 @@ def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file)
     # Delete schema if available
     current_schema = client.schema.get()
     if len(current_schema['classes']) > 0:
-        client.schema.delete_all()
-        # Sleeping to avoid load timeouts
-        time.sleep(120)
-        loguru.logger.info('Sleep to clean Weaviate by removing the benchmark class')
+        remove_weaviate_class(client)
 
     # Create schema
     schema = {
