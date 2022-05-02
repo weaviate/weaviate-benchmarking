@@ -51,6 +51,13 @@ def match_results(test_set, weaviate_result_set):
     return score
 
 
+def run_speed_test(l, CPUs,weaviate_url):
+    '''Runs the actual speed test in Go'''
+    process = subprocess.Popen(['./benchmarker','dataset', '-u', weaviate_url, '-c', 'Benchmark', '-q', 'queries.json', '-p', str(CPUs), '-f', 'json', '-l', str(l)], stdout=subprocess.PIPE)
+    result_raw = process.communicate()[0].decode('utf-8')
+    return json.loads(result_raw)
+
+
 def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruction, maxConnections):
     '''Conducts the benchmark, note that the NN results
        and speed test run seperatly from each other'''
@@ -119,9 +126,9 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
             vector_write_array.append(vector.tolist())
         with open('queries.json', 'w', encoding='utf-8') as jf:
             json.dump(vector_write_array, jf, indent=2)
-        process = subprocess.Popen(['./benchmarker','dataset', '-u', weaviate_url, '-c', 'Benchmark', '-q', 'queries.json', '-p', str(CPUs), '-f', 'json', '-l', '100'], stdout=subprocess.PIPE)
-        result_raw = process.communicate()[0].decode('utf-8')
-        results['requestTimes'] = json.loads(result_raw)
+        results['requestTimes']['limit_1'] = run_speed_test(1, CPUs, weaviate_url)
+        results['requestTimes']['limit_10'] = run_speed_test(10, CPUs, weaviate_url)
+        results['requestTimes']['limit_100'] = run_speed_test(100, CPUs, weaviate_url)
 
     # add final results
     results['totalTested'] = c
