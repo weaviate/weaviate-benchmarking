@@ -35,12 +35,7 @@ Download the files into a benchmark-data folder as outlined below.
 ```sh
 $ mkdir benchmark-data && \
     curl -o ./benchmark-data/deep-image-96-angular.hdf5 http://ann-benchmarks.com/deep-image-96-angular.hdf5 && \
-    curl -o ./benchmark-data/glove-200-angular.hdf5 http://ann-benchmarks.com/glove-200-angular.hdf5 && \
-    curl -o ./benchmark-data/glove-50-angular.hdf5 http://ann-benchmarks.com/glove-50-angular.hdf5 && \
-    curl -o ./benchmark-data/nytimes-256-angular.hdf5 http://ann-benchmarks.com/nytimes-256-angular.hdf5 && \
-    curl -o ./benchmark-data/glove-100-angular.hdf5 http://ann-benchmarks.com/glove-100-angular.hdf5 && \
     curl -o ./benchmark-data/glove-25-angular.hdf5 http://ann-benchmarks.com/glove-25-angular.hdf5 && \
-    curl -o ./benchmark-data/lastfm-64-dot.hdf5 http://ann-benchmarks.com/lastfm-64-dot.hdf5 && \
     curl -o ./benchmark-data/sift-128-euclidean.hdf5 http://ann-benchmarks.com/sift-128-euclidean.hdf5 && \
     curl -o ./benchmark-data/mnist-784-euclidean.hdf5 http://ann-benchmarks.com/mnist-784-euclidean.hdf5
 ```
