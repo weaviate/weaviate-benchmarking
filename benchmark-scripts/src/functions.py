@@ -91,6 +91,7 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
     with h5py.File('/var/hdf5/' + benchmark_file[0], 'r') as f:
         test_vectors = f['test']
         test_vectors_len = len(f['test'])
+        train_vectors_len = len(f['train'])
         for test_vector in test_vectors:
 
             # set certainty for  l2-squared
@@ -132,7 +133,7 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
 
     # add final results
     results['totalTested'] = c
-    results['totalDatasetSize'] = test_vectors_len
+    results['totalDatasetSize'] = train_vectors_len
     results['score']['average'] = sum(all_scores) / len(all_scores)
 
     return results
