@@ -6,20 +6,15 @@ if __name__ == '__main__':
     # variables
     weaviate_url = 'http://weaviate:8080'
     CPUs = 32
-    efConstruction_array = [64, 128, 256]
-    maxConnections_array = [16, 32, 64]
+    efConstruction_array = [64, 128]
+    maxConnections_array = [16, 32]
     ef_array = [64, 128, 256, 512]
 
     benchmark_file_array = [
-        ['mnist-784-euclidean.hdf5', 'l2-squared'],
-        ['glove-25-angular.hdf5', 'cosine'],
-        ['sift-128-euclidean.hdf5', 'l2-squared'],
         ['deep-image-96-angular.hdf5', 'cosine'],
-        ['glove-200-angular.hdf5', 'cosine'],
-        ['glove-50-angular.hdf5', 'cosine'],
-        ['nytimes-256-angular.hdf5', 'cosine'],
-        ['glove-100-angular.hdf5', 'cosine'],
-        ['lastfm-64-dot.hdf5', 'cosine']
+        ['mnist-784-euclidean.hdf5', 'l2-squared'],
+        ['gist-960-euclidean.hdf5', 'l2-squared'],
+        ['glove-25-angular.hdf5', 'cosine']
     ]   
  
     # Starts the actual benchmark, prints "completed" when done
