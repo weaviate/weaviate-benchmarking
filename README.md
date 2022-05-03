@@ -35,9 +35,9 @@ Download the files into a benchmark-data folder as outlined below.
 ```sh
 $ mkdir benchmark-data && \
     curl -o ./benchmark-data/deep-image-96-angular.hdf5 http://ann-benchmarks.com/deep-image-96-angular.hdf5 && \
-    curl -o ./benchmark-data/glove-25-angular.hdf5 http://ann-benchmarks.com/glove-25-angular.hdf5 && \
-    curl -o ./benchmark-data/sift-128-euclidean.hdf5 http://ann-benchmarks.com/sift-128-euclidean.hdf5 && \
-    curl -o ./benchmark-data/mnist-784-euclidean.hdf5 http://ann-benchmarks.com/mnist-784-euclidean.hdf5
+    curl -o ./benchmark-data/mnist-784-euclidean.hdf5 http://ann-benchmarks.com/mnist-784-euclidean.hdf5 && \
+    curl -o ./benchmark-data/gist-960-euclidean.hdf5 http://ann-benchmarks.com/gist-960-euclidean.hdf5 && \
+    curl -o ./benchmark-data/glove-25-angular.hdf5 http://ann-benchmarks.com/glove-25-angular.hdf5
 ```
 
 Update the following lines in [docker-compose.yml](docker-compose.yml).
