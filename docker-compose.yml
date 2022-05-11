@@ -16,7 +16,7 @@ services:
     - '8080'
     - --scheme
     - http
-    image: docker.io/semitechnologies/weaviate:latest@sha256:63d97416fb01c4c87a77c8a8371419ed2750e89716fe21063341d7d8932fa73a
+    image: docker.io/semitechnologies/weaviate:latest@sha256:819b214da876bc160e4c12063a1c99f23bca24f701431adc126c1fe83f3cbc86
     ports:
       - 8080:8080
     volumes:
