@@ -7,6 +7,7 @@ if __name__ == '__main__':
     weaviate_url = 'http://weaviate:8080'
     efConstruction_array = [64]
     maxConnections_array = [64]
+    CPUs = 16
     ef_array = [64, 128, 256, 512]
 
     benchmark_file_array = [

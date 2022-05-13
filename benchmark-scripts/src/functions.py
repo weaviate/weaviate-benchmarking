@@ -1,4 +1,12 @@
-import h5py, weaviate, uuid, datetime, json, loguru, subprocess, os, time
+import os
+import uuid
+import json
+import time
+import datetime
+import subprocess
+import h5py
+import weaviate
+import loguru
 
 
 def add_batch(client, c, vector_len):
@@ -22,7 +30,7 @@ def handle_results(results):
         for result in results:
             if 'result' in result and 'errors' in result['result'] and  'error' in result['result']['errors']:
                 for message in result['result']['errors']['error']:
-                    loguru.logger.info(message['message'])
+                    loguru.logger.error(message['message'])
 
 
 def match_results(test_set, weaviate_result_set, k):
@@ -167,7 +175,7 @@ def remove_weaviate_class(client):
         client.schema.delete_all()
         # Sleeping to avoid load timeouts
     except:
-        loguru.logger.info('Something is wrong with removing the class, sleep and try again')
+        loguru.logger.exception('Something is wrong with removing the class, sleep and try again')
         time.sleep(240)
         remove_weaviate_class(client)
 
@@ -243,10 +251,14 @@ def run_the_benchmarks(weaviate_url, CPUs, efConstruction_array, maxConnections_
 
     # Connect to Weaviate Weaviate
     try:
-        client = weaviate.Client(weaviate_url)
+        client = weaviate.Client(weaviate_url, timeout_config=(5, 60))
     except:
         print('Error, can\'t connect to Weaviate, is it running?')
         exit(1)
+
+    client.batch.configure(
+        timeout_retries=10,
+    )
 
     # itterate over settings
     for benchmark_file in benchmark_file_array:
