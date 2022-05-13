@@ -245,7 +245,7 @@ def run_the_benchmarks(weaviate_url, CPUs, efConstruction_array, maxConnections_
 
     # Connect to Weaviate Weaviate
     try:
-        client = weaviate.Client(weaviate_url)
+        client = weaviate.Client(weaviate_url, timeout_config=(5, 60))
     except:
         print('Error, can\'t connect to Weaviate, is it running?')
         exit(1)
