@@ -30,7 +30,7 @@ def handle_results(results):
         for result in results:
             if 'result' in result and 'errors' in result['result'] and  'error' in result['result']['errors']:
                 for message in result['result']['errors']['error']:
-                    loguru.logger.info(message['message'])
+                    loguru.logger.error(message['message'])
 
 
 def match_results(test_set, weaviate_result_set, k):
@@ -169,7 +169,7 @@ def remove_weaviate_class(client):
         client.schema.delete_all()
         # Sleeping to avoid load timeouts
     except:
-        loguru.logger.info('Something is wrong with removing the class, sleep and try again')
+        loguru.logger.exception('Something is wrong with removing the class, sleep and try again')
         time.sleep(240)
         remove_weaviate_class(client)
 
