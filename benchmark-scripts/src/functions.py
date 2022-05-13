@@ -81,6 +81,11 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
                 'lowest': 100,
                 'average': 0
             },
+            '1': {
+                'highest': 0,
+                'lowest': 100,
+                'average': 0
+            },
         },
         'requestTimes': {}
     }
@@ -96,6 +101,7 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
     all_scores = {
             '100':[],
             '10':[],
+            '1': [],
         }
 
     loguru.logger.info('Find neighbors with ef = ' + str(ef))
@@ -110,7 +116,7 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
             # Start request
             query_result = client.query.get("Benchmark", ["counter"]).with_near_vector(nearVector).with_limit(100).do()    
 
-            for k in [10,100]:
+            for k in [1, 10,100]:
                 k_label=f'{k}'
                 score = match_results(f['neighbors'][c], query_result, k)
                 if score == 0:
@@ -149,7 +155,7 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
     # add final results
     results['totalTested'] = c
     results['totalDatasetSize'] = train_vectors_len
-    for k in ['10', '100']:
+    for k in ['1', '10', '100']:
         results['recall'][k]['average'] = sum(all_scores[k]) / len(all_scores[k])
 
     return results
@@ -197,7 +203,7 @@ def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file)
                 "ef": -1,
                 "efConstruction": efConstruction,
                 "maxConnections": maxConnections,
-                "vectorCacheMaxObjects": 10000000,
+                "vectorCacheMaxObjects": 1000000000,
                 "distance": benchmark_file[1]
             }
         }]
