@@ -1,4 +1,12 @@
-import h5py, weaviate, uuid, datetime, json, loguru, subprocess, os, time
+import os
+import uuid
+import json
+import time
+import datetime
+import subprocess
+import h5py
+import weaviate
+import loguru
 
 
 def add_batch(client, c, vector_len):
@@ -241,6 +249,10 @@ def run_the_benchmarks(weaviate_url, CPUs, efConstruction_array, maxConnections_
     except:
         print('Error, can\'t connect to Weaviate, is it running?')
         exit(1)
+
+    client.batch.configure(
+        timeout_retries=10,
+    )
 
     # itterate over settings
     for benchmark_file in benchmark_file_array:
