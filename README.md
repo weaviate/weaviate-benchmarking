@@ -13,8 +13,8 @@ Spin up two machines:
 
 | Machine description | CPU type | CPUs | Memory | Disk size | Disk type | Misc. |
 | --- | --- | --- | --- | --- | --- | --- |
-| Machine to run Weaviate | N2 | 32 | 256GB | 500GB | SSD | [Ubuntu 22.04 with Docker-compose](https://gist.github.com/bobvanluijt/04f6d97916244a7de59fead84ef63cd4) |
-| Machine to run benchmark script | N2 | 16 | 64GB | 500GB | SSD | [Ubuntu 22.04 with Docker-compose](https://gist.github.com/bobvanluijt/04f6d97916244a7de59fead84ef63cd4) |
+| Machine to run Weaviate | c2 | 30 | 120GB | 500GB | SSD | [Ubuntu 22.04 with Docker-compose](https://gist.github.com/bobvanluijt/04f6d97916244a7de59fead84ef63cd4) |
+| Machine to run benchmark script | N2 | 8 | 64GB | 500GB | SSD | [Ubuntu 22.04 with Docker-compose](https://gist.github.com/bobvanluijt/04f6d97916244a7de59fead84ef63cd4) |
 
 #### Prepare the Weaviate machine
 
