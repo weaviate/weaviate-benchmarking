@@ -4,10 +4,11 @@ services:
   benchmark-ann:
     build: 
       context: ./
-      dockerfile: Dockerfile-ann
+      dockerfile: Dockerfile-ann1b
     volumes:
       - $PWD/benchmark-data:/var/hdf5
       - $PWD/results:/var/lib/benchmark/results
+      - $PWD/logs:/var/logs
   weaviate:
     command:
     - --host
@@ -16,7 +17,7 @@ services:
     - '8080'
     - --scheme
     - http
-    image: docker.io/semitechnologies/weaviate:latest@sha256:819b214da876bc160e4c12063a1c99f23bca24f701431adc126c1fe83f3cbc86
+    image: docker.io/semitechnologies/weaviate:1.13.2
     ports:
       - 8080:8080
     volumes:

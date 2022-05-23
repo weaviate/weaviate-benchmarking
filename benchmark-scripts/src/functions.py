@@ -1,15 +1,17 @@
 import os
+from typing import Sequence
 import uuid
 import json
 import time
 import datetime
 import subprocess
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import h5py
-import weaviate
+from weaviate import Client
 import loguru
 
 
-def add_batch(client, c, vector_len):
+def add_batch(client: Client, c: int, vector_len: int):
     '''Adds batch to Weaviate and returns
        the time it took to complete in seconds.'''
 
@@ -19,7 +21,9 @@ def add_batch(client, c, vector_len):
     handle_results(results)
     run_time = stop_time - start_time
     if (c % 10000) == 0:
-        loguru.logger.info('Import status => added ' + str(c) + ' of ' + str(vector_len) + ' objects')
+        loguru.logger.info(
+            f'Import status => added {c} of {vector_len} objects'
+        )
     return run_time.seconds
 
 
@@ -33,8 +37,8 @@ def handle_results(results):
                     loguru.logger.error(message['message'])
 
 
-def match_results(test_set, weaviate_result_set, k):
-    '''Match the reults from Weaviate to the benchmark data.
+def match_results(test_set: Sequence, weaviate_result_set: dict, k: int):
+    '''Match the results from Weaviate to the benchmark data.
        If a result is in the returned set, score goes +1.
        Because there is checked for 100 neighbors a score
        of 100 == perfect'''
@@ -59,14 +63,22 @@ def match_results(test_set, weaviate_result_set, k):
     return score
 
 
-def run_speed_test(l, CPUs,weaviate_url):
+def run_speed_test(l: int, CPUs:int, weaviate_url: str):
     '''Runs the actual speed test in Go'''
     process = subprocess.Popen(['./benchmarker','dataset', '-u', weaviate_url, '-c', 'Benchmark', '-q', 'queries.json', '-p', str(CPUs), '-f', 'json', '-l', str(l)], stdout=subprocess.PIPE)
     result_raw = process.communicate()[0].decode('utf-8')
     return json.loads(result_raw)
 
 
-def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruction, maxConnections):
+def conduct_benchmark(
+        weaviate_url: str,
+        CPUs: int,
+        ef: int,
+        client: Client,
+        benchmark_file: tuple,
+        efConstruction: int,
+        maxConnections: int,
+    ):
     '''Conducts the benchmark, note that the NN results
        and speed test run seperatly from each other'''
 
@@ -169,7 +181,7 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
     return results
 
 
-def remove_weaviate_class(client):
+def remove_weaviate_class(client: Client):
     '''Removes the main class and tries again on error'''
     try:
         client.schema.delete_all()
@@ -180,11 +192,64 @@ def remove_weaviate_class(client):
         remove_weaviate_class(client)
 
 
-def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file):
+def import_data_slice_to_weaviate(
+        weaviate_url: str,
+        batch_size: int,
+        vectors: Sequence,
+        subprocess_number: int,
+        data_start_index: int,
+    ):
+    """
+    Import a slice of the dataset in a different process (core).
+    On exceptions during import saves the global counter to a sub-process specific
+    file (to avoid writing to the same file at once).
+    """
+    
+    try:
+        client = Client(weaviate_url, timeout_config=(5, 60))
+    except Exception as error:
+        loguru.logger.exception(
+            f"Subprocess {subprocess_number}: Can't connect to Weaviate, is it running?"
+        )
+        raise error
+    
+    counter = 0
+    batch_c = 0
+    vector_len = len(vectors)
+    try:
+        for vector in vectors:
+            client.batch.add_data_object(
+                data_object={'counter': counter + data_start_index},
+                class_name='Benchmark',
+                uuid=str(uuid.uuid3(uuid.NAMESPACE_DNS, str(counter + data_start_index))),
+                vector = vector
+            )
+            if batch_c == batch_size:
+                add_batch(client, counter, vector_len)
+                batch_c = 0
+            counter += 1
+            batch_c += 1
+        add_batch(client, counter, vector_len)
+    except Exception as error:
+        loguru.logger.exception(
+            f"Subprocess {subprocess_number}: Import failed at relative counter: {counter}, global counter: {counter + data_start_index}"
+        )
+        with open(f'/var/logs/stop_counter_subprocess_{subprocess_number}.txt', 'w') as file:
+            file.write(str(counter + data_start_index))
+        raise error
+
+def import_into_weaviate(
+        client: Client,
+        efConstruction: int,
+        maxConnections: int,
+        benchmark_file: tuple,
+        weaviate_url: str,
+        nr_cores: int,
+    ):
     '''Imports the data into Weaviate'''
     
     # variables
-    benchmark_import_batch_size = 10000
+    benchmark_import_batch_size = 10_000
     benchmark_class = 'Benchmark'
     import_time = 0
 
@@ -203,7 +268,7 @@ def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file)
                     "dataType": [
                         "int"
                     ],
-                    "description": "The number of the couter in the dataset",
+                    "description": "The number of the counter in the dataset",
                     "name": "counter"
                 }
             ],
@@ -219,39 +284,65 @@ def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file)
 
     client.schema.create(schema)
 
+    import_failed = False
+
     # Import
     loguru.logger.info('Start import process for ' + benchmark_file[0] + ', ef' + str(efConstruction) + ', maxConnections' + str(maxConnections))
+    start_time = time.monotonic()
     with h5py.File('/var/hdf5/' + benchmark_file[0], 'r') as f:
-        vectors = f['train']
-        c = 0
-        batch_c = 0
-        vector_len = len(vectors)
-        for vector in vectors:
-            client.batch.add_data_object({
-                    'counter': c
-                },
-                'Benchmark',
-                str(uuid.uuid3(uuid.NAMESPACE_DNS, str(c))),
-                vector = vector
-            )
-            if batch_c == benchmark_import_batch_size:
-                import_time += add_batch(client, c, vector_len)
-                batch_c = 0
-            c += 1
-            batch_c += 1
-        import_time += add_batch(client, c, vector_len)
-    loguru.logger.info('done importing ' + str(c) + ' objects in ' + str(import_time) + ' seconds')
+        data_to_import = f['train']
+        nr_vectors_per_core = int(len(data_to_import)/nr_cores)
+
+        start_indexes = [nr_vectors_per_core * i for i in range(nr_cores)]
+        end_indexes = start_indexes[1:].copy()
+        end_indexes.append(-1)
+
+        # if scrip fails and you want to resume, changes the start_indexes after this comment to the desired values
+        # start_indexes = []
+
+        with ProcessPoolExecutor() as executor:
+            results = []
+            for i in range(nr_cores):
+                results.append(
+                    executor.submit(
+                        import_data_slice_to_weaviate,
+                        weaviate_url=weaviate_url,
+                        batch_size=benchmark_import_batch_size,
+                        vectors=data_to_import[start_indexes[i]:end_indexes[i]],
+                        subprocess_number=i,
+                        data_start_index=start_indexes[i]
+                    )
+                )
+            for f in as_completed(results):
+                try:
+                    f.result()
+                except Exception:
+                    import_failed = True
+    
+    end_time = time.monotonic()
+    if import_failed:
+        loguru.logger.error('Some import sub-processes failed! Check logs!')
+        exit(1)
+    
+    loguru.logger.info('done importing ' + str(c) + ' objects in ' + str(end_time - start_time) + ' seconds')
 
     return import_time
 
 
-def run_the_benchmarks(weaviate_url, CPUs, efConstruction_array, maxConnections_array, ef_array, benchmark_file_array):
+def run_the_benchmarks(
+        weaviate_url: str,
+        CPUs: int,
+        efConstruction_array: list,
+        maxConnections_array: list,
+        ef_array: list,
+        benchmark_file_array: list,
+    ):
     '''Runs the actual benchmark.
        Results are stored in a JSON file'''
 
     # Connect to Weaviate Weaviate
     try:
-        client = weaviate.Client(weaviate_url, timeout_config=(5, 60))
+        client = Client(weaviate_url, timeout_config=(5, 60))
     except:
         print('Error, can\'t connect to Weaviate, is it running?')
         exit(1)
@@ -260,13 +351,20 @@ def run_the_benchmarks(weaviate_url, CPUs, efConstruction_array, maxConnections_
         timeout_retries=10,
     )
 
-    # itterate over settings
+    # iterate over settings
     for benchmark_file in benchmark_file_array:
         for efConstruction in efConstruction_array:
             for maxConnections in maxConnections_array:
                
                 # import data
-                import_time = import_into_weaviate(client, efConstruction, maxConnections, benchmark_file)
+                import_time = import_into_weaviate(
+                    client=client,
+                    efConstruction=efConstruction,
+                    maxConnections=maxConnections,
+                    benchmark_file=benchmark_file,
+                    weaviate_url=weaviate_url,
+                    nr_cores=int(CPUs/2),
+                )
 
                 # Find neighbors based on UUID and ef settings
                 results = []
