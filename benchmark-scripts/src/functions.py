@@ -243,6 +243,9 @@ def import_data_slice_to_weaviate(
             file.write(str(counter + data_start_index))
         raise error
 
+    del client
+    del vectors
+
 
 def import_into_weaviate(
         client: Client,
