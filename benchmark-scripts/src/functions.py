@@ -11,7 +11,7 @@ from weaviate import Client
 import loguru
 
 
-def add_batch(client: Client, count: int, vector_len: int, subprocess_num: int):
+def add_batch(client: Client, count: int, vector_len: int, subprocess_num: int, start_index: int):
     '''Adds batch to Weaviate and returns
        the time it took to complete in seconds.'''
 
@@ -22,7 +22,7 @@ def add_batch(client: Client, count: int, vector_len: int, subprocess_num: int):
     run_time = stop_time - start_time
 
     loguru.logger.info(
-        f'Import status (sub-process {subprocess_num}) => added {count} of {vector_len} objects in {run_time.seconds} seconds'
+        f'Import status (sub-process {subprocess_num}) => start_index {start_index}: added {count} of {vector_len} objects in {run_time.seconds} seconds'
     )
 
 
@@ -230,11 +230,11 @@ def import_data_slice_to_weaviate(
                 vector = vector
             )
             if batch_c == batch_size:
-                add_batch(client, counter, vector_len, subprocess_number)
+                add_batch(client, counter, vector_len, subprocess_number, data_start_index)
                 batch_c = 0
             counter += 1
             batch_c += 1
-        add_batch(client, counter, vector_len, subprocess_number)
+        add_batch(client, counter, vector_len, subprocess_number, data_start_index)
     except Exception as error:
         loguru.logger.exception(
             f"sub-process {subprocess_number}: Import failed at relative counter: {counter}, global counter: {counter + data_start_index}"

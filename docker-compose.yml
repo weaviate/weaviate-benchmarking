@@ -8,6 +8,9 @@ services:
     volumes:
       - $PWD/benchmark-data:/var/hdf5
       - $PWD/results:/var/lib/benchmark/results
+    environment:
+      WEAVIATE_URL: http://weaviate:8080
+      NR_CPU: 16
   weaviate:
     command:
     - --host
