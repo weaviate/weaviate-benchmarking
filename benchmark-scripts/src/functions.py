@@ -383,7 +383,7 @@ def run_the_benchmarks(
                     maxConnections=maxConnections,
                     benchmark_file=benchmark_file,
                     weaviate_url=weaviate_url,
-                    nr_cores=int(CPUs/2),
+                    nr_cores=CPUs,
                 )
 
                 # Find neighbors based on UUID and ef settings
