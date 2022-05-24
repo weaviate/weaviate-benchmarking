@@ -5,7 +5,8 @@ CLI tool that makes use of the same library
 
 ## Documentation for benchmarker
 
-📊 results and context can be found in the [Weaviate documentation](https://weaviate.io).
+* 📊 results and context can be found in the [Weaviate documentation](https://weaviate.io/developers/weaviate/current/benchmarks/)
+* 💬 discuss the results on our [Slack channel](https://join.slack.com/t/weaviate/shared_invite/zt-goaoifjr-o8FuVz9b1HLzhlUfyfddhw) or [Twitter](https://twitter.com/weaviate_io)
 
 ### ANN benchmark
 
@@ -116,11 +117,11 @@ services:
 
 ### ANN + inverted index benchmark
 
-...
+_coming soon_
 
 ### Import transformers module benchmark
 
-...
+_coming soon_
 
 ## Documentation for speed benchmarker
 
