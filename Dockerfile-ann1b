@@ -4,10 +4,6 @@ WORKDIR /var/lib/benchmark
 
 COPY benchmark-scripts/ann-1B/requirements.txt /var/lib/benchmark/requirements.txt
 
-COPY benchmark-scripts/ann-1B/benchmark.py /var/lib/benchmark/benchmark.py
-
-COPY benchmark-scripts/src/functions.py /var/lib/benchmark/functions.py
-
 COPY ./benchmarker ./
 
 ENV PYTHONUNBUFFERED=1
@@ -23,6 +19,10 @@ RUN python3 -m ensurepip
 RUN pip3 install --no-cache --upgrade pip setuptools
 
 RUN pip3 install -r requirements.txt
+
+COPY benchmark-scripts/ann-1B/benchmark.py /var/lib/benchmark/benchmark.py
+
+COPY benchmark-scripts/src/functions.py /var/lib/benchmark/functions.py
 
 RUN go build -o benchmarker .
 
