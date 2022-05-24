@@ -11,7 +11,7 @@ from weaviate import Client
 import loguru
 
 
-def add_batch(client: Client, c: int, vector_len: int):
+def add_batch(client: Client, count: int, vector_len: int, subprocess_num: int):
     '''Adds batch to Weaviate and returns
        the time it took to complete in seconds.'''
 
@@ -20,11 +20,10 @@ def add_batch(client: Client, c: int, vector_len: int):
     stop_time = datetime.datetime.now()
     handle_results(results)
     run_time = stop_time - start_time
-    if (c % 10000) == 0:
-        loguru.logger.info(
-            f'Import status => added {c} of {vector_len} objects'
-        )
-    return run_time.seconds
+
+    loguru.logger.info(
+        f'Import status (sub-process {subprocess_num}) => added {count} of {vector_len} objects in {run_time.seconds} seconds'
+    )
 
 
 def handle_results(results):
@@ -207,15 +206,21 @@ def import_data_slice_to_weaviate(
     
     try:
         client = Client(weaviate_url, timeout_config=(5, 60))
+        client.batch.configure(
+            timeout_retries=10,
+        )
     except Exception as error:
         loguru.logger.exception(
-            f"Subprocess {subprocess_number}: Can't connect to Weaviate, is it running?"
+            f"sub-process {subprocess_number}: Can't connect to Weaviate, is it running?"
         )
         raise error
     
     counter = 0
     batch_c = 0
     vector_len = len(vectors)
+    loguru.logger.info(
+        f'Start import sub-process {subprocess_number}, vectors start index {data_start_index}'
+    )
     try:
         for vector in vectors:
             client.batch.add_data_object(
@@ -225,18 +230,19 @@ def import_data_slice_to_weaviate(
                 vector = vector
             )
             if batch_c == batch_size:
-                add_batch(client, counter, vector_len)
+                add_batch(client, counter, vector_len, subprocess_number)
                 batch_c = 0
             counter += 1
             batch_c += 1
-        add_batch(client, counter, vector_len)
+        add_batch(client, counter, vector_len, subprocess_number)
     except Exception as error:
         loguru.logger.exception(
-            f"Subprocess {subprocess_number}: Import failed at relative counter: {counter}, global counter: {counter + data_start_index}"
+            f"sub-process {subprocess_number}: Import failed at relative counter: {counter}, global counter: {counter + data_start_index}"
         )
         with open(f'/var/logs/stop_counter_subprocess_{subprocess_number}.txt', 'w') as file:
             file.write(str(counter + data_start_index))
         raise error
+
 
 def import_into_weaviate(
         client: Client,
@@ -287,7 +293,9 @@ def import_into_weaviate(
     import_failed = False
 
     # Import
-    loguru.logger.info('Start import process for ' + benchmark_file[0] + ', ef' + str(efConstruction) + ', maxConnections' + str(maxConnections))
+    loguru.logger.info(
+        f'Start import process for {benchmark_file[0]}, ef {efConstruction}, maxConnections {maxConnections}'
+    )
     start_time = time.monotonic()
     with h5py.File('/var/hdf5/' + benchmark_file[0], 'r') as f:
         data_to_import = f['train']
@@ -317,6 +325,9 @@ def import_into_weaviate(
                 try:
                     f.result()
                 except Exception:
+                    loguru.logger.exception(
+                        'Something went wrong!'
+                    )
                     import_failed = True
     
     end_time = time.monotonic()
@@ -342,10 +353,19 @@ def run_the_benchmarks(
 
     # Connect to Weaviate Weaviate
     try:
+        # if weaviate is running in the same docker-compose.yml then this function is going to
+        # create a Client faster than Weaviate is ready, so we sleep 10 seconds
+        time.sleep(10)
         client = Client(weaviate_url, timeout_config=(5, 60))
-    except:
+    except Exception:
         print('Error, can\'t connect to Weaviate, is it running?')
-        exit(1)
+        print('Retrying to connect in 30 seconds.')
+        time.sleep(30)
+        try:
+            client = Client(weaviate_url, timeout_config=(5, 60))
+        except Exception:
+            print('Error, can\'t connect to Weaviate, is it running? Exiting ...')
+            exit(1)
 
     client.batch.configure(
         timeout_retries=10,

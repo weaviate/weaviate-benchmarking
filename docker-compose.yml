@@ -9,6 +9,10 @@ services:
       - $PWD/benchmark-data:/var/hdf5
       - $PWD/results:/var/lib/benchmark/results
       - $PWD/logs:/var/logs
+    environment:
+      WEAVIATE_URL: http://weaviate:8080
+      NR_CPU: 16
+  # uncomment for local test
   weaviate:
     command:
     - --host

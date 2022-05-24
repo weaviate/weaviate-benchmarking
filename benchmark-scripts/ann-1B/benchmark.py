@@ -1,13 +1,14 @@
+import os
 from functions import *
 
 
 if __name__ == '__main__':
 
     # variables
-    weaviate_url = 'http://weaviate:8080'
+    weaviate_url = os.getenv('WEAVIATE_URL')
+    CPUs = int(os.getenv('NR_CPU'))
     efConstruction_array = [64]
     maxConnections_array = [64]
-    CPUs = 16
     ef_array = [64, 128, 256, 512]
 
     benchmark_file_array = [
