@@ -294,12 +294,13 @@ def import_into_weaviate(
 
     # Import
     loguru.logger.info(
-        f'Start import process for {benchmark_file[0]}, ef {efConstruction}, maxConnections {maxConnections}'
+        f'Start import process for {benchmark_file[0]}, ef: {efConstruction}, maxConnections: {maxConnections}, CPUs: {nr_cores}'
     )
     start_time = time.monotonic()
     with h5py.File('/var/hdf5/' + benchmark_file[0], 'r') as f:
         data_to_import = f['train']
-        nr_vectors_per_core = int(len(data_to_import)/nr_cores)
+        nr_vectors = len(data_to_import)
+        nr_vectors_per_core = int(nr_vectors/nr_cores)
 
         start_indexes = [nr_vectors_per_core * i for i in range(nr_cores)]
         end_indexes = start_indexes[1:].copy()
@@ -335,7 +336,9 @@ def import_into_weaviate(
         loguru.logger.error('Some import sub-processes failed! Check logs!')
         exit(1)
     
-    loguru.logger.info('done importing ' + str(c) + ' objects in ' + str(end_time - start_time) + ' seconds')
+    loguru.logger.info(
+        f'done importing {nr_vectors} objects in {round(end_time - start_time)} seconds'
+    )
 
     return import_time
 
