@@ -1,10 +1,12 @@
 import os
+import gc
 from typing import Sequence
 import uuid
 import json
 import time
 import datetime
 import subprocess
+from math import ceil
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import h5py
 from weaviate import Client
@@ -245,6 +247,7 @@ def import_data_slice_to_weaviate(
 
     del client
     del vectors
+    gc.collect()
 
 
 def import_into_weaviate(
@@ -254,6 +257,7 @@ def import_into_weaviate(
         benchmark_file: tuple,
         weaviate_url: str,
         nr_processes: int,
+        nr_cores: int,
     ):
     '''Imports the data into Weaviate'''
     
@@ -297,42 +301,45 @@ def import_into_weaviate(
 
     # Import
     loguru.logger.info(
-        f'Start import process for {benchmark_file[0]}, ef: {efConstruction}, maxConnections: {maxConnections}'
+        f'Start import process for {benchmark_file[0]}, ef: {efConstruction}, maxConnections: {maxConnections}, CPUs: {nr_cores}'
     )
     start_time = time.monotonic()
-    with h5py.File('/var/hdf5/' + benchmark_file[0], 'r') as f:
-        nr_vectors = len(f['train'])
-        nr_vectors_per_core = int(nr_vectors/nr_processes)
+    for proc_batch in range(ceil(nr_processes/nr_cores)):
+        with h5py.File('/var/hdf5/' + benchmark_file[0], 'r') as f:
+            nr_vectors = f['train'].shape[0]
+            nr_vectors_per_core = int(nr_vectors/nr_processes)
 
-        start_indexes = [nr_vectors_per_core * i for i in range(nr_processes)]
-        end_indexes = start_indexes[1:].copy()
-        end_indexes.append(-1)
+            start_indexes = [nr_vectors_per_core * i for i in range(nr_processes)]
+            end_indexes = start_indexes[1:].copy()
+            end_indexes.append(-1)
 
-        # if scrip fails and you want to resume, changes the start_indexes after this comment to the desired values
-        # start_indexes = []
+            # if scrip fails and you want to resume, changes the start_indexes after this comment to the desired values
+            # start_indexes = []
 
-        with ProcessPoolExecutor() as executor:
-            results = []
-            for i in range(nr_processes):
-                results.append(
-                    executor.submit(
-                        import_data_slice_to_weaviate,
-                        weaviate_url=weaviate_url,
-                        batch_size=benchmark_import_batch_size,
-                        vectors=f['train'][start_indexes[i]:end_indexes[i]],
-                        subprocess_number=i,
-                        data_start_index=start_indexes[i]
+            with ProcessPoolExecutor() as executor:
+                results = []
+                for i in range(nr_cores):
+                    if i + proc_batch * nr_cores == nr_vectors:
+                        break
+                    results.append(
+                        executor.submit(
+                            import_data_slice_to_weaviate,
+                            weaviate_url=weaviate_url,
+                            batch_size=benchmark_import_batch_size,
+                            vectors=f['train'][start_indexes[i]:end_indexes[i]],
+                            subprocess_number=i,
+                            data_start_index=start_indexes[i]
+                        )
                     )
-                )
-            for f in as_completed(results):
-                try:
-                    f.result()
-                except Exception:
-                    loguru.logger.exception(
-                        'Something went wrong!'
-                    )
-                    import_failed = True
-    
+                for f in as_completed(results):
+                    try:
+                        f.result()
+                    except Exception:
+                        loguru.logger.exception(
+                            'Something went wrong!'
+                        )
+                        import_failed = True
+        gc.collect()
     end_time = time.monotonic()
     if import_failed:
         loguru.logger.error('Some import sub-processes failed! Check logs!')
@@ -389,6 +396,7 @@ def run_the_benchmarks(
                     benchmark_file=benchmark_file,
                     weaviate_url=weaviate_url,
                     nr_processes=10_000,
+                    nr_cores=CPUs,
                 )
 
                 # Find neighbors based on UUID and ef settings
