@@ -319,16 +319,17 @@ def import_into_weaviate(
             with ProcessPoolExecutor() as executor:
                 results = []
                 for i in range(nr_cores):
-                    if i + proc_batch * nr_cores == nr_vectors:
+                    current_index = i + proc_batch * nr_cores
+                    if current_index == nr_vectors:
                         break
                     results.append(
                         executor.submit(
                             import_data_slice_to_weaviate,
                             weaviate_url=weaviate_url,
                             batch_size=benchmark_import_batch_size,
-                            vectors=f['train'][start_indexes[i]:end_indexes[i]],
-                            subprocess_number=i,
-                            data_start_index=start_indexes[i]
+                            vectors=f['train'][start_indexes[current_index]:end_indexes[current_index]],
+                            subprocess_number=current_index,
+                            data_start_index=start_indexes[current_index]
                         )
                     )
                 for f in as_completed(results):
@@ -395,7 +396,7 @@ def run_the_benchmarks(
                     maxConnections=maxConnections,
                     benchmark_file=benchmark_file,
                     weaviate_url=weaviate_url,
-                    nr_processes=10_000,
+                    nr_processes=1_000,
                     nr_cores=CPUs,
                 )
 
