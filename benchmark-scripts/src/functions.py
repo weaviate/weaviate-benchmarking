@@ -250,7 +250,7 @@ def import_into_weaviate(
         maxConnections: int,
         benchmark_file: tuple,
         weaviate_url: str,
-        nr_cores: int,
+        nr_processes: int,
     ):
     '''Imports the data into Weaviate'''
     
@@ -294,15 +294,14 @@ def import_into_weaviate(
 
     # Import
     loguru.logger.info(
-        f'Start import process for {benchmark_file[0]}, ef: {efConstruction}, maxConnections: {maxConnections}, CPUs: {nr_cores}'
+        f'Start import process for {benchmark_file[0]}, ef: {efConstruction}, maxConnections: {maxConnections}'
     )
     start_time = time.monotonic()
     with h5py.File('/var/hdf5/' + benchmark_file[0], 'r') as f:
-        data_to_import = f['train']
-        nr_vectors = len(data_to_import)
-        nr_vectors_per_core = int(nr_vectors/nr_cores)
+        nr_vectors = len(f['train'])
+        nr_vectors_per_core = int(nr_vectors/nr_processes)
 
-        start_indexes = [nr_vectors_per_core * i for i in range(nr_cores)]
+        start_indexes = [nr_vectors_per_core * i for i in range(nr_processes)]
         end_indexes = start_indexes[1:].copy()
         end_indexes.append(-1)
 
@@ -311,13 +310,13 @@ def import_into_weaviate(
 
         with ProcessPoolExecutor() as executor:
             results = []
-            for i in range(nr_cores):
+            for i in range(nr_processes):
                 results.append(
                     executor.submit(
                         import_data_slice_to_weaviate,
                         weaviate_url=weaviate_url,
                         batch_size=benchmark_import_batch_size,
-                        vectors=data_to_import[start_indexes[i]:end_indexes[i]],
+                        vectors=f['train'][start_indexes[i]:end_indexes[i]],
                         subprocess_number=i,
                         data_start_index=start_indexes[i]
                     )
@@ -386,7 +385,7 @@ def run_the_benchmarks(
                     maxConnections=maxConnections,
                     benchmark_file=benchmark_file,
                     weaviate_url=weaviate_url,
-                    nr_cores=CPUs,
+                    nr_processes=10_000,
                 )
 
                 # Find neighbors based on UUID and ef settings
