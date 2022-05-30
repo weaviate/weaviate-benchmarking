@@ -422,21 +422,21 @@ def import_data_into_weaviate(
     total_objects_imported = 0
 
     # Import
-    start_time = time.monotonic()
-    for proc_batch in range(ceil(nr_processes/nr_cores)):
-        batch_start_time = time.monotonic()
-        with h5py.File(f'/var/hdf5/{data_file}', 'r') as f:
-            nr_vectors = f['train'].shape[0]
-            nr_vectors_per_core = int(nr_vectors/nr_processes)
+    with h5py.File(f'/var/hdf5/{data_file}', 'r') as f:
+        nr_vectors = f['train'].shape[0]
+        nr_vectors_per_core = int(nr_vectors/nr_processes)
 
-            start_indexes = [nr_vectors_per_core * i for i in range(nr_processes)]
-            end_indexes = start_indexes[1:].copy()
-            end_indexes.append(None)
+        start_indexes = [nr_vectors_per_core * i for i in range(nr_processes)]
+        end_indexes = start_indexes[1:].copy()
+        end_indexes.append(None)
 
-            # if scrip fails and you want to resume, changes the start_indexes
-            # after this comment to the desired values
-            # start_indexes = []
+        # if scrip fails and you want to resume, changes the start_indexes
+        # after this comment to the desired values
+        # start_indexes = []
 
+        start_time = time.monotonic()
+        for proc_batch in range(ceil(nr_processes/nr_cores)):
+            batch_start_time = time.monotonic()
             with ProcessPoolExecutor() as executor:
                 results = []
                 for i in range(nr_cores):
@@ -459,11 +459,11 @@ def import_data_into_weaviate(
                     except BenchmarkImportError as error:
                         total_objects_imported += error.counter
                         import_failed = True
-        batch_run_time = time.monotonic() - batch_start_time
-        logger.info(
-            f'Import status (global) => added {total_objects_imported} of {nr_vectors} objects in {batch_run_time} seconds'
-        )
-        gc.collect()
+            batch_run_time = time.monotonic() - batch_start_time
+            logger.info(
+                f'Import status (global) => added {total_objects_imported} of {nr_vectors} objects in {batch_run_time} seconds'
+            )
+            gc.collect()
     end_time = time.monotonic()
 
     if import_failed:
