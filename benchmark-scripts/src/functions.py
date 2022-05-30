@@ -421,22 +421,24 @@ def import_data_into_weaviate(
     import_failed = False
     total_objects_imported = 0
 
-    # Import
-    start_time = time.monotonic()
-    for proc_batch in range(ceil(nr_processes/nr_cores)):
-        batch_start_time = time.monotonic()
-        with h5py.File(f'/var/hdf5/{data_file}', 'r') as f:
-            nr_vectors = f['train'].shape[0]
-            nr_vectors_per_core = int(nr_vectors/nr_processes)
+    with h5py.File(f'/var/hdf5/{data_file}', 'r') as f:
+        nr_vectors = f['train'].shape[0]
+        nr_vectors_per_core = int(nr_vectors/nr_processes)
 
-            start_indexes = [nr_vectors_per_core * i for i in range(nr_processes)]
-            end_indexes = start_indexes[1:].copy()
-            end_indexes.append(None)
+        start_indexes = [nr_vectors_per_core * i for i in range(nr_processes)]
+        end_indexes = start_indexes[1:].copy()
+        end_indexes.append(None)
 
-            # if scrip fails and you want to resume, changes the start_indexes
-            # after this comment to the desired values
-            # start_indexes = []
+        # if scrip fails and you want to resume, changes the start_indexes
+        # after this comment to the desired values
+        # NOTE: make sure not to call `create_schema` in case you want to resume import
+        # start_indexes = []
 
+        # Import
+        start_time = time.monotonic()
+        for proc_batch in range(ceil(nr_processes/nr_cores)):
+            batch_start_time = time.monotonic()
+            
             with ProcessPoolExecutor() as executor:
                 results = []
                 for i in range(nr_cores):
@@ -459,11 +461,11 @@ def import_data_into_weaviate(
                     except BenchmarkImportError as error:
                         total_objects_imported += error.counter
                         import_failed = True
-        batch_run_time = time.monotonic() - batch_start_time
-        logger.info(
-            f'Import status (global) => added {total_objects_imported} of {nr_vectors} objects in {batch_run_time} seconds'
-        )
-        gc.collect()
+            batch_run_time = time.monotonic() - batch_start_time
+            logger.info(
+                f'Import status (global) => added {total_objects_imported} of {nr_vectors} objects in {batch_run_time} seconds'
+            )
+            gc.collect()
     end_time = time.monotonic()
 
     if import_failed:
@@ -495,13 +497,13 @@ def run_the_benchmarks(
         # if weaviate is running in the same docker-compose.yml then this function is going to
         # create a Client faster than Weaviate is ready, so we sleep 10 seconds
         time.sleep(10)
-        client = Client(weaviate_url, timeout_config=(5, 60))
+        client = Client(weaviate_url, timeout_config=(5, 120))
     except Exception:
         print('Error, can\'t connect to Weaviate, is it running?')
         print('Retrying to connect in 30 seconds.')
         time.sleep(30)
         try:
-            client = Client(weaviate_url, timeout_config=(5, 60))
+            client = Client(weaviate_url, timeout_config=(5, 120))
         except Exception:
             print('Error, can\'t connect to Weaviate, is it running? Exiting ...')
             exit(1)
@@ -511,6 +513,7 @@ def run_the_benchmarks(
         for efConstruction in efConstruction_array:
             for maxConnections in maxConnections_array:
 
+                # NOTE: make sure not to call `create_schema` in case you want to resume import
                 create_schema(
                     client=client,
                     efConstruction=efConstruction,
@@ -526,7 +529,7 @@ def run_the_benchmarks(
                     batch_size=10_000,
                     data_file=benchmark_file[0],
                     weaviate_url=weaviate_url,
-                    nr_processes=1_000,
+                    nr_processes=10_000,
                     nr_cores=CPUs,
                 )
 
