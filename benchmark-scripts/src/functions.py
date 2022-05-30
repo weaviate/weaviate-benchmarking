@@ -444,6 +444,11 @@ def import_data_into_weaviate(
                     current_index = i + proc_batch * nr_cores
                     if current_index == nr_vectors:
                         break
+                    if current_index <= 980:
+                        continue
+                    else:
+                        logger(start_indexes[current_index],end_indexes[current_index])
+
                     results.append(
                         executor.submit(
                             import_data_slice_to_weaviate,
