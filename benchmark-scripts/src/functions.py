@@ -430,7 +430,7 @@ def import_data_into_weaviate(
 
             start_indexes = [nr_vectors_per_core * i for i in range(nr_processes)]
             end_indexes = start_indexes[1:].copy()
-            end_indexes.append(-1)
+            end_indexes.append(None)
 
             # if scrip fails and you want to resume, changes the start_indexes
             # after this comment to the desired values
