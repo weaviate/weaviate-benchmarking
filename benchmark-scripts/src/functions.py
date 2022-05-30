@@ -45,9 +45,10 @@ def add_batch(
     """
 
     start_time = time.monotonic()
-    results = client.batch.create_objects()
+    # results = client.batch.create_objects()
+    client.batch.empty_objects()
     stop_time = time.monotonic()
-    handle_results(results)
+    # handle_results(results)
     run_time = round(stop_time - start_time)
 
     logger.info(
@@ -449,8 +450,8 @@ def import_data_into_weaviate(
                             weaviate_url=weaviate_url,
                             batch_size=batch_size,
                             vectors=f['train'][start_indexes[current_index]:end_indexes[current_index]],
-                            subprocess_number=current_index,
-                            data_start_index=start_indexes[current_index]
+                            process_num=current_index,
+                            start_index=start_indexes[current_index]
                         )
                     )
                 for f in as_completed(results):
