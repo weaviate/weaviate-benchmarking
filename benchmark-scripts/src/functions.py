@@ -424,6 +424,7 @@ def import_data_into_weaviate(
     # Import
     start_time = time.monotonic()
     for proc_batch in range(ceil(nr_processes/nr_cores)):
+        batch_start_time = time.monotonic()
         with h5py.File(f'/var/hdf5/{data_file}', 'r') as f:
             nr_vectors = f['train'].shape[0]
             nr_vectors_per_core = int(nr_vectors/nr_processes)
@@ -458,6 +459,10 @@ def import_data_into_weaviate(
                     except BenchmarkImportError as error:
                         total_objects_imported += error.counter
                         import_failed = True
+        batch_run_time = time.monotonic() - batch_start_time
+        logger.info(
+            f'Import status (global) => added {total_objects_imported} of {nr_vectors} objects in {batch_run_time} seconds'
+        )
         gc.collect()
     end_time = time.monotonic()
 
