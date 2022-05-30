@@ -442,9 +442,9 @@ def import_data_into_weaviate(
                 results = []
                 for i in range(nr_cores):
                     current_index = i + proc_batch * nr_cores
-                    if current_index == nr_vectors:
+                    if current_index == nr_vectors - 1:
                         break
-                    if current_index <= 980:
+                    if current_index <= 990:
                         continue
                     else:
                         logger.info(f"{start_indexes[current_index]}, {end_indexes[current_index]}")
