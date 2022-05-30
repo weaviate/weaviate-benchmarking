@@ -447,7 +447,7 @@ def import_data_into_weaviate(
                     if current_index <= 980:
                         continue
                     else:
-                        logger.info(start_indexes[current_index],end_indexes[current_index])
+                        logger.info(f"{start_indexes[current_index]}, {end_indexes[current_index]}")
 
                     results.append(
                         executor.submit(
