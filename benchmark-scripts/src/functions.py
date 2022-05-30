@@ -442,7 +442,7 @@ def import_data_into_weaviate(
                 results = []
                 for i in range(nr_cores):
                     current_index = i + proc_batch * nr_cores
-                    if current_index == nr_vectors - 1:
+                    if current_index == nr_processes - 1:
                         break
                     if current_index <= 990:
                         continue
