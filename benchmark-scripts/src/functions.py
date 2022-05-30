@@ -447,7 +447,7 @@ def import_data_into_weaviate(
                     if current_index <= 990:
                         continue
                     else:
-                        logger.info(f"{nr_vectors}, {current_index}")
+                        logger.info(f"SI: {len(start_indexes)}, EI: {len(end_indexes)}, # {nr_vectors}, i: {current_index}")
 
                     results.append(
                         executor.submit(
