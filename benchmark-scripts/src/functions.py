@@ -1,3 +1,4 @@
+import sys
 import os
 import gc
 from typing import Sequence, Optional
@@ -15,6 +16,7 @@ from loguru import logger
 class BenchmarkImportError(Exception):
 
     def __init__(self, counter: int):
+        super().__init__()
         self.counter = counter
 
 
@@ -87,7 +89,7 @@ def match_results(test_set: Sequence, weaviate_result_set: dict, k: int):
     score = 0
 
     # return if no result
-    if weaviate_result_set['data']['Get']['Benchmark'] == None:
+    if weaviate_result_set['data']['Get']['Benchmark'] is None:
         return score
 
     # create array from Weaviate result
@@ -255,7 +257,7 @@ def create_schema(
         try:
             client.schema.delete_all()
             # Sleeping to avoid load timeouts
-        except:
+        except Exception:
             logger.exception(
                 'Something is wrong with removing the class, sleep 4 minutes and try again'
             )
@@ -339,7 +341,7 @@ def import_data_slice_to_weaviate(
     try:
         client = Client(
             url=weaviate_url,
-            timeout_config=(5, 60),
+            timeout_config=(5, 120),
         )
         client.batch.configure(
             timeout_retries=10,
@@ -421,8 +423,8 @@ def import_data_into_weaviate(
     import_failed = False
     total_objects_imported = 0
 
-    with h5py.File(f'/var/hdf5/{data_file}', 'r') as f:
-        nr_vectors = f['train'].shape[0]
+    with h5py.File(f'/var/hdf5/{data_file}', 'r') as file:
+        nr_vectors = len(file['train'])
         nr_vectors_per_core = int(nr_vectors/nr_processes)
 
         start_indexes = [nr_vectors_per_core * i for i in range(nr_processes)]
@@ -434,11 +436,8 @@ def import_data_into_weaviate(
         # NOTE: make sure not to call `create_schema` in case you want to resume import
         # start_indexes = []
 
-        # Import
         start_time = time.monotonic()
-        for proc_batch in range(ceil(nr_processes/nr_cores)):
-            batch_start_time = time.monotonic()
-            
+        for proc_batch in range(ceil(nr_processes/nr_cores)):            
             with ProcessPoolExecutor() as executor:
                 results = []
                 for i in range(nr_cores):
@@ -450,31 +449,30 @@ def import_data_into_weaviate(
                             import_data_slice_to_weaviate,
                             weaviate_url=weaviate_url,
                             batch_size=batch_size,
-                            vectors=f['train'][start_indexes[current_index]:end_indexes[current_index]],
-                            subprocess_number=current_index,
-                            data_start_index=start_indexes[current_index]
+                            vectors=file['train'][start_indexes[current_index]:end_indexes[current_index]],
+                            process_num=current_index,
+                            start_index=start_indexes[current_index]
                         )
                     )
-                for f in as_completed(results):
+                for future in as_completed(results):
                     try:
-                        total_objects_imported += f.result()
+                        total_objects_imported += future.result()
                     except BenchmarkImportError as error:
                         total_objects_imported += error.counter
                         import_failed = True
-            batch_run_time = time.monotonic() - batch_start_time
+            batch_run_time = round(time.monotonic() - start_time)
             logger.info(
                 f'Import status (global) => added {total_objects_imported} of {nr_vectors} objects in {batch_run_time} seconds'
             )
             gc.collect()
-    end_time = time.monotonic()
+    import_time = round(time.monotonic() - start_time)
 
     if import_failed:
         logger.error(
             f"Import failed. Total objects imported: {total_objects_imported} in {import_time} seconds"
         )
-        exit(1)
+        sys.exit(1)
     
-    import_time = round(end_time - start_time)
     logger.info(
         f'done importing {total_objects_imported} objects in {import_time} seconds'
     )
@@ -506,7 +504,7 @@ def run_the_benchmarks(
             client = Client(weaviate_url, timeout_config=(5, 120))
         except Exception:
             print('Error, can\'t connect to Weaviate, is it running? Exiting ...')
-            exit(1)
+            sys.exit(1)
 
     # iterate over settings
     for benchmark_file in benchmark_file_array:
@@ -529,7 +527,7 @@ def run_the_benchmarks(
                     batch_size=10_000,
                     data_file=benchmark_file[0],
                     weaviate_url=weaviate_url,
-                    nr_processes=10_000,
+                    nr_processes=1_000,
                     nr_cores=CPUs,
                 )
 
