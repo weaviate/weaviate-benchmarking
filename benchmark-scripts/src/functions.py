@@ -454,9 +454,9 @@ def import_data_into_weaviate(
                             start_index=start_indexes[current_index]
                         )
                     )
-                for f in as_completed(results):
+                for future in as_completed(results):
                     try:
-                        total_objects_imported += f.result()
+                        total_objects_imported += future.result()
                     except BenchmarkImportError as error:
                         total_objects_imported += error.counter
                         import_failed = True
