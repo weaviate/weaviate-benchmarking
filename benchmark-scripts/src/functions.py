@@ -16,7 +16,7 @@ from loguru import logger
 class BenchmarkImportError(Exception):
 
     def __init__(self, counter: int):
-        super().__init__()
+        super().__init__(counter)
         self.counter = counter
 
 
