@@ -15,9 +15,11 @@ from loguru import logger
 
 class BenchmarkImportError(Exception):
 
-    def __init__(self, counter: int):
-        super().__init__(counter)
+    def __init__(self, counter: int, process_num: int, unimported_interval: tuple):
+        super().__init__(counter, process_num, unimported_interval)
         self.counter = counter
+        self.process_num = process_num
+        self.unimported_interval = unimported_interval
 
 
 def add_batch(
@@ -335,6 +337,7 @@ def import_data_slice_to_weaviate(
     batch_counter = 0
     stop_index = start_index
     nr_vectors = len(vectors)
+    log_file_name = f'/var/logs/stop_index_process_{process_num}.txt'
     logger.info(
         f'Start import sub-process {process_num}, vectors start index {start_index}'
     )
@@ -348,9 +351,9 @@ def import_data_slice_to_weaviate(
         )
         for vector in vectors:
             client.batch.add_data_object(
-                data_object={'counter': counter + start_index},
+                data_object={'counter': start_index + counter},
                 class_name='Benchmark',
-                uuid=str(uuid.uuid3(uuid.NAMESPACE_DNS, str(counter + start_index))),
+                uuid=str(uuid.uuid3(uuid.NAMESPACE_DNS, str(start_index + counter))),
                 vector=vector,
             )
             if batch_counter == batch_size:
@@ -375,12 +378,20 @@ def import_data_slice_to_weaviate(
     except Exception:
         logger.exception(
             f"sub-process {process_num}: Import failed at relative counter: {counter}, "
-            f"global counter: {counter + start_index}"
+            f"global counter: {start_index + counter}"
         )
-        with open(f'/var/logs/stop_index_process_{process_num}.txt', 'w') as file:
-            file.write(str(counter + start_index))
-        raise BenchmarkImportError(counter) from None
+        with open(log_file_name, 'w') as file:
+            file.write(str(start_index + counter))
+        
+        error = BenchmarkImportError(
+            counter=counter,
+            process_num=process_num,
+            unimported_interval=(start_index + counter, start_index + nr_vectors),
+        )
+        raise error from None
 
+    if os.path.exists(log_file_name):
+        os.remove(log_file_name)
     del client
     del vectors
     gc.collect()
@@ -423,6 +434,9 @@ def import_data_into_weaviate(
     import_failed = False
     total_objects_imported = 0
 
+    failed_ranges = []
+    failed_processes = []
+
     with h5py.File(f'/var/hdf5/{data_file}', 'r') as file:
         nr_vectors = len(file['train'])
         nr_vectors_per_core = int(nr_vectors/nr_processes)
@@ -436,6 +450,7 @@ def import_data_into_weaviate(
         # NOTE: make sure not to call `create_schema` in case you want to resume import
         # start_indexes = []
 
+        # Import data and save all sub-intervals that failed to be imported so we can try again
         start_time = time.monotonic()
         for proc_batch in range(ceil(nr_processes/nr_cores)):            
             with ProcessPoolExecutor() as executor:
@@ -459,12 +474,44 @@ def import_data_into_weaviate(
                         total_objects_imported += future.result()
                     except BenchmarkImportError as error:
                         total_objects_imported += error.counter
+                        failed_processes.append(error.process_num)
+                        failed_ranges.append(error.unimported_interval)
+            batch_run_time = round(time.monotonic() - start_time)
+            logger.info(
+                f'Import status (global) => added {total_objects_imported} of {nr_vectors} objects in {batch_run_time} seconds'
+            )
+            gc.collect()
+
+        # Import data from all sub-intervals that failed to be imported
+        for proc_batch in range(ceil(len(failed_ranges)/nr_cores)):            
+            with ProcessPoolExecutor() as executor:
+                results = []
+                for i in range(nr_cores):
+                    current_index = i + proc_batch * nr_cores
+                    if current_index == len(failed_ranges):
+                        break
+                    results.append(
+                        executor.submit(
+                            import_data_slice_to_weaviate,
+                            weaviate_url=weaviate_url,
+                            batch_size=batch_size,
+                            vectors=file['train'][failed_ranges[current_index][0]:failed_ranges[current_index][1]],
+                            process_num=failed_processes[current_index],
+                            start_index=failed_ranges[current_index][0]
+                        )
+                    )
+                for future in as_completed(results):
+                    try:
+                        total_objects_imported += future.result()
+                    except BenchmarkImportError as error:
+                        total_objects_imported += error.counter
                         import_failed = True
             batch_run_time = round(time.monotonic() - start_time)
             logger.info(
                 f'Import status (global) => added {total_objects_imported} of {nr_vectors} objects in {batch_run_time} seconds'
             )
             gc.collect()
+
     import_time = round(time.monotonic() - start_time)
 
     if import_failed:
