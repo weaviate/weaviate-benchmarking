@@ -28,6 +28,7 @@ def add_batch(
         nr_vectors: int,
         process_num: int,
         start_index: int,
+        error_retries: int, 
     ) -> None:
     """
     Submit Batch to Weaviate server.
@@ -46,10 +47,22 @@ def add_batch(
     start_index : int
         The global start index of the dataset for the current Process. The process is going to
         import the data in this interval [start_index: start_index + nr_vectors].
+    error_retries : int
+        Number of times to re-try to create the Batch in case it Errors.
     """
 
     start_time = time.monotonic()
-    results = client.batch.create_objects()
+    for i in range(error_retries + 1):
+        try:
+            results = client.batch.create_objects()
+        except Exception as error:
+            if i == error_retries:
+                raise
+            logger.info(
+                f"Process {process_num}: Batch failed to be created with exception: {type(error)}"
+                f"re-trying in {(i + 1) * 2} seconds [{i+1}/{error_retries}]"
+            )
+            time.sleep((i + 1) * 2)
     stop_time = time.monotonic()
     handle_results(results)
     run_time = round(stop_time - start_time)
@@ -299,6 +312,7 @@ def import_data_slice_to_weaviate(
         vectors: Sequence,
         process_num: int,
         start_index: int,
+        error_retries: int,
     ) -> int:
     """
     Import a slice of the dataset in a different Process. On exceptions during import saves the
@@ -320,6 +334,8 @@ def import_data_slice_to_weaviate(
     start_index : int
         The global start index of the dataset for the current Process. The process is going to
         import the data in this interval [start_index: start_index + len(vectors)].
+    error_retries : int
+        Number of times to re-try to create the Batch in case it Errors.
 
     Raises
     ------
@@ -346,9 +362,6 @@ def import_data_slice_to_weaviate(
             url=weaviate_url,
             timeout_config=(5, 120),
         )
-        client.batch.configure(
-            timeout_retries=10,
-        )
         for vector in vectors:
             client.batch.add_data_object(
                 data_object={'counter': start_index + counter},
@@ -363,6 +376,7 @@ def import_data_slice_to_weaviate(
                     nr_vectors=nr_vectors,
                     process_num=process_num,
                     start_index=start_index,
+                    error_retries=error_retries,
                 )
                 stop_index += batch_counter
                 batch_counter = 0
@@ -374,6 +388,7 @@ def import_data_slice_to_weaviate(
             nr_vectors=nr_vectors,
             process_num=process_num,
             start_index=start_index,
+            error_retries=error_retries,
         )
     except Exception:
         logger.exception(
@@ -404,6 +419,7 @@ def import_data_into_weaviate(
         weaviate_url: str,
         nr_processes: int,
         nr_cores: int,
+        error_retries: int,
     ) -> int:
     """
     Import data into Weaviate. This is done using parallel Processes.
@@ -424,6 +440,8 @@ def import_data_into_weaviate(
     nr_cores : int
         Number of cores the machine that runs this scrip has. This is used to create batches
         of processes to run in parallel.
+    error_retries : int
+        Number of times to re-try to create the Batch in case it Errors.
 
     Returns
     -------
@@ -466,7 +484,8 @@ def import_data_into_weaviate(
                             batch_size=batch_size,
                             vectors=file['train'][start_indexes[current_index]:end_indexes[current_index]],
                             process_num=current_index,
-                            start_index=start_indexes[current_index]
+                            start_index=start_indexes[current_index],
+                            error_retries=error_retries,
                         )
                     )
                 for future in as_completed(results):
@@ -497,7 +516,8 @@ def import_data_into_weaviate(
                             batch_size=batch_size,
                             vectors=file['train'][failed_ranges[current_index][0]:failed_ranges[current_index][1]],
                             process_num=failed_processes[current_index],
-                            start_index=failed_ranges[current_index][0]
+                            start_index=failed_ranges[current_index][0],
+                            error_retries=error_retries,
                         )
                     )
                 for future in as_completed(results):
@@ -571,11 +591,12 @@ def run_the_benchmarks(
                 )
                 # import data
                 import_time = import_data_into_weaviate(
-                    batch_size=10_000,
+                    batch_size=1_000,
                     data_file=benchmark_file[0],
                     weaviate_url=weaviate_url,
                     nr_processes=1_000,
                     nr_cores=CPUs,
+                    error_retries=10,
                 )
 
                 # Find neighbors based on UUID and ef settings
