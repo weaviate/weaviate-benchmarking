@@ -72,7 +72,7 @@ func (c Config) validateRandomText() error {
 
 func (c Config) validateRandomVectors() error {
 	if c.Dimensions == 0 {
-		return errors.Errorf("dimenstions must be set and larger than 0\n")
+		return errors.Errorf("dimensions must be set and larger than 0\n")
 	}
 
 	return nil
