@@ -55,6 +55,7 @@ def add_batch(
     for i in range(error_retries + 1):
         try:
             results = client.batch.create_objects()
+            break
         except Exception as error:
             if i == error_retries:
                 raise
@@ -85,13 +86,9 @@ def handle_results(results: Optional[dict]) -> None:
 
     if results is not None:
         for result in results:
-            if (
-                'result' in result
-                and 'errors' in result['result']
-                and 'error' in result['result']['errors']
-            ):
-                for message in result['result']['errors']['error']:
-                    logger.error(message['message'])
+            if 'result' in result and 'errors' in result['result']:
+                if 'error' in result['result']['errors']:
+                    logger.error(result['result']['errors'])
 
 
 def match_results(test_set: Sequence, weaviate_result_set: dict, k: int):
@@ -271,11 +268,11 @@ def create_schema(
     if client.schema.contains():
         try:
             client.schema.delete_all()
-            # Sleeping to avoid load timeouts
         except Exception:
             logger.exception(
-                'Something is wrong with removing the class, sleep 4 minutes and try again'
+                'Could not delete schema, sleep 4 minutes and try again'
             )
+            # Sleeping to avoid load timeouts
             time.sleep(240)
             client.schema.delete_all()
 
@@ -355,7 +352,7 @@ def import_data_slice_to_weaviate(
     nr_vectors = len(vectors)
     log_file_name = f'/var/logs/stop_index_process_{process_num}.txt'
     logger.info(
-        f'Start import sub-process {process_num}, vectors start index {start_index}'
+        f'Start import sub-process {process_num}, vectors indexes {start_index}:{start_index + nr_vectors}'
     )
     try:
         client = Client(
@@ -366,7 +363,7 @@ def import_data_slice_to_weaviate(
             client.batch.add_data_object(
                 data_object={'counter': start_index + counter},
                 class_name='Benchmark',
-                uuid=str(uuid.uuid3(uuid.NAMESPACE_DNS, str(start_index + counter))),
+                uuid=uuid.uuid3(uuid.NAMESPACE_DNS, str(start_index + counter)),
                 vector=vector,
             )
             if batch_counter == batch_size:
@@ -417,7 +414,7 @@ def import_data_into_weaviate(
         batch_size: int,
         data_file: str,
         weaviate_url: str,
-        nr_processes: int,
+        nr_data_splits: int,
         nr_cores: int,
         error_retries: int,
     ) -> int:
@@ -432,10 +429,11 @@ def import_data_into_weaviate(
         Data file name that contains the vectors.
     weaviate_url : str
         Weaviate URL.
-    nr_processes : int
-        Number of processes to create. Processes are not going to be created all at once,
+    nr_data_splits : int
+        Number of data splits. Each split is going to be run on a different process to allow
+        parallel imports. Processes are not going to be created all at once,
         they are going to be created in a batch of `nr_cores`. The data is split into
-        `nr_processes`, this allows to have less data in Memory. If the scrip fails due
+        `nr_data_splits`, this allows to have less data in Memory. If the scrip fails due
         to OOM increase this value.
     nr_cores : int
         Number of cores the machine that runs this scrip has. This is used to create batches
@@ -454,35 +452,34 @@ def import_data_into_weaviate(
 
     failed_ranges = []
     failed_processes = []
-
+    
     with h5py.File(f'/var/hdf5/{data_file}', 'r') as file:
         nr_vectors = len(file['train'])
-        nr_vectors_per_core = int(nr_vectors/nr_processes)
+        nr_vectors_per_core = int(nr_vectors/nr_data_splits)
 
-        start_indexes = [nr_vectors_per_core * i for i in range(nr_processes)]
-        end_indexes = start_indexes[1:].copy()
-        end_indexes.append(None)
+        start_indexes = [nr_vectors_per_core * i for i in range(nr_data_splits)]
+        start_indexes.append(None)
 
-        # if scrip fails and you want to resume, changes the start_indexes
+        # if scrip fails and you want to resume, changes the `start_indexes`
         # after this comment to the desired values
         # NOTE: make sure not to call `create_schema` in case you want to resume import
         # start_indexes = []
 
         # Import data and save all sub-intervals that failed to be imported so we can try again
         start_time = time.monotonic()
-        for proc_batch in range(ceil(nr_processes/nr_cores)):            
+        for proc_batch in range(ceil(nr_data_splits/nr_cores)):            
             with ProcessPoolExecutor() as executor:
                 results = []
                 for i in range(nr_cores):
                     current_index = i + proc_batch * nr_cores
-                    if current_index == nr_processes:
+                    if current_index == nr_data_splits:
                         break
                     results.append(
                         executor.submit(
                             import_data_slice_to_weaviate,
                             weaviate_url=weaviate_url,
                             batch_size=batch_size,
-                            vectors=file['train'][start_indexes[current_index]:end_indexes[current_index]],
+                            vectors=file['train'][start_indexes[current_index]:start_indexes[current_index] + nr_vectors_per_core],
                             process_num=current_index,
                             start_index=start_indexes[current_index],
                             error_retries=error_retries,
@@ -561,16 +558,15 @@ def run_the_benchmarks(
     try:
         # if weaviate is running in the same docker-compose.yml then this function is going to
         # create a Client faster than Weaviate is ready, so we sleep 10 seconds
-        time.sleep(10)
+        time.sleep(2)
         client = Client(weaviate_url, timeout_config=(5, 120))
     except Exception:
-        print('Error, can\'t connect to Weaviate, is it running?')
-        print('Retrying to connect in 30 seconds.')
+        logger.info("Can't connect to Weaviate, is it running? Retrying to connect in 30 seconds.")
         time.sleep(30)
         try:
             client = Client(weaviate_url, timeout_config=(5, 120))
         except Exception:
-            print('Error, can\'t connect to Weaviate, is it running? Exiting ...')
+            logger.exception('Error, can\'t connect to Weaviate, is it running? Exiting ...')
             sys.exit(1)
 
     # iterate over settings
@@ -578,23 +574,25 @@ def run_the_benchmarks(
         for efConstruction in efConstruction_array:
             for maxConnections in maxConnections_array:
 
+                data_file, distance = benchmark_file
+
                 # NOTE: make sure not to call `create_schema` in case you want to resume import
                 create_schema(
                     client=client,
                     efConstruction=efConstruction,
                     maxConnections=maxConnections,
-                    distance=benchmark_file[1],
+                    distance=distance,
                 )
                 logger.info(
-                    f"Start import process for {benchmark_file[0]}, ef: {efConstruction}, "
+                    f"Start import process for {data_file}, ef: {efConstruction}, "
                     f"maxConnections: {maxConnections}, CPUs: {CPUs}"
                 )
                 # import data
                 import_time = import_data_into_weaviate(
                     batch_size=1_000,
-                    data_file=benchmark_file[0],
+                    data_file=data_file,
                     weaviate_url=weaviate_url,
-                    nr_processes=1_000,
+                    nr_data_splits=1_000,
                     nr_cores=CPUs,
                     error_retries=10,
                 )
@@ -609,7 +607,7 @@ def run_the_benchmarks(
                 # write json file
                 if not os.path.exists('results'):
                     os.makedirs('results')
-                output_json = f'results/weaviate_benchmark__{benchmark_file[0]}__{efConstruction}__{maxConnections}.json'
+                output_json = f'results/weaviate_benchmark__{data_file}__{efConstruction}__{maxConnections}.json'
                 logger.info('Writing JSON file with results to: ' + output_json)
                 with open(output_json, 'w') as outfile:
                     json.dump(results, outfile)

@@ -1,5 +1,5 @@
 import os
-from functions import *
+from functions import run_the_benchmarks
 
 
 if __name__ == '__main__':

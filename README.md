@@ -100,7 +100,7 @@ Build the container: `$ docker-compose build --no-cache`
 
 Run the container: `$ docker-compose up -d`
 
-The benchmark container will ouput files in the format: `results/weaviate_benchmark__{benchmark file}__{ef constructuin}__{max connections}.json`
+The benchmark container will ouput files in the format: `results/weaviate_benchmark__{benchmark file}__{ef construction}__{max connections}.json`
 
 ### Inverted index benchmark
 

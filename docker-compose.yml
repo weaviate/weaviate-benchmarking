@@ -19,14 +19,14 @@ services:
     - '8080'
     - --scheme
     - http
-    image: docker.io/semitechnologies/weaviate:1.13.2
+    image: docker.io/semitechnologies/weaviate:1.14.1
     ports:
       - 8080:8080
     volumes:
       - $PWD/weaviate-data:/var/lib/weaviate
     restart: on-failure:0
     environment:
-      GOGC: 800
+      GOGC: 100
       QUERY_DEFAULTS_LIMIT: 25
       AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
       PERSISTENCE_DATA_PATH: '/var/lib/weaviate'

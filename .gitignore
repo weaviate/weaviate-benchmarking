@@ -3,3 +3,4 @@ weaviate-data
 benchmark-data
 results
 logs
+local-test
