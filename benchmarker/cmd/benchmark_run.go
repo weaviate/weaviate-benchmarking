@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -34,6 +35,8 @@ func benchmark(cfg Config, getQueryFn func(className string) []byte) Results {
 	}
 
 	c := &http.Client{Transport: t}
+
+	httpAuth, httpAuthPresent := os.LookupEnv("HTTP_AUTH")
 
 	queues := make([][][]byte, cfg.Parallel)
 	rand.Seed(time.Now().UnixNano())
@@ -68,6 +71,10 @@ func benchmark(cfg Config, getQueryFn func(className string) []byte) Results {
 				}
 
 				req.Header.Set("content-type", "application/json")
+
+				if httpAuthPresent {
+					req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", httpAuth))
+				}
 
 				res, err := c.Do(req)
 				if err != nil {

@@ -99,7 +99,7 @@ func benchmarkDataset(cfg Config, queries Queries) Results {
 		defer func() { i++ }()
 
 		if cfg.API == "graphql" {
-			return nearVectorQueryJSONGraphQL(cfg.ClassName, queries[i], cfg.Limit)
+			return nearVectorQueryJSONGraphQL(cfg.ClassName, queries[i], cfg.Limit, cfg.WhereFilter)
 		}
 
 		if cfg.API == "rest" {

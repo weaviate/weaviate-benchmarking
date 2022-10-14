@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"math/rand"
 	"os"
 
@@ -20,7 +21,7 @@ func initRandomVectors() {
 		"limit", "l", 10, "Set the query limit (top_k)")
 	randomVectorsCmd.PersistentFlags().IntVarP(&globalConfig.Dimensions,
 		"dimensions", "d", 768, "Set the vector dimensions (must match your data)")
-	randomVectorsCmd.PersistentFlags().StringVarP(&globalConfig.ClassName,
+	randomVectorsCmd.PersistentFlags().StringVarP(&globalConfig.WhereFilter,
 		"where", "w", "", "An entire where filter as a string")
 	randomVectorsCmd.PersistentFlags().StringVarP(&globalConfig.ClassName,
 		"className", "c", "", "The Weaviate class to run the benchmark against")
@@ -50,10 +51,12 @@ var randomVectorsCmd = &cobra.Command{
 		}
 
 		if len(cfg.WhereFilter) > 0 {
-			cfg.WhereFilter = fmt.Sprintf(", where: { %s }", cfg.WhereFilter)
+			filter := fmt.Sprintf(", where: { %s }", cfg.WhereFilter)
+			cfg.WhereFilter = strings.Replace(filter, "\"", "\\\"", -1)
 		}
 
 		if cfg.DB == "weaviate" {
+
 			var w io.Writer
 			if cfg.OutputFile == "" {
 				w = os.Stdout
@@ -101,11 +104,11 @@ func randomVector(dims int) []float32 {
 	return vector
 }
 
-func nearVectorQueryJSONGraphQL(className string, vec []float32, limit int, wherefilter string) []byte {
+func nearVectorQueryJSONGraphQL(className string, vec []float32, limit int, whereFilter string) []byte {
 	vecJSON, _ := json.Marshal(vec)
 	return []byte(fmt.Sprintf(`{
-"query": "{ Get { %s(limit: %d, nearVector: {vector:%s} %s) { _additional { id } } } }"
-}`, className, limit, string(vecJSON), wherefilter))
+"query": "{ Get { %s(limit: %d, nearVector: {vector:%s}%s) { _additional { id } } } }"
+}`, className, limit, string(vecJSON), whereFilter))
 }
 
 func nearVectorQueryJSONRest(className string, vec []float32, limit int) []byte {
