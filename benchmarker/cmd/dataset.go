@@ -102,6 +102,10 @@ func benchmarkDataset(cfg Config, queries Queries) Results {
 			return nearVectorQueryJSONGraphQL(cfg.ClassName, queries[i], cfg.Limit, cfg.WhereFilter)
 		}
 
+		if cfg.API == "graphql-raw" {
+			return nearVectorQueryJSONGraphQL(cfg.ClassName, queries[i], cfg.Limit, cfg.WhereFilter)
+		}
+
 		if cfg.API == "rest" {
 			return nearVectorQueryJSONRest(cfg.ClassName, queries[i], cfg.Limit)
 		}

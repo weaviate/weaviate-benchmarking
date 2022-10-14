@@ -13,6 +13,7 @@ func init() {
 	initRandomVectors()
 	initRandomText()
 	initDataset()
+	initRaw()
 }
 
 var rootCmd = &cobra.Command{

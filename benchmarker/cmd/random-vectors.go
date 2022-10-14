@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
 	"math/rand"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -102,6 +102,12 @@ func randomVector(dims int) []float32 {
 	}
 
 	return vector
+}
+
+func nearVectorQueryJSONGraphQLRaw(raw string) []byte {
+	return []byte(fmt.Sprintf(`{
+"query": "%s"
+}`, raw))
 }
 
 func nearVectorQueryJSONGraphQL(className string, vec []float32, limit int, whereFilter string) []byte {

@@ -43,9 +43,9 @@ func (c Config) validateCommon() error {
 		return errors.Errorf("origin must be set")
 	}
 
-	if c.ClassName == "" {
-		return errors.Errorf("className must be set\n")
-	}
+	// if c.ClassName == "" {
+	// 	return errors.Errorf("className must be set\n")
+	// }
 
 	switch c.API {
 	case "graphql", "nearvector":
