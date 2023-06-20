@@ -113,6 +113,7 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
         }
 
     loguru.logger.info('Find neighbors with ef = ' + str(ef))
+    print("file", benchmark_file[0])
     with h5py.File('/var/hdf5/' + benchmark_file[0], 'r') as f:
         test_vectors = f['test']
         test_vectors_len = len(f['test'])
@@ -221,6 +222,8 @@ def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file)
 
     # Import
     loguru.logger.info('Start import process for ' + benchmark_file[0] + ', ef' + str(efConstruction) + ', maxConnections' + str(maxConnections))
+    import os
+    print("FUNC h5py", benchmark_file[0], os.listdir("/var/hdf5") )
     with h5py.File('/var/hdf5/' + benchmark_file[0], 'r') as f:
         vectors = f['train']
         c = 0
@@ -266,6 +269,7 @@ def run_the_benchmarks(weaviate_url, CPUs, efConstruction_array, maxConnections_
             for maxConnections in maxConnections_array:
                
                 # import data
+                print("before import", benchmark_file)
                 import_time = import_into_weaviate(client, efConstruction, maxConnections, benchmark_file)
 
                 # Find neighbors based on UUID and ef settings
