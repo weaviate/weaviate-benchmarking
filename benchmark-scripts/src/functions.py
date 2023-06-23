@@ -79,21 +79,21 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
         'efConstruction': efConstruction,
         'maxConnections': maxConnections,
         'recall': {
-            '100': {
-                'highest': 0,
-                'lowest': 100,
-                'average': 0
-            },
+#            '100': {
+#                'highest': 0,
+#                'lowest': 100,
+#                'average': 0
+#            },
             '10': {
                 'highest': 0,
                 'lowest': 100,
                 'average': 0
             },
-            '1': {
-                'highest': 0,
-                'lowest': 100,
-                'average': 0
-            },
+#            '1': {
+#                'highest': 0,
+#                'lowest': 100,
+#                'average': 0
+#            },
         },
         'requestTimes': {}
     }
@@ -107,12 +107,13 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
     ##
     c = 0
     all_scores = {
-            '100':[],
+#            '100':[],
             '10':[],
-            '1': [],
+##            '1': [],
         }
 
     loguru.logger.info('Find neighbors with ef = ' + str(ef))
+    #print("file", benchmark_file[0])
     with h5py.File('/var/hdf5/' + benchmark_file[0], 'r') as f:
         test_vectors = f['test']
         test_vectors_len = len(f['test'])
@@ -123,9 +124,10 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
             
             # Start request
             query_result = client.query.get("Benchmark", ["counter"]).with_near_vector(nearVector).with_limit(100).do()    
-
-            for k in [1, 10,100]:
+            #print("qr", query_result)
+            for k in [10]: #[1, 10,100]:
                 k_label=f'{k}'
+                #print("k", f['neighbors'][c])
                 score = match_results(f['neighbors'][c], query_result, k)
                 if score == 0:
                     loguru.logger.info('There is a 0 score, this most likely means there is an issue with the dataset OR you have very low index settings. Found for vector: ' + str(test_vector[0]))
@@ -156,14 +158,14 @@ def conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruc
             vector_write_array.append(vector.tolist())
         with open('queries.json', 'w', encoding='utf-8') as jf:
             json.dump(vector_write_array, jf, indent=2)
-        results['requestTimes']['limit_1'] = run_speed_test(1, CPUs, weaviate_url)
+        #results['requestTimes']['limit_1'] = run_speed_test(1, CPUs, weaviate_url)
         results['requestTimes']['limit_10'] = run_speed_test(10, CPUs, weaviate_url)
-        results['requestTimes']['limit_100'] = run_speed_test(100, CPUs, weaviate_url)
+        #results['requestTimes']['limit_100'] = run_speed_test(100, CPUs, weaviate_url)
 
     # add final results
     results['totalTested'] = c
     results['totalDatasetSize'] = train_vectors_len
-    for k in ['1', '10', '100']:
+    for k in [ '10']: #['1', '10', '100']:
         results['recall'][k]['average'] = sum(all_scores[k]) / len(all_scores[k])
 
     return results
@@ -221,6 +223,8 @@ def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file)
 
     # Import
     loguru.logger.info('Start import process for ' + benchmark_file[0] + ', ef' + str(efConstruction) + ', maxConnections' + str(maxConnections))
+    import os
+    print("FUNC h5py", benchmark_file[0], os.listdir("/var/hdf5") )
     with h5py.File('/var/hdf5/' + benchmark_file[0], 'r') as f:
         vectors = f['train']
         c = 0
@@ -266,6 +270,7 @@ def run_the_benchmarks(weaviate_url, CPUs, efConstruction_array, maxConnections_
             for maxConnections in maxConnections_array:
                
                 # import data
+                print("before import", benchmark_file)
                 import_time = import_into_weaviate(client, efConstruction, maxConnections, benchmark_file)
 
                 # Find neighbors based on UUID and ef settings
