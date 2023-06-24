@@ -281,7 +281,8 @@ def run_the_benchmarks(weaviate_url, CPUs, efConstruction_array, maxConnections_
                 for ef in ef_array:
                     result = conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruction, maxConnections)
                     result['importTime'] = import_time
-                    result['wallImportTime'] = import_time
+                    result['startTime'] = start_time.timestamp()
+                    result['wallImportTime'] = wall_time_import_time.seconds
                     result['vectorCacheMaxObjects'] = VectorCacheMaxObjects 
                     results.append(result)
                 
