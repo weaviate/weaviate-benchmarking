@@ -8,6 +8,8 @@ import h5py
 import weaviate
 import loguru
 
+# Config
+VectorCacheMaxObjects = 0
 
 def add_batch(client, c, vector_len):
     '''Adds batch to Weaviate and returns
@@ -213,7 +215,7 @@ def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file)
                 "ef": -1,
                 "efConstruction": efConstruction,
                 "maxConnections": maxConnections,
-                "vectorCacheMaxObjects": 1000000000,
+                "vectorCacheMaxObjects": VectorCacheMaxObjects, #1000000000,
                 "distance": benchmark_file[1]
             }
         }]
@@ -224,7 +226,6 @@ def import_into_weaviate(client, efConstruction, maxConnections, benchmark_file)
     # Import
     loguru.logger.info('Start import process for ' + benchmark_file[0] + ', ef' + str(efConstruction) + ', maxConnections' + str(maxConnections))
     import os
-    print("FUNC h5py", benchmark_file[0], os.listdir("/var/hdf5") )
     with h5py.File('/var/hdf5/' + benchmark_file[0], 'r') as f:
         vectors = f['train']
         c = 0
@@ -270,14 +271,18 @@ def run_the_benchmarks(weaviate_url, CPUs, efConstruction_array, maxConnections_
             for maxConnections in maxConnections_array:
                
                 # import data
-                print("before import", benchmark_file)
+                start_time = datetime.datetime.now()
                 import_time = import_into_weaviate(client, efConstruction, maxConnections, benchmark_file)
+                stop_time = datetime.datetime.now()
+                wall_time_import_time = stop_time - start_time
 
                 # Find neighbors based on UUID and ef settings
                 results = []
                 for ef in ef_array:
                     result = conduct_benchmark(weaviate_url, CPUs, ef, client, benchmark_file, efConstruction, maxConnections)
                     result['importTime'] = import_time
+                    result['wallImportTime'] = import_time
+                    result['vectorCacheMaxObjects'] = VectorCacheMaxObjects 
                     results.append(result)
                 
                 # write json file
