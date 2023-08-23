@@ -110,6 +110,10 @@ func benchmarkDataset(cfg Config, queries Queries) Results {
 			return nearVectorQueryJSONRest(cfg.ClassName, queries[i], cfg.Limit)
 		}
 
+		if cfg.API == "grpc" {
+			return nearVectorQueryGrpc(cfg.ClassName, queries[i], cfg.Limit)
+		}
+
 		return nil
 	})
 }

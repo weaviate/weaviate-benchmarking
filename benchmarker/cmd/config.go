@@ -48,7 +48,7 @@ func (c Config) validateCommon() error {
 	// }
 
 	switch c.API {
-	case "graphql", "nearvector":
+	case "graphql", "nearvector", "grpc":
 	default:
 		return errors.Errorf("unsupported API %q", c.API)
 	}

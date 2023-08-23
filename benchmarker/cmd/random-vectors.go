@@ -9,6 +9,9 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	weaviategrpc "github.com/weaviate/weaviate/grpc"
+
+	"google.golang.org/protobuf/proto"
 )
 
 func initRandomVectors() {
@@ -125,6 +128,29 @@ func nearVectorQueryJSONRest(className string, vec []float32, limit int) []byte 
 }`, string(vecJSON), limit))
 }
 
+func nearVectorQueryGrpc(className string, vec []float32, limit int) []byte {
+
+	searchRequest := &weaviategrpc.SearchRequest{
+		ClassName: className,
+		Limit:     uint32(limit),
+		NearVector: &weaviategrpc.NearVectorParams{
+			Vector: vec,
+		},
+		AdditionalProperties: &weaviategrpc.AdditionalProperties{
+			Certainty: false,
+			Distance:  false,
+			Uuid:      true,
+		},
+	}
+
+	data, err := proto.Marshal(searchRequest)
+	if err != nil {
+		fmt.Printf("grpc marshal err: %v\n", err)
+	}
+
+	return data
+}
+
 func benchmarkNearVector(cfg Config) Results {
 	return benchmark(cfg, func(className string) []byte {
 		if cfg.API == "graphql" {
@@ -133,6 +159,10 @@ func benchmarkNearVector(cfg Config) Results {
 
 		if cfg.API == "rest" {
 			return nearVectorQueryJSONRest(cfg.ClassName, randomVector(cfg.Dimensions), cfg.Limit)
+		}
+
+		if cfg.API == "grpc" {
+			return nearVectorQueryGrpc(cfg.ClassName, randomVector(cfg.Dimensions), cfg.Limit)
 		}
 
 		return nil

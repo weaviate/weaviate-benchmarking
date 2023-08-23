@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"math"
 	"math/rand"
 	"net"
@@ -15,7 +17,102 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	weaviategrpc "github.com/weaviate/weaviate/grpc"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 )
+
+func processQueueHttp(queue [][]byte, cfg *Config, c *http.Client, m *sync.Mutex, times *[]time.Duration, httpAuth string, httpAuthPresent bool) {
+	for _, query := range queue {
+		r := bytes.NewReader(query)
+		before := time.Now()
+		var url string
+		if cfg.API == "graphql" {
+			url = cfg.Origin + "/v1/graphql"
+		} else if cfg.API == "rest" {
+			url = fmt.Sprintf("%s/v1/objects/%s/_search", cfg.Origin, cfg.ClassName)
+		}
+		req, err := http.NewRequest("POST", url, r)
+		if err != nil {
+			fmt.Printf("ERROR: %v\n", err)
+			continue
+		}
+
+		req.Header.Set("content-type", "application/json")
+
+		if httpAuthPresent {
+			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", httpAuth))
+		}
+
+		res, err := c.Do(req)
+		if err != nil {
+			fmt.Printf("ERROR: %v\n", err)
+			continue
+		}
+		took := time.Since(before)
+		bytes, _ := ioutil.ReadAll(res.Body)
+		res.Body.Close()
+		var result map[string]interface{}
+		if err := json.Unmarshal(bytes, &result); err != nil {
+			fmt.Printf("JSON error: %v\n", err)
+		}
+		if cfg.API == "graphql" {
+			if result["data"] != nil && result["errors"] == nil {
+				m.Lock()
+				*times = append(*times, took)
+				m.Unlock()
+			} else {
+				fmt.Printf("GraphQL Error: %v\n", result)
+			}
+		} else {
+			if list, ok := result["objects"].([]interface{}); ok {
+				if len(list) > 0 {
+					m.Lock()
+					*times = append(*times, took)
+					m.Unlock()
+				} else {
+					fmt.Printf("REST Error: %v\n", result)
+				}
+			} else {
+				fmt.Printf("REST Error: %v\n", result)
+			}
+		}
+	}
+}
+
+func processQueueGrpc(queue [][]byte, cfg *Config, grpcConn *grpc.ClientConn, m *sync.Mutex, times *[]time.Duration) {
+
+	grpcClient := weaviategrpc.NewWeaviateClient(grpcConn)
+
+	for _, query := range queue {
+
+		searchRequest := &weaviategrpc.SearchRequest{}
+		err := proto.Unmarshal(query, searchRequest)
+		if err != nil {
+			log.Fatalf("Failed to unmarshal grpc query: %v", err)
+		}
+
+		before := time.Now()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		searchReply, err := grpcClient.Search(ctx, searchRequest)
+		if err != nil {
+			log.Fatalf("Could not search with grpc: %v", err)
+		}
+		took := time.Since(before)
+
+		if len(searchReply.GetResults()) == 0 {
+			fmt.Println("Warning no results returned from grpc")
+		}
+
+		m.Lock()
+		*times = append(*times, took)
+		m.Unlock()
+	}
+}
 
 func benchmark(cfg Config, getQueryFn func(className string) []byte) Results {
 	var times []time.Duration
@@ -34,9 +131,15 @@ func benchmark(cfg Config, getQueryFn func(className string) []byte) Results {
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 
-	c := &http.Client{Transport: t}
+	httpClient := &http.Client{Transport: t}
 
 	httpAuth, httpAuthPresent := os.LookupEnv("HTTP_AUTH")
+
+	grpcConn, err := grpc.Dial("localhost:50051", grpc.WithInsecure(), grpc.WithBlock())
+	if err != nil {
+		log.Fatalf("Did not connect: %v", err)
+	}
+	defer grpcConn.Close()
 
 	queues := make([][][]byte, cfg.Parallel)
 	rand.Seed(time.Now().UnixNano())
@@ -54,65 +157,13 @@ func benchmark(cfg Config, getQueryFn func(className string) []byte) Results {
 		wg.Add(1)
 		go func(queue [][]byte) {
 			defer wg.Done()
-
-			for _, query := range queue {
-				r := bytes.NewReader(query)
-				before := time.Now()
-				var url string
-				if cfg.API == "graphql" {
-					url = cfg.Origin + "/v1/graphql"
-				} else if cfg.API == "rest" {
-					url = fmt.Sprintf("%s/v1/objects/%s/_search", cfg.Origin, cfg.ClassName)
-				}
-				req, err := http.NewRequest("POST", url, r)
-				if err != nil {
-					fmt.Printf("ERROR: %v\n", err)
-					continue
-				}
-
-				req.Header.Set("content-type", "application/json")
-
-				if httpAuthPresent {
-					req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", httpAuth))
-				}
-
-				res, err := c.Do(req)
-				if err != nil {
-					fmt.Printf("ERROR: %v\n", err)
-					continue
-				}
-				took := time.Since(before)
-				bytes, _ := ioutil.ReadAll(res.Body)
-				res.Body.Close()
-				var result map[string]interface{}
-				if err := json.Unmarshal(bytes, &result); err != nil {
-					fmt.Printf("JSON error: %v\n", err)
-				}
-				if cfg.API == "graphql" {
-					if result["data"] != nil && result["errors"] == nil {
-						m.Lock()
-						times = append(times, took)
-						m.Unlock()
-					} else {
-						fmt.Printf("GraphQL Error: %v\n", result)
-					}
-				} else {
-					if list, ok := result["objects"].([]interface{}); ok {
-						if len(list) > 0 {
-							m.Lock()
-							times = append(times, took)
-							m.Unlock()
-						} else {
-							fmt.Printf("REST Error: %v\n", result)
-						}
-					} else {
-						fmt.Printf("REST Error: %v\n", result)
-					}
-				}
+			if cfg.API == "grpc" {
+				processQueueGrpc(queue, &cfg, grpcConn, m, &times)
+			} else {
+				processQueueHttp(queue, &cfg, httpClient, m, &times, httpAuth, httpAuthPresent)
 			}
 		}(queue)
 	}
-
 	wg.Wait()
 
 	return analyze(cfg, times, time.Since(before))
