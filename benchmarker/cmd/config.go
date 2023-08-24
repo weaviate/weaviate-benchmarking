@@ -63,6 +63,10 @@ func (c Config) validateCommon() error {
 
 	}
 
+	if c.API == "grpc" && c.WhereFilter != "" {
+		return errors.Errorf("where parameter is not yet supported on grpc")
+	}
+
 	return nil
 }
 

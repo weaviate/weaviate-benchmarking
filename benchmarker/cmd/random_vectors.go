@@ -87,11 +87,6 @@ var randomVectorsCmd = &cobra.Command{
 			return
 		}
 
-		// 		if cfg.DB == "opendistro" {
-		// 			benchmarkOpendistroVector()
-		// 			return
-		// 		}
-
 		fmt.Printf("unrecognized db\n")
 		os.Exit(1)
 	},

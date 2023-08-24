@@ -104,8 +104,8 @@ func processQueueGrpc(queue [][]byte, cfg *Config, grpcConn *grpc.ClientConn, m 
 		}
 		took := time.Since(before)
 
-		if len(searchReply.GetResults()) == 0 {
-			fmt.Println("Warning no results returned from grpc")
+		if len(searchReply.GetResults()) != cfg.Limit {
+			fmt.Printf("Warning grpc got %d results, expected %d\n", len(searchReply.GetResults()), cfg.Limit)
 		}
 
 		m.Lock()
