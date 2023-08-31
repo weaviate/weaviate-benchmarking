@@ -8,6 +8,48 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestUuidFromInt(t *testing.T) {
+	tests := []struct {
+		input  int
+		output string
+	}{
+		{0, "00000000-0000-0000-0000-000000000000"},
+		{1, "00000000-0000-0000-0000-000000000001"},
+		{255, "00000000-0000-0000-0000-0000000000ff"},
+		{959797, "00000000-0000-0000-0000-0000000ea535"},
+	}
+
+	for _, test := range tests {
+		t.Run(fmt.Sprintf("Testing with input %d", test.input), func(t *testing.T) {
+			got := uuidFromInt(test.input)
+			if got != test.output {
+				t.Errorf("For input %d, expected %s, but got %s", test.input, test.output, got)
+			}
+		})
+	}
+}
+
+func TestInt32FromUUID(t *testing.T) {
+	tests := []struct {
+		input  string
+		output int32
+	}{
+		{"00000000-0000-0000-0000-000000000000", 0},
+		{"00000000-0000-0000-0000-000000000001", 1},
+		{"00000000-0000-0000-0000-0000000000ff", 255},
+		{"00000000-0000-0000-0000-0000000ea535", 959797},
+	}
+
+	for _, test := range tests {
+		t.Run(fmt.Sprintf("Testing with input %s", test.input), func(t *testing.T) {
+			got := int32FromUUID(test.input)
+			if got != test.output {
+				t.Errorf("For input %s, expected %d, but got %d", test.input, test.output, got)
+			}
+		})
+	}
+}
+
 func TestAnalyzer(t *testing.T) {
 	fmt.Println("TestAnalyzer")
 
@@ -39,8 +81,10 @@ func TestAnalyzer(t *testing.T) {
 
 	totalTime := time.Second * 21
 
+	recall := []float64{0.7, 0.8, 0.9, 0.7, 0.8, 0.9, 0.2}
+
 	t.Run("check analyze accuracy", func(t *testing.T) {
-		results := analyze(c, durations, totalTime)
+		results := analyze(c, durations, totalTime, recall)
 
 		require.Equal(t, 10, results.Total)
 		require.Equal(t, 3, results.Failed)
@@ -48,6 +92,8 @@ func TestAnalyzer(t *testing.T) {
 		require.Equal(t, time.Second*0, results.Min)
 		require.Equal(t, time.Second*3, results.Mean)
 		require.Equal(t, 7.0/21.0, results.QueriesPerSecond)
+
+		require.Equal(t, 5.0/7.0, results.Recall)
 
 	})
 

@@ -12,7 +12,6 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
-	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -23,9 +22,14 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func processQueueHttp(queue [][]byte, cfg *Config, c *http.Client, m *sync.Mutex, times *[]time.Duration, httpAuth string, httpAuthPresent bool) {
+type QueryWithNeighbors struct {
+	Query     []byte
+	Neighbors []int32
+}
+
+func processQueueHttp(queue []QueryWithNeighbors, cfg *Config, c *http.Client, m *sync.Mutex, times *[]time.Duration) {
 	for _, query := range queue {
-		r := bytes.NewReader(query)
+		r := bytes.NewReader(query.Query)
 		before := time.Now()
 		var url string
 		if cfg.API == "graphql" {
@@ -41,8 +45,8 @@ func processQueueHttp(queue [][]byte, cfg *Config, c *http.Client, m *sync.Mutex
 
 		req.Header.Set("content-type", "application/json")
 
-		if httpAuthPresent {
-			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", httpAuth))
+		if cfg.HttpAuth != "" {
+			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", cfg.HttpAuth))
 		}
 
 		res, err := c.Do(req)
@@ -81,14 +85,14 @@ func processQueueHttp(queue [][]byte, cfg *Config, c *http.Client, m *sync.Mutex
 	}
 }
 
-func processQueueGrpc(queue [][]byte, cfg *Config, grpcConn *grpc.ClientConn, m *sync.Mutex, times *[]time.Duration) {
+func processQueueGrpc(queue []QueryWithNeighbors, cfg *Config, grpcConn *grpc.ClientConn, m *sync.Mutex, times *[]time.Duration, recall *[]float64) {
 
 	grpcClient := weaviategrpc.NewWeaviateClient(grpcConn)
 
 	for _, query := range queue {
 
 		searchRequest := &weaviategrpc.SearchRequest{}
-		err := proto.Unmarshal(query, searchRequest)
+		err := proto.Unmarshal(query.Query, searchRequest)
 		if err != nil {
 			log.Fatalf("Failed to unmarshal grpc query: %v", err)
 		}
@@ -108,14 +112,25 @@ func processQueueGrpc(queue [][]byte, cfg *Config, grpcConn *grpc.ClientConn, m 
 			fmt.Printf("Warning grpc got %d results, expected %d\n", len(searchReply.GetResults()), cfg.Limit)
 		}
 
+		ids := make([]int32, 0, len(searchReply.GetResults()))
+		for _, result := range searchReply.GetResults() {
+			ids = append(ids, int32FromUUID(result.GetAdditionalProperties().Id))
+		}
+		// fmt.Printf("ids = %v\n", ids)
+		// fmt.Printf("neighbors = %v\n", query.Neighbors[:cfg.Limit])
+		// os.Exit(0)
+		recallQuery := float64(len(intersection(ids, query.Neighbors[:cfg.Limit]))) / float64(cfg.Limit)
+
 		m.Lock()
 		*times = append(*times, took)
+		*recall = append(*recall, recallQuery)
 		m.Unlock()
 	}
 }
 
-func benchmark(cfg Config, getQueryFn func(className string) []byte) Results {
+func benchmark(cfg Config, getQueryFn func(className string) QueryWithNeighbors) Results {
 	var times []time.Duration
+	var recall []float64
 	m := &sync.Mutex{}
 
 	t := &http.Transport{
@@ -133,20 +148,17 @@ func benchmark(cfg Config, getQueryFn func(className string) []byte) Results {
 
 	httpClient := &http.Client{Transport: t}
 
-	httpAuth, httpAuthPresent := os.LookupEnv("HTTP_AUTH")
-
 	grpcConn, err := grpc.Dial("localhost:50051", grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
 		log.Fatalf("Did not connect: %v", err)
 	}
 	defer grpcConn.Close()
 
-	queues := make([][][]byte, cfg.Parallel)
+	queues := make([][]QueryWithNeighbors, cfg.Parallel)
 	rand.Seed(time.Now().UnixNano())
 
 	for i := 0; i < cfg.Queries; i++ {
 		query := getQueryFn(cfg.ClassName)
-
 		worker := i % cfg.Parallel
 		queues[worker] = append(queues[worker], query)
 	}
@@ -155,18 +167,18 @@ func benchmark(cfg Config, getQueryFn func(className string) []byte) Results {
 	before := time.Now()
 	for _, queue := range queues {
 		wg.Add(1)
-		go func(queue [][]byte) {
+		go func(queue []QueryWithNeighbors) {
 			defer wg.Done()
 			if cfg.API == "grpc" {
-				processQueueGrpc(queue, &cfg, grpcConn, m, &times)
+				processQueueGrpc(queue, &cfg, grpcConn, m, &times, &recall)
 			} else {
-				processQueueHttp(queue, &cfg, httpClient, m, &times, httpAuth, httpAuthPresent)
+				processQueueHttp(queue, &cfg, httpClient, m, &times)
 			}
 		}(queue)
 	}
 	wg.Wait()
 
-	return analyze(cfg, times, time.Since(before))
+	return analyze(cfg, times, time.Since(before), recall)
 }
 
 var targetPercentiles = []int{50, 90, 95, 98, 99}
@@ -183,9 +195,10 @@ type Results struct {
 	Successful        int
 	Failed            int
 	Parallelization   int
+	Recall            float64
 }
 
-func analyze(cfg Config, times []time.Duration, total time.Duration) Results {
+func analyze(cfg Config, times []time.Duration, total time.Duration, recall []float64) Results {
 	out := Results{Min: math.MaxInt64, PercentilesLabels: targetPercentiles}
 	var sum time.Duration
 
@@ -202,12 +215,18 @@ func analyze(cfg Config, times []time.Duration, total time.Duration) Results {
 		sum += time
 	}
 
+	var sumRecall float64
+	for _, r := range recall {
+		sumRecall += r
+	}
+
 	out.Total = cfg.Queries
 	out.Failed = cfg.Queries - out.Successful
 	out.Parallelization = cfg.Parallel
 	out.Mean = sum / time.Duration(len(times))
 	out.Took = total
 	out.QueriesPerSecond = float64(len(times)) / float64(float64(total)/float64(time.Second))
+	out.Recall = sumRecall / float64(len(recall))
 
 	sort.Slice(times, func(a, b int) bool {
 		return times[a] < times[b]
@@ -229,6 +248,24 @@ func analyze(cfg Config, times []time.Duration, total time.Duration) Results {
 	return out
 }
 
+func intersection(a, b []int32) []int32 {
+	setA := make(map[int32]bool)
+	var result []int32
+
+	for _, item := range a {
+		setA[item] = true
+	}
+
+	for _, item := range b {
+		if setA[item] {
+			result = append(result, item)
+			delete(setA, item) // Ensure unique items in the result
+		}
+	}
+
+	return result
+}
+
 func (r Results) WriteTextTo(w io.Writer) (int64, error) {
 	b := strings.Builder{}
 
@@ -239,8 +276,8 @@ func (r Results) WriteTextTo(w io.Writer) (int64, error) {
 	}
 
 	n, err := w.Write([]byte(fmt.Sprintf(
-		"Results\nSuccessful: %d\nMin: %s\nMean: %s\n%sTook: %s\nQPS: %f\n",
-		r.Successful, r.Min, r.Mean, b.String(), r.Took, r.QueriesPerSecond)))
+		"Results\nSuccessful: %d\nMin: %s\nMean: %s\n%sTook: %s\nQPS: %f\nRecall: %f\n",
+		r.Successful, r.Min, r.Mean, b.String(), r.Took, r.QueriesPerSecond, r.Recall)))
 	return int64(n), err
 }
 

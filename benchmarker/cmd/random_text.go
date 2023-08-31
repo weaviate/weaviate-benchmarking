@@ -59,7 +59,9 @@ func nearTextQueryJSON(className string, query string) []byte {
 }
 
 func benchmarkNearText(cfg Config) Results {
-	return benchmark(cfg, func(className string) []byte {
-		return nearTextQueryJSON(className, randomSearchString(4))
+	return benchmark(cfg, func(className string) QueryWithNeighbors {
+		return QueryWithNeighbors{
+			Query: nearTextQueryJSON(className, randomSearchString(4)),
+		}
 	})
 }

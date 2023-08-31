@@ -14,6 +14,7 @@ func init() {
 	initRandomText()
 	initDataset()
 	initRaw()
+	initAnnBenchmark()
 }
 
 var rootCmd = &cobra.Command{

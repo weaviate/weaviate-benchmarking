@@ -91,8 +91,10 @@ func benchmarkRaw(cfg Config, queries []string) Results {
 	cfg.Queries = len(queries)
 
 	i := 0
-	return benchmark(cfg, func(className string) []byte {
+	return benchmark(cfg, func(className string) QueryWithNeighbors {
 		defer func() { i++ }()
-		return nearVectorQueryJSONGraphQLRaw(queries[i])
+		return QueryWithNeighbors{
+			Query: nearVectorQueryJSONGraphQLRaw(queries[i]),
+		}
 	})
 }

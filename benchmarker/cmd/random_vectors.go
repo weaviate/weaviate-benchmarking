@@ -147,19 +147,25 @@ func nearVectorQueryGrpc(className string, vec []float32, limit int) []byte {
 }
 
 func benchmarkNearVector(cfg Config) Results {
-	return benchmark(cfg, func(className string) []byte {
+	return benchmark(cfg, func(className string) QueryWithNeighbors {
 		if cfg.API == "graphql" {
-			return nearVectorQueryJSONGraphQL(cfg.ClassName, randomVector(cfg.Dimensions), cfg.Limit, cfg.WhereFilter)
+			return QueryWithNeighbors{
+				Query: nearVectorQueryJSONGraphQL(cfg.ClassName, randomVector(cfg.Dimensions), cfg.Limit, cfg.WhereFilter),
+			}
 		}
 
 		if cfg.API == "rest" {
-			return nearVectorQueryJSONRest(cfg.ClassName, randomVector(cfg.Dimensions), cfg.Limit)
+			return QueryWithNeighbors{
+				Query: nearVectorQueryJSONRest(cfg.ClassName, randomVector(cfg.Dimensions), cfg.Limit),
+			}
 		}
 
 		if cfg.API == "grpc" {
-			return nearVectorQueryGrpc(cfg.ClassName, randomVector(cfg.Dimensions), cfg.Limit)
+			return QueryWithNeighbors{
+				Query: nearVectorQueryGrpc(cfg.ClassName, randomVector(cfg.Dimensions), cfg.Limit),
+			}
 		}
 
-		return nil
+		return QueryWithNeighbors{}
 	})
 }

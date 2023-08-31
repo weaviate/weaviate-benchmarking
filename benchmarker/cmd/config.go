@@ -1,23 +1,34 @@
 package cmd
 
 import (
+	"os"
+
 	"github.com/pkg/errors"
 )
 
 type Config struct {
-	Mode         string
-	Origin       string
-	Queries      int
-	QueriesFile  string
-	Parallel     int
-	Limit        int
-	ClassName    string
-	API          string
-	Dimensions   int
-	DB           string
-	WhereFilter  string
-	OutputFormat string
-	OutputFile   string
+	Mode           string
+	Origin         string
+	Queries        int
+	QueriesFile    string
+	Parallel       int
+	Limit          int
+	ClassName      string
+	API            string
+	HttpAuth       string
+	Dimensions     int
+	DB             string
+	WhereFilter    string
+	OutputFormat   string
+	OutputFile     string
+	BenchmarkFile  string
+	BatchSize      int
+	Shards         int
+	DistanceMetric string
+	MaxConnections int
+	Labels         string
+	EfConstruction int
+	QueryOnly      bool
 }
 
 func (c Config) Validate() error {
@@ -33,6 +44,8 @@ func (c Config) Validate() error {
 		return c.validateRandomText()
 	case "dataset":
 		return c.validateDataset()
+	case "ann-benchmark":
+		return c.validateANN()
 	default:
 		return errors.Errorf("unrecognized mode %q", c.Mode)
 	}
@@ -42,10 +55,6 @@ func (c Config) validateCommon() error {
 	if c.Origin == "" {
 		return errors.Errorf("origin must be set")
 	}
-
-	// if c.ClassName == "" {
-	// 	return errors.Errorf("className must be set\n")
-	// }
 
 	switch c.API {
 	case "graphql", "nearvector", "grpc":
@@ -61,6 +70,11 @@ func (c Config) validateCommon() error {
 		return errors.Errorf("unsupported output format %q, must be one of [text, json]",
 			c.OutputFormat)
 
+	}
+
+	httpAuth, httpAuthPresent := os.LookupEnv("HTTP_AUTH")
+	if httpAuthPresent {
+		c.HttpAuth = httpAuth
 	}
 
 	if c.API == "grpc" && c.WhereFilter != "" {
@@ -85,6 +99,22 @@ func (c Config) validateRandomVectors() error {
 func (c Config) validateDataset() error {
 	if c.QueriesFile == "" {
 		return errors.Errorf("a queries input file must be provided")
+	}
+
+	return nil
+}
+
+func (c Config) validateANN() error {
+	if c.BenchmarkFile == "" {
+		return errors.Errorf("a vector benchmark file must be provided")
+	}
+
+	if c.API != "grpc" {
+		return errors.Errorf("only grpc is supported for ann-benchmark")
+	}
+
+	if c.DistanceMetric == "" {
+		return errors.Errorf("distance metric must be set")
 	}
 
 	return nil
