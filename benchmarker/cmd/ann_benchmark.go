@@ -5,13 +5,14 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
@@ -177,7 +178,8 @@ func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch) {
 
 	batchSize := uint(globalConfig.BatchSize)
 
-	log.Printf("HDF5 dataset rows=%d dimensions=%d\n", rows, dimensions)
+	log.WithFields(log.Fields{"rows": rows, "dimensions": dimensions}).Printf(
+		"Reading HDF5 dataset")
 
 	memspace, err := hdf5.CreateSimpleDataspace([]uint{batchSize, dimensions}, []uint{batchSize, dimensions})
 	if err != nil {
@@ -337,13 +339,13 @@ var annBenchmarkCommand = &cobra.Command{
 		defer file.Close()
 
 		if !cfg.QueryOnly {
-			log.Printf("Starting import with efC=%d, m=%d, shards=%d, distance=%s, dataset=%s\n",
-				cfg.EfConstruction, cfg.MaxConnections, cfg.Shards, cfg.DistanceMetric, cfg.BenchmarkFile)
+			log.WithFields(log.Fields{"efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
+				"distance": cfg.DistanceMetric, "dataset": cfg.BenchmarkFile}).Info("Starting import")
 			loadANNBenchmarksFile(file)
 		}
 
-		log.Printf("Starting querying for efC=%d, m=%d, shards=%d, distance=%s, dataset=%s\n",
-			cfg.EfConstruction, cfg.MaxConnections, cfg.Shards, cfg.DistanceMetric, cfg.BenchmarkFile)
+		log.WithFields(log.Fields{"efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
+			"distance": cfg.DistanceMetric, "dataset": cfg.BenchmarkFile}).Info("Starting query")
 
 		neighbors := loadHdf5Neighbors(file, "neighbors")
 		testData := loadHdf5Float32(file, "test")
@@ -365,10 +367,9 @@ var annBenchmarkCommand = &cobra.Command{
 		for i, ef := range efCandidates {
 			updateEf(ef)
 			result := benchmarkANN(cfg, testData, neighbors)
-			//result.WriteTextTo(os.Stdout)
-			log.Printf("mean=%s, qps=%f, recall=%f, api=%s, ef=%d, count=%d, failed=%d\n",
-				result.Mean, result.QueriesPerSecond, result.Recall,
-				cfg.API, ef, result.Total, result.Failed)
+
+			log.WithFields(log.Fields{"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall,
+				"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed}).Info("Benchmark result")
 
 			dataset := filepath.Base(cfg.BenchmarkFile)
 

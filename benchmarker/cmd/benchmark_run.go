@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"math"
 	"math/rand"
 	"net"
@@ -16,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 
 	weaviategrpc "github.com/weaviate/weaviate/grpc"
 	"google.golang.org/grpc"
