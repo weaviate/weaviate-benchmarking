@@ -183,22 +183,23 @@ func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch) {
 
 	memspace, err := hdf5.CreateSimpleDataspace([]uint{batchSize, dimensions}, []uint{batchSize, dimensions})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Error creating memspace: %v", err)
 	}
 	defer memspace.Close()
 
 	for i := uint(0); i < rows; i += batchSize {
+
 		offset := []uint{i, 0}
 		count := []uint{batchSize, dimensions}
 
 		if err := dataspace.SelectHyperslab(offset, nil, count, nil); err != nil {
-			log.Fatal(err)
+			log.Fatalf("Error selecting hyperslab: %v", err)
 		}
 
 		chunkData1D := make([]float32, batchSize*dimensions)
 
 		if err := dataset.ReadSubset(&chunkData1D, memspace, dataspace); err != nil {
-			log.Fatal(err)
+			log.Fatalf("Error reading subset: %v", err)
 		}
 
 		chunkData := make([][]float32, batchSize)
@@ -218,7 +219,7 @@ func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch) {
 func loadHdf5Float32(file *hdf5.File, name string) [][]float32 {
 	dataset, err := file.OpenDataset(name)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Error opening loadHdf5Float32 dataset: %v", err)
 	}
 	defer dataset.Close()
 	dataspace := dataset.Space()
@@ -246,7 +247,7 @@ func loadHdf5Float32(file *hdf5.File, name string) [][]float32 {
 func loadHdf5Neighbors(file *hdf5.File, name string) [][]int32 {
 	dataset, err := file.OpenDataset(name)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Error opening neighbors dataset: %v", err)
 	}
 	defer dataset.Close()
 	dataspace := dataset.Space()
@@ -278,7 +279,7 @@ func loadANNBenchmarksFile(file *hdf5.File) {
 	startTime := time.Now()
 	dataset, err := file.OpenDataset("train")
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Error opening dataset: %v", err)
 	}
 	defer dataset.Close()
 
@@ -334,7 +335,7 @@ var annBenchmarkCommand = &cobra.Command{
 
 		file, err := hdf5.OpenFile(cfg.BenchmarkFile, hdf5.F_ACC_RDONLY)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatalf("Error opening file: %v", err)
 		}
 		defer file.Close()
 
