@@ -67,7 +67,7 @@ func int32FromUUID(uuidStr string) int32 {
 }
 
 // Writes a single batch of vectors to Weaviate using gRPC
-func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient) {
+func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) {
 
 	objects := make([]*weaviategrpc.BatchObject, len(chunk.Vectors))
 
@@ -75,7 +75,7 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient) {
 		objects[i] = &weaviategrpc.BatchObject{
 			Uuid:      uuidFromInt(i + chunk.Offset),
 			Vector:    vector,
-			ClassName: globalConfig.ClassName,
+			ClassName: cfg.ClassName,
 		}
 	}
 
@@ -103,28 +103,28 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient) {
 }
 
 // Re/create Weaviate schema
-func createSchema() {
-	cfg := weaviate.Config{
-		Host:   strings.Replace(globalConfig.Origin, "50051", "8080", 1),
+func createSchema(cfg *Config) {
+	wcfg := weaviate.Config{
+		Host:   strings.Replace(cfg.Origin, "50051", "8080", 1),
 		Scheme: "http",
 	}
-	client, err := weaviate.NewClient(cfg)
+	client, err := weaviate.NewClient(wcfg)
 	if err != nil {
 		panic(err)
 	}
 
-	err = client.Schema().ClassDeleter().WithClassName(globalConfig.ClassName).Do(context.Background())
+	err = client.Schema().ClassDeleter().WithClassName(cfg.ClassName).Do(context.Background())
 	if err != nil {
 		panic(err)
 	}
 
 	classObj := &models.Class{
-		Class:       globalConfig.ClassName,
+		Class:       cfg.ClassName,
 		Description: fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
 		VectorIndexConfig: map[string]interface{}{
-			"distance":       globalConfig.DistanceMetric,
-			"efConstruction": float64(globalConfig.EfConstruction),
-			"maxConnections": float64(globalConfig.MaxConnections),
+			"distance":       cfg.DistanceMetric,
+			"efConstruction": float64(cfg.EfConstruction),
+			"maxConnections": float64(cfg.MaxConnections),
 		},
 	}
 
@@ -132,21 +132,21 @@ func createSchema() {
 	if err != nil {
 		panic(err)
 	}
-	log.Printf("Created class %s", globalConfig.ClassName)
+	log.Printf("Created class %s", cfg.ClassName)
 }
 
 // Update ef parameter on the Weaviate schema
-func updateEf(ef int) {
-	cfg := weaviate.Config{
-		Host:   strings.Replace(globalConfig.Origin, "50051", "8080", 1),
+func updateEf(ef int, cfg *Config) {
+	wcfg := weaviate.Config{
+		Host:   strings.Replace(cfg.Origin, "50051", "8080", 1),
 		Scheme: "http",
 	}
-	client, err := weaviate.NewClient(cfg)
+	client, err := weaviate.NewClient(wcfg)
 	if err != nil {
 		panic(err)
 	}
 
-	classConfig, err := client.Schema().ClassGetter().WithClassName(globalConfig.ClassName).Do(context.Background())
+	classConfig, err := client.Schema().ClassGetter().WithClassName(cfg.ClassName).Do(context.Background())
 	if err != nil {
 		panic(err)
 	}
@@ -165,7 +165,7 @@ func updateEf(ef int) {
 }
 
 // Load a large dataset from an hdf5 file and stream it to Weaviate
-func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch) {
+func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, cfg * Config) {
 	dataspace := dataset.Space()
 	dims, _, _ := dataspace.SimpleExtentDims()
 
@@ -176,7 +176,7 @@ func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch) {
 	rows := dims[0]
 	dimensions := dims[1]
 
-	batchSize := uint(globalConfig.BatchSize)
+	batchSize := uint(cfg.BatchSize)
 
 	log.WithFields(log.Fields{"rows": rows, "dimensions": dimensions}).Printf(
 		"Reading HDF5 dataset")
@@ -272,9 +272,9 @@ func loadHdf5Neighbors(file *hdf5.File, name string) [][]int32 {
 }
 
 // Load an hdf5 file in the format of ann-benchmarks.com
-func loadANNBenchmarksFile(file *hdf5.File) {
+func loadANNBenchmarksFile(file *hdf5.File, cfg *Config) {
 
-	createSchema()
+	createSchema(cfg)
 
 	startTime := time.Now()
 	dataset, err := file.OpenDataset("train")
@@ -286,7 +286,7 @@ func loadANNBenchmarksFile(file *hdf5.File) {
 	chunks := make(chan Batch, 10)
 
 	go func() {
-		loadHdf5Streaming(dataset, chunks)
+		loadHdf5Streaming(dataset, chunks, cfg)
 		close(chunks)
 	}()
 
@@ -296,7 +296,7 @@ func loadANNBenchmarksFile(file *hdf5.File) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			grpcConn, err := grpc.Dial(globalConfig.Origin, grpc.WithInsecure(), grpc.WithBlock())
+			grpcConn, err := grpc.Dial(cfg.Origin, grpc.WithInsecure(), grpc.WithBlock())
 			if err != nil {
 				log.Fatalf("Did not connect: %v", err)
 			}
@@ -304,7 +304,7 @@ func loadANNBenchmarksFile(file *hdf5.File) {
 
 			client := weaviategrpc.NewWeaviateClient(grpcConn)
 			for chunk := range chunks {
-				writeChunk(&chunk, &client)
+				writeChunk(&chunk, &client, cfg)
 			}
 		}()
 	}
@@ -344,7 +344,7 @@ var annBenchmarkCommand = &cobra.Command{
 		if !cfg.QueryOnly {
 			log.WithFields(log.Fields{"efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
 				"distance": cfg.DistanceMetric, "dataset": cfg.BenchmarkFile}).Info("Starting import")
-			loadANNBenchmarksFile(file)
+			loadANNBenchmarksFile(file, &cfg)
 		}
 
 		log.WithFields(log.Fields{"efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
@@ -368,7 +368,7 @@ var annBenchmarkCommand = &cobra.Command{
 		var benchmarkResultsMap []map[string]interface{}
 
 		for _, ef := range efCandidates {
-			updateEf(ef)
+			updateEf(ef, &cfg)
 			result := benchmarkANN(cfg, testData, neighbors)
 
 			log.WithFields(log.Fields{"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall,
