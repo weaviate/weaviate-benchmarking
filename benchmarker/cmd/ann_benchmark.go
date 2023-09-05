@@ -189,26 +189,37 @@ func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, cfg * Config)
 
 	for i := uint(0); i < rows; i += batchSize {
 
+		batchRows := batchSize
+		// handle final smaller batch
+		if i + batchSize > rows {
+			batchRows = rows - i
+			memspace, err = hdf5.CreateSimpleDataspace([]uint{batchRows, dimensions}, []uint{batchRows, dimensions})
+			if err != nil {
+				log.Fatalf("Error creating final memspace: %v", err)
+			}
+		}
+
 		offset := []uint{i, 0}
-		count := []uint{batchSize, dimensions}
+		count := []uint{batchRows, dimensions}
 
 		if err := dataspace.SelectHyperslab(offset, nil, count, nil); err != nil {
 			log.Fatalf("Error selecting hyperslab: %v", err)
 		}
 
-		chunkData1D := make([]float32, batchSize*dimensions)
+		chunkData1D := make([]float32, batchRows*dimensions)
 
 		if err := dataset.ReadSubset(&chunkData1D, memspace, dataspace); err != nil {
+			log.Printf("BatchRows = %d, i = %d, rows = %d", batchRows, i, rows)
 			log.Fatalf("Error reading subset: %v", err)
 		}
 
-		chunkData := make([][]float32, batchSize)
+		chunkData := make([][]float32, batchRows)
 		for i := range chunkData {
 			chunkData[i] = chunkData1D[i*int(dimensions) : (i+1)*int(dimensions)]
 		}
 
-		if (i+batchSize)%10000 == 0 {
-			log.Printf("Imported %d/%d rows", i+batchSize, rows)
+		if (i+batchRows)%10000 == 0 {
+			log.Printf("Imported %d/%d rows", i+batchRows, rows)
 		}
 
 		chunks <- Batch{Vectors: chunkData, Offset: int(i)}
