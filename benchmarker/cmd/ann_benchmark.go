@@ -331,6 +331,8 @@ var annBenchmarkCommand = &cobra.Command{
 			fatal(err)
 		}
 
+		cfg.parseLabels()
+
 		runID := strconv.FormatInt(time.Now().Unix(), 10)
 
 		file, err := hdf5.OpenFile(cfg.BenchmarkFile, hdf5.F_ACC_RDONLY)
@@ -363,18 +365,20 @@ var annBenchmarkCommand = &cobra.Command{
 			512,
 		}
 
-		benchmarkResults := make([]ResultsJSONBenchmark, len(efCandidates))
+		var benchmarkResultsMap []map[string]interface{}
 
-		for i, ef := range efCandidates {
+		for _, ef := range efCandidates {
 			updateEf(ef)
 			result := benchmarkANN(cfg, testData, neighbors)
 
 			log.WithFields(log.Fields{"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall,
-				"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed}).Info("Benchmark result")
+			"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed}).Info("Benchmark result")
 
 			dataset := filepath.Base(cfg.BenchmarkFile)
 
-			benchmarkResults[i] = ResultsJSONBenchmark{
+			var resultMap map[string]interface{}
+
+			benchResult := ResultsJSONBenchmark{
 				Api:              cfg.API,
 				Ef:               ef,
 				EfConstruction:   cfg.EfConstruction,
@@ -387,9 +391,27 @@ var annBenchmarkCommand = &cobra.Command{
 				Dataset:          dataset,
 				Recall:           result.Recall,
 			}
+
+			jsonData, err := json.Marshal(benchResult)
+			if err != nil {
+				log.Fatalf("Error converting result to json")
+			}
+
+			if err := json.Unmarshal(jsonData, &resultMap); err != nil {
+				log.Fatalf("Error converting json to map")
+			}
+
+			if cfg.LabelMap != nil {
+				for key, value := range(cfg.LabelMap) {
+					resultMap[key] = value
+				}
+			}
+
+			benchmarkResultsMap = append(benchmarkResultsMap, resultMap)
+
 		}
 
-		data, err := json.MarshalIndent(benchmarkResults, "", "    ")
+		data, err := json.MarshalIndent(benchmarkResultsMap, "", "    ")
 		if err != nil {
 			log.Fatalf("Error marshaling benchmark results: %v", err)
 		}

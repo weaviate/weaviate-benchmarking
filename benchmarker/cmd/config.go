@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"os"
+	"strings"
 
 	"github.com/pkg/errors"
 )
@@ -27,6 +28,7 @@ type Config struct {
 	DistanceMetric string
 	MaxConnections int
 	Labels         string
+	LabelMap       map[string]string
 	EfConstruction int
 	QueryOnly      bool
 }
@@ -103,6 +105,21 @@ func (c Config) validateDataset() error {
 
 	return nil
 }
+
+func (c *Config) parseLabels() {
+	result := make(map[string]string)
+	pairs := strings.Split(c.Labels, ",")
+
+	for _, pair := range pairs {
+		kv := strings.SplitN(pair, "=", 2) // SplitN to make sure we only split on the first "="
+		if len(kv) == 2 {
+			result[kv[0]] = kv[1]
+		}
+	}
+
+	c.LabelMap = result
+}
+
 
 func (c Config) validateANN() error {
 	if c.BenchmarkFile == "" {
