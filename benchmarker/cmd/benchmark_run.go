@@ -25,7 +25,7 @@ import (
 
 type QueryWithNeighbors struct {
 	Query     []byte
-	Neighbors []int32
+	Neighbors []int
 }
 
 func processQueueHttp(queue []QueryWithNeighbors, cfg *Config, c *http.Client, m *sync.Mutex, times *[]time.Duration) {
@@ -113,9 +113,9 @@ func processQueueGrpc(queue []QueryWithNeighbors, cfg *Config, grpcConn *grpc.Cl
 			fmt.Printf("Warning grpc got %d results, expected %d\n", len(searchReply.GetResults()), cfg.Limit)
 		}
 
-		ids := make([]int32, 0, len(searchReply.GetResults()))
+		ids := make([]int, 0, len(searchReply.GetResults()))
 		for _, result := range searchReply.GetResults() {
-			ids = append(ids, int32FromUUID(result.GetAdditionalProperties().Id))
+			ids = append(ids, intFromUUID(result.GetAdditionalProperties().Id))
 		}
 		// fmt.Printf("ids = %v\n", ids)
 		// fmt.Printf("neighbors = %v\n", query.Neighbors[:cfg.Limit])
@@ -249,9 +249,9 @@ func analyze(cfg Config, times []time.Duration, total time.Duration, recall []fl
 	return out
 }
 
-func intersection(a, b []int32) []int32 {
-	setA := make(map[int32]bool)
-	var result []int32
+func intersection(a, b []int) []int {
+	setA := make(map[int]bool)
+	var result []int
 
 	for _, item := range a {
 		setA[item] = true

@@ -29,10 +29,10 @@ func TestUuidFromInt(t *testing.T) {
 	}
 }
 
-func TestInt32FromUUID(t *testing.T) {
+func TestIntFromUUID(t *testing.T) {
 	tests := []struct {
 		input  string
-		output int32
+		output int
 	}{
 		{"00000000-0000-0000-0000-000000000000", 0},
 		{"00000000-0000-0000-0000-000000000001", 1},
@@ -42,7 +42,7 @@ func TestInt32FromUUID(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(fmt.Sprintf("Testing with input %s", test.input), func(t *testing.T) {
-			got := int32FromUUID(test.input)
+			got := intFromUUID(test.input)
 			if got != test.output {
 				t.Errorf("For input %s, expected %d, but got %d", test.input, test.output, got)
 			}

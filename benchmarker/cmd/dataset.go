@@ -75,7 +75,7 @@ func initDataset() {
 }
 
 type Queries [][]float32
-type Neighbors [][]int32
+type Neighbors [][]int
 
 func parseVectorsFromFile(cfg Config) (Queries, error) {
 	var q Queries
