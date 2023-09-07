@@ -191,7 +191,8 @@ func getHDF5ByteSize(dataset *hdf5.Dataset) uint {
 }
 
 // Load a large dataset from an hdf5 file and stream it to Weaviate
-func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, cfg * Config) {
+// startOffset and maxRecords are ignored if equal to 0
+func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, cfg * Config, startOffset uint, maxRecords uint) {
 	dataspace := dataset.Space()
 	dims, _, _ := dataspace.SimpleExtentDims()
 
@@ -204,6 +205,17 @@ func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, cfg * Config)
 	rows := dims[0]
 	dimensions := dims[1]
 
+
+	// Handle offsetting the data for product quantization
+	i := uint(0)
+	if maxRecords != 0 && maxRecords < rows {
+		rows = maxRecords
+	}
+
+	if startOffset != 0 && i < rows {
+		i = startOffset
+	}
+
 	batchSize := uint(cfg.BatchSize)
 
 	log.WithFields(log.Fields{"rows": rows, "dimensions": dimensions}).Printf(
@@ -215,7 +227,7 @@ func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, cfg * Config)
 	}
 	defer memspace.Close()
 
-	for i := uint(0); i < rows; i += batchSize {
+	for ; i < rows; i += batchSize {
 
 		batchRows := batchSize
 		// handle final smaller batch
@@ -357,7 +369,7 @@ func loadANNBenchmarksFile(file *hdf5.File, cfg *Config) {
 	chunks := make(chan Batch, 10)
 
 	go func() {
-		loadHdf5Streaming(dataset, chunks, cfg)
+		loadHdf5Streaming(dataset, chunks, cfg, 0, 0)
 		close(chunks)
 	}()
 
