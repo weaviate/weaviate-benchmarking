@@ -10,10 +10,12 @@ Usage:
   benchmarker [command]
 
 Available Commands:
+  ann-benchmark  Benchmark ANN Benchmark style hdf5 files
   dataset        Benchmark vectors from an existing dataset
   help           Help about any command
   random-text    Benchmark nearText searches
   random-vectors Benchmark nearVector searches
+  raw            Benchmark raw GraphQL queries
 
 Flags:
   -h, --help   help for benchmarker
@@ -43,6 +45,24 @@ Flags:
 ```
 
 ### Installation / Running the CLI
+
+#### HDF5 Dependency
+
+The benchmarker requires the hdf5 library for reusing ann-benchmark.com style test datasets
+with training vectors, test vectors, and pre-computed neighbours all in the same file.
+
+On Mac you can install via homebrew.
+
+```
+brew install hdf5
+```
+
+On Apple silicon machines you will also need to set the CGO path:
+
+```
+export CGO_LDFLAGS=-L/opt/homebrew/lib
+export CGO_CFLAGS=-I/opt/homebrew/include
+```
 
 #### Option 1: Download a pre-compiled binary
 
