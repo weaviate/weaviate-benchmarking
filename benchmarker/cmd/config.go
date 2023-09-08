@@ -31,6 +31,9 @@ type Config struct {
 	LabelMap       map[string]string
 	EfConstruction int
 	QueryOnly      bool
+	EnablePQ       bool
+	PQRatio        uint
+	TrainingLimit  int
 }
 
 func (c Config) Validate() error {

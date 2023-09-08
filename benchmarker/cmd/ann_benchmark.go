@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"github.com/weaviate/weaviate-go-client/v4/weaviate"
+	"github.com/weaviate/weaviate-go-client/v4/weaviate/fault"
 	"github.com/weaviate/weaviate/entities/models"
 	weaviategrpc "github.com/weaviate/weaviate/grpc"
 	"gonum.org/v1/hdf5"
@@ -164,6 +165,78 @@ func updateEf(ef int, cfg *Config) {
 	// log.Printf("Updated ef to %f\n", ef)
 }
 
+// Update ef parameter on the Weaviate schema
+func enablePQ(cfg *Config, dimensions uint) {
+	wcfg := weaviate.Config{
+		Host:   strings.Replace(cfg.Origin, "50051", "8080", 1),
+		Scheme: "http",
+	}
+	client, err := weaviate.NewClient(wcfg)
+	if err != nil {
+		panic(err)
+	}
+
+	classConfig, err := client.Schema().ClassGetter().WithClassName(cfg.ClassName).Do(context.Background())
+	if err != nil {
+		panic(err)
+	}
+
+	if dimensions % cfg.PQRatio != 0 {
+		log.Fatalf("PQ ratio of %d and dimensions of %d incompatible", cfg.PQRatio, dimensions)
+	}
+
+	segments := dimensions / cfg.PQRatio
+
+	vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
+	vectorIndexConfig["pq"] = map[string]interface{}{
+		"enabled": true,
+		"segments": segments,
+		"trainingLimit" : cfg.TrainingLimit,
+	}
+
+	classConfig.VectorIndexConfig = vectorIndexConfig
+
+	err = client.Schema().ClassUpdater().WithClass(classConfig).Do(context.Background())
+
+	if err != nil {
+		panic(err)
+	}
+	log.WithFields(log.Fields{"segments": segments, "dimensions": dimensions}).Printf("Enabled PQ. Waiting for shard ready.\n")
+
+	start := time.Now()
+
+	for {
+		time.Sleep(3 * time.Second)
+		diff := time.Since(start)
+		if diff.Minutes() > 50 {
+			log.Fatalf("Shard still not ready after 50 minutes, exiting..\n")
+		}
+		shards, err := client.Schema().ShardsGetter().WithClassName(cfg.ClassName).Do(context.Background())
+		if err != nil || len(shards) == 0 {
+			if weaviateErr, ok := err.(*fault.WeaviateClientError); ok {
+				log.Warnf("Error getting schema: %v", weaviateErr.DerivedFromError)
+			} else {
+				log.Warnf("Error getting schema: %v", err)
+			}
+			continue
+		}
+		ready := true
+		for _ , shard := range(shards) {
+			if shard.Status != "READY" {
+				ready = false
+			}
+		}
+		if ready {
+			break
+		}
+	}
+
+	endTime := time.Now()
+	log.WithFields(log.Fields{"segments": segments, "dimensions": dimensions}).Printf("PQ Completed in %v\n", endTime.Sub(start))
+
+}
+
+
 func convert1DChunk[D float32 | float64](input []D, dimensions int, batchRows int) [][]float32 {
 		chunkData := make([][]float32, batchRows)
 		for i := range chunkData {
@@ -182,7 +255,7 @@ func getHDF5ByteSize(dataset *hdf5.Dataset) uint {
 		log.Fatalf("Unabled to read datatype\n")
 	}
 
-	log.WithFields(log.Fields{"size": datatype.Size()}).Printf("Parsing hdf5 byte format\n")
+	log.WithFields(log.Fields{"size": datatype.Size()}).Printf("Parsing HDF5 byte format\n")
 	byteSize := datatype.Size()
 	if byteSize != 4 && byteSize != 8 {
 		log.Fatalf("Unable to load dataset with byte size %d\n", byteSize)
@@ -354,22 +427,20 @@ func loadHdf5Neighbors(file *hdf5.File, name string) [][]int {
 	return chunkData
 }
 
-// Load an hdf5 file in the format of ann-benchmarks.com
-func loadANNBenchmarksFile(file *hdf5.File, cfg *Config) {
-
-	createSchema(cfg)
-
-	startTime := time.Now()
+func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint) uint {
 	dataset, err := file.OpenDataset("train")
 	if err != nil {
 		log.Fatalf("Error opening dataset: %v", err)
 	}
 	defer dataset.Close()
+	dataspace := dataset.Space()
+	extent, _, _ := dataspace.SimpleExtentDims()
+	dimensions := extent[1]
 
 	chunks := make(chan Batch, 10)
 
 	go func() {
-		loadHdf5Streaming(dataset, chunks, cfg, 0, 0)
+		loadHdf5Streaming(dataset, chunks, cfg, offset, maxRows)
 		close(chunks)
 	}()
 
@@ -393,11 +464,30 @@ func loadANNBenchmarksFile(file *hdf5.File, cfg *Config) {
 	}
 
 	wg.Wait()
+	return dimensions
+}
 
+// Load an hdf5 file in the format of ann-benchmarks.com
+func loadANNBenchmarksFile(file *hdf5.File, cfg *Config) {
+
+	createSchema(cfg)
+
+	startTime := time.Now()
+
+	if cfg.EnablePQ {
+		dimensions := loadHdf5Train(file, cfg, 0, uint(cfg.TrainingLimit))
+		log.Printf("Pausing to enable PQ.")
+		enablePQ(cfg, dimensions)
+		loadHdf5Train(file, cfg, uint(cfg.TrainingLimit), 0)
+
+	} else {
+		loadHdf5Train(file, cfg, 0, 0)
+	}
 	endTime := time.Now()
 	log.Printf("Total import time: %v\n", endTime.Sub(startTime))
-	sleepDuration := 5 & time.Second
-	log.Printf("Waiting for %s seconds to allow for compaction etc\n", sleepDuration)
+
+	sleepDuration := 30 * time.Second
+	log.Printf("Waiting for %s to allow for compaction etc\n", sleepDuration)
 	time.Sleep(sleepDuration)
 }
 
@@ -521,6 +611,12 @@ func initAnnBenchmark() {
 		"distance", "d", "", "Set distance metric (mandatory)")
 	annBenchmarkCommand.PersistentFlags().BoolVarP(&globalConfig.QueryOnly,
 		"query", "q", false, "Do not import data and only run query tests")
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.EnablePQ,
+		"pq", false, "Enable product quantization (default false)")
+	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.PQRatio,
+		"pqRatio", 4, "Set PQ segments = dimensions / ratio (must divide evenly default 4)")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.TrainingLimit,
+		"trainingLimit", 100000, "Set PQ trainingLimit (default 100000)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.EfConstruction,
 		"efConstruction", 256, "Set Weaviate efConstruction parameter (default 256)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MaxConnections,
