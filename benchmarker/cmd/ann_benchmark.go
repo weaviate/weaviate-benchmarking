@@ -20,7 +20,7 @@ import (
 	"github.com/weaviate/weaviate-go-client/v4/weaviate/fault"
 	"github.com/weaviate/weaviate/entities/models"
 	weaviategrpc "github.com/weaviate/weaviate/grpc"
-	"gonum.org/v1/hdf5"
+	"github.com/weaviate/hdf5"
 	"google.golang.org/grpc"
 )
 

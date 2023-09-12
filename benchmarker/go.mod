@@ -1,6 +1,8 @@
 module github.com/semi-technologies/weaviate-benchmarking/benchmarker
 
-go 1.20
+go 1.21
+
+toolchain go1.21.0
 
 require (
 	github.com/google/uuid v1.3.0
@@ -8,9 +10,9 @@ require (
 	github.com/sirupsen/logrus v1.9.2
 	github.com/spf13/cobra v1.0.0
 	github.com/stretchr/testify v1.8.4
+	github.com/weaviate/hdf5 v0.0.0-20230911114900-3cd888ffadcd
 	github.com/weaviate/weaviate v1.21.1
 	github.com/weaviate/weaviate-go-client/v4 v4.10.1-0.20230830035039-7db88cfa955e
-	gonum.org/v1/hdf5 v0.0.0-20210714002203-8c5d23bc6946
 	google.golang.org/grpc v1.57.0
 	google.golang.org/protobuf v1.30.0
 )

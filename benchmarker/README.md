@@ -57,13 +57,6 @@ On Mac you can install via homebrew.
 brew install hdf5
 ```
 
-On Apple silicon machines you will also need to set the CGO path:
-
-```
-export CGO_LDFLAGS=-L/opt/homebrew/lib
-export CGO_CFLAGS=-I/opt/homebrew/include
-```
-
 #### Option 1: Download a pre-compiled binary
 
 Not supported yet, there is no CI pipeline yet that pushes artifacts
