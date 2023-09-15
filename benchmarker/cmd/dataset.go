@@ -120,7 +120,7 @@ func benchmarkDataset(cfg Config, queries Queries) Results {
 
 		if cfg.API == "grpc" {
 			return QueryWithNeighbors{
-				Query: nearVectorQueryGrpc(cfg.ClassName, queries[i], cfg.Limit),
+				Query: nearVectorQueryGrpc(cfg.ClassName, queries[i], cfg.Limit, cfg.Tenant),
 			}
 		}
 

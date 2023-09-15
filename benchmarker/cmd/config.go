@@ -34,6 +34,8 @@ type Config struct {
 	EnablePQ       bool
 	PQRatio        uint
 	TrainingLimit  int
+	Tenant         string
+	ExistingSchema bool
 }
 
 func (c Config) Validate() error {
@@ -122,7 +124,6 @@ func (c *Config) parseLabels() {
 
 	c.LabelMap = result
 }
-
 
 func (c Config) validateANN() error {
 	if c.BenchmarkFile == "" {

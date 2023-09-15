@@ -16,11 +16,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
+	"github.com/weaviate/hdf5"
 	"github.com/weaviate/weaviate-go-client/v4/weaviate"
 	"github.com/weaviate/weaviate-go-client/v4/weaviate/fault"
 	"github.com/weaviate/weaviate/entities/models"
 	weaviategrpc "github.com/weaviate/weaviate/grpc"
-	"github.com/weaviate/hdf5"
 	"google.golang.org/grpc"
 )
 
@@ -78,6 +78,9 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 			Vector:    vector,
 			ClassName: cfg.ClassName,
 		}
+		if cfg.Tenant != "" {
+			objects[i].Tenant = cfg.Tenant
+		}
 	}
 
 	batchRequest := &weaviategrpc.BatchObjectsRequest{
@@ -119,6 +122,11 @@ func createSchema(cfg *Config) {
 		panic(err)
 	}
 
+	multiTenancyEnabled := false
+	if cfg.Tenant != "" {
+		multiTenancyEnabled = true
+	}
+
 	classObj := &models.Class{
 		Class:       cfg.ClassName,
 		Description: fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
@@ -127,6 +135,9 @@ func createSchema(cfg *Config) {
 			"efConstruction": float64(cfg.EfConstruction),
 			"maxConnections": float64(cfg.MaxConnections),
 		},
+		MultiTenancyConfig: &models.MultiTenancyConfig{
+			Enabled: multiTenancyEnabled,
+		},
 	}
 
 	err = client.Schema().ClassCreator().WithClass(classObj).Do(context.Background())
@@ -134,6 +145,24 @@ func createSchema(cfg *Config) {
 		panic(err)
 	}
 	log.Printf("Created class %s", cfg.ClassName)
+}
+
+func addTenantIfNeeded(cfg *Config) {
+	if cfg.Tenant == "" {
+		return
+	}
+	wcfg := weaviate.Config{
+		Host:   strings.Replace(cfg.Origin, "50051", "8080", 1),
+		Scheme: "http",
+	}
+	client, err := weaviate.NewClient(wcfg)
+	if err != nil {
+		panic(err)
+	}
+	client.Schema().TenantsCreator().
+		WithClassName(cfg.ClassName).
+		WithTenants(models.Tenant{Name: cfg.Tenant}).
+		Do(context.Background())
 }
 
 // Update ef parameter on the Weaviate schema
@@ -181,7 +210,7 @@ func enablePQ(cfg *Config, dimensions uint) {
 		panic(err)
 	}
 
-	if dimensions % cfg.PQRatio != 0 {
+	if dimensions%cfg.PQRatio != 0 {
 		log.Fatalf("PQ ratio of %d and dimensions of %d incompatible", cfg.PQRatio, dimensions)
 	}
 
@@ -189,9 +218,9 @@ func enablePQ(cfg *Config, dimensions uint) {
 
 	vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
 	vectorIndexConfig["pq"] = map[string]interface{}{
-		"enabled": true,
-		"segments": segments,
-		"trainingLimit" : cfg.TrainingLimit,
+		"enabled":       true,
+		"segments":      segments,
+		"trainingLimit": cfg.TrainingLimit,
 	}
 
 	classConfig.VectorIndexConfig = vectorIndexConfig
@@ -221,7 +250,7 @@ func enablePQ(cfg *Config, dimensions uint) {
 			continue
 		}
 		ready := true
-		for _ , shard := range(shards) {
+		for _, shard := range shards {
 			if shard.Status != "READY" {
 				ready = false
 			}
@@ -236,17 +265,16 @@ func enablePQ(cfg *Config, dimensions uint) {
 
 }
 
-
 func convert1DChunk[D float32 | float64](input []D, dimensions int, batchRows int) [][]float32 {
-		chunkData := make([][]float32, batchRows)
-		for i := range chunkData {
-			chunkData[i] = make([]float32, dimensions)
-			for j := 0; j < dimensions; j++ {
-				chunkData[i][j] = float32(input[i*dimensions + j])
-			}
+	chunkData := make([][]float32, batchRows)
+	for i := range chunkData {
+		chunkData[i] = make([]float32, dimensions)
+		for j := 0; j < dimensions; j++ {
+			chunkData[i][j] = float32(input[i*dimensions+j])
 		}
-		return chunkData
 	}
+	return chunkData
+}
 
 func getHDF5ByteSize(dataset *hdf5.Dataset) uint {
 
@@ -265,7 +293,7 @@ func getHDF5ByteSize(dataset *hdf5.Dataset) uint {
 
 // Load a large dataset from an hdf5 file and stream it to Weaviate
 // startOffset and maxRecords are ignored if equal to 0
-func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, cfg * Config, startOffset uint, maxRecords uint) {
+func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, cfg *Config, startOffset uint, maxRecords uint) {
 	dataspace := dataset.Space()
 	dims, _, _ := dataspace.SimpleExtentDims()
 
@@ -277,7 +305,6 @@ func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, cfg * Config,
 
 	rows := dims[0]
 	dimensions := dims[1]
-
 
 	// Handle offsetting the data for product quantization
 	i := uint(0)
@@ -304,7 +331,7 @@ func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, cfg * Config,
 
 		batchRows := batchSize
 		// handle final smaller batch
-		if i + batchSize > rows {
+		if i+batchSize > rows {
 			batchRows = rows - i
 			memspace, err = hdf5.CreateSimpleDataspace([]uint{batchRows, dimensions}, []uint{batchRows, dimensions})
 			if err != nil {
@@ -404,7 +431,6 @@ func loadHdf5Neighbors(file *hdf5.File, name string) [][]int {
 
 	byteSize := getHDF5ByteSize(dataset)
 
-	
 	chunkData := make([][]int, rows)
 
 	if byteSize == 4 {
@@ -413,7 +439,7 @@ func loadHdf5Neighbors(file *hdf5.File, name string) [][]int {
 		for i := range chunkData {
 			chunkData[i] = make([]int, dimensions)
 			for j := uint(0); j < dimensions; j++ {
-				chunkData[i][j] = int(chunkData1D[uint(i)*dimensions + j])
+				chunkData[i][j] = int(chunkData1D[uint(i)*dimensions+j])
 			}
 		}
 	} else if byteSize == 8 {
@@ -470,7 +496,10 @@ func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint) uint
 // Load an hdf5 file in the format of ann-benchmarks.com
 func loadANNBenchmarksFile(file *hdf5.File, cfg *Config) {
 
-	createSchema(cfg)
+	if !cfg.ExistingSchema {
+		createSchema(cfg)
+	}
+	addTenantIfNeeded(cfg)
 
 	startTime := time.Now()
 
@@ -545,7 +574,7 @@ var annBenchmarkCommand = &cobra.Command{
 			result := benchmarkANN(cfg, testData, neighbors)
 
 			log.WithFields(log.Fields{"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall,
-			"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed}).Info("Benchmark result")
+				"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed}).Info("Benchmark result")
 
 			dataset := filepath.Base(cfg.BenchmarkFile)
 
@@ -575,7 +604,7 @@ var annBenchmarkCommand = &cobra.Command{
 			}
 
 			if cfg.LabelMap != nil {
-				for key, value := range(cfg.LabelMap) {
+				for key, value := range cfg.LabelMap {
 					resultMap[key] = value
 				}
 			}
@@ -627,6 +656,10 @@ func initAnnBenchmark() {
 		"batchSize", "b", 1000, "Batch size for insert operations")
 	annBenchmarkCommand.PersistentFlags().IntVarP(&globalConfig.Parallel,
 		"parallel", "p", 8, "Set the number of parallel threads which send queries")
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.ExistingSchema,
+		"existingSchema", false, "Leave the schema as-is (default false)")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.Tenant,
+		"tenant", "", "Tenant name to use")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.API,
 		"api", "a", "grpc", "The API to use on benchmarks")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.Origin,
@@ -645,7 +678,7 @@ func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors) Results {
 		defer func() { i++ }()
 
 		return QueryWithNeighbors{
-			Query:     nearVectorQueryGrpc(cfg.ClassName, queries[i], cfg.Limit),
+			Query:     nearVectorQueryGrpc(cfg.ClassName, queries[i], cfg.Limit, cfg.Tenant),
 			Neighbors: neighbors[i],
 		}
 

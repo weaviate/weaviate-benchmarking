@@ -123,7 +123,7 @@ func nearVectorQueryJSONRest(className string, vec []float32, limit int) []byte 
 }`, string(vecJSON), limit))
 }
 
-func nearVectorQueryGrpc(className string, vec []float32, limit int) []byte {
+func nearVectorQueryGrpc(className string, vec []float32, limit int, tenant string) []byte {
 
 	searchRequest := &weaviategrpc.SearchRequest{
 		ClassName: className,
@@ -136,6 +136,10 @@ func nearVectorQueryGrpc(className string, vec []float32, limit int) []byte {
 			Distance:  false,
 			Uuid:      true,
 		},
+	}
+
+	if tenant != "" {
+		searchRequest.Tenant = tenant
 	}
 
 	data, err := proto.Marshal(searchRequest)
@@ -162,7 +166,7 @@ func benchmarkNearVector(cfg Config) Results {
 
 		if cfg.API == "grpc" {
 			return QueryWithNeighbors{
-				Query: nearVectorQueryGrpc(cfg.ClassName, randomVector(cfg.Dimensions), cfg.Limit),
+				Query: nearVectorQueryGrpc(cfg.ClassName, randomVector(cfg.Dimensions), cfg.Limit, cfg.Tenant),
 			}
 		}
 
