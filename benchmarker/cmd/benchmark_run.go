@@ -149,7 +149,7 @@ func benchmark(cfg Config, getQueryFn func(className string) QueryWithNeighbors)
 
 	httpClient := &http.Client{Transport: t}
 
-	grpcConn, err := grpc.Dial("localhost:50051", grpc.WithInsecure(), grpc.WithBlock())
+	grpcConn, err := grpc.Dial(cfg.Origin, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
 		log.Fatalf("Did not connect: %v", err)
 	}
