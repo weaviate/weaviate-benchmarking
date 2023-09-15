@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -109,7 +108,7 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 // Re/create Weaviate schema
 func createSchema(cfg *Config) {
 	wcfg := weaviate.Config{
-		Host:   strings.Replace(cfg.Origin, "50051", "8080", 1),
+		Host: cfg.HttpOrigin,
 		Scheme: "http",
 	}
 	client, err := weaviate.NewClient(wcfg)
@@ -152,7 +151,7 @@ func addTenantIfNeeded(cfg *Config) {
 		return
 	}
 	wcfg := weaviate.Config{
-		Host:   strings.Replace(cfg.Origin, "50051", "8080", 1),
+		Host: cfg.HttpOrigin,
 		Scheme: "http",
 	}
 	client, err := weaviate.NewClient(wcfg)
@@ -168,7 +167,7 @@ func addTenantIfNeeded(cfg *Config) {
 // Update ef parameter on the Weaviate schema
 func updateEf(ef int, cfg *Config) {
 	wcfg := weaviate.Config{
-		Host:   strings.Replace(cfg.Origin, "50051", "8080", 1),
+		Host: cfg.HttpOrigin,
 		Scheme: "http",
 	}
 	client, err := weaviate.NewClient(wcfg)
@@ -197,7 +196,7 @@ func updateEf(ef int, cfg *Config) {
 // Update ef parameter on the Weaviate schema
 func enablePQ(cfg *Config, dimensions uint) {
 	wcfg := weaviate.Config{
-		Host:   strings.Replace(cfg.Origin, "50051", "8080", 1),
+		Host: cfg.HttpOrigin,
 		Scheme: "http",
 	}
 	client, err := weaviate.NewClient(wcfg)
@@ -664,6 +663,8 @@ func initAnnBenchmark() {
 		"api", "a", "grpc", "The API to use on benchmarks")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.Origin,
 		"origin", "u", "localhost:50051", "The origin that Weaviate is running at")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.HttpOrigin,
+		"httpOrigin", "localhost:8080", "The http origin for Weaviate (only used if grpc enabled)")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.OutputFormat,
 		"format", "f", "text", "Output format, one of [text, json]")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.OutputFile,

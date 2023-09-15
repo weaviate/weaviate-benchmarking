@@ -36,6 +36,7 @@ type Config struct {
 	TrainingLimit  int
 	Tenant         string
 	ExistingSchema bool
+	HttpOrigin     string
 }
 
 func (c Config) Validate() error {
