@@ -193,6 +193,44 @@ func updateEf(ef int, cfg *Config) {
 	// log.Printf("Updated ef to %f\n", ef)
 }
 
+func waitReady(cfg *Config, indexStart time.Time, maxDuration time.Duration, minQueueSize int64) {
+	wcfg := weaviate.Config{
+		Host: cfg.HttpOrigin,
+		Scheme: "http",
+	}
+	client, err := weaviate.NewClient(wcfg)
+	if err != nil {
+		panic(err)
+	}
+
+	start := time.Now()
+	current := time.Now()
+
+	log.Infof("Waiting for queue to be empty\n")
+	for current.Sub(start) < maxDuration {
+		nodesStatus, err := client.Cluster().NodesStatusGetter().Do(context.Background())
+		if err != nil {
+			panic(err)
+		}
+		totalShardQueue := int64(0)
+		for _, n := range nodesStatus.Nodes {
+			for _, s := range n.Shards {
+				if s.Class == cfg.ClassName && s.VectorQueueLength > 0 {
+					totalShardQueue += s.VectorQueueLength
+				}
+			}
+		}
+		if totalShardQueue < minQueueSize {
+			log.WithFields(log.Fields{"duration": current.Sub(start)}).Printf("Queue ready\n")
+			log.WithFields(log.Fields{"duration": current.Sub(indexStart)}).Printf("Total load and queue ready\n")
+			return
+		}
+		time.Sleep(2 * time.Second)
+		current = time.Now()
+	}
+	log.Fatalf("Queue wasn't ready in %s\n", maxDuration)
+}
+
 // Update ef parameter on the Weaviate schema
 func enablePQ(cfg *Config, dimensions uint) {
 	wcfg := weaviate.Config{
@@ -512,11 +550,12 @@ func loadANNBenchmarksFile(file *hdf5.File, cfg *Config) {
 		loadHdf5Train(file, cfg, 0, 0)
 	}
 	endTime := time.Now()
-	log.Printf("Total import time: %v\n", endTime.Sub(startTime))
+	log.WithFields(log.Fields{"duration": endTime.Sub(startTime)}).Printf("Total load time\n")
 
-	sleepDuration := 30 * time.Second
-	log.Printf("Waiting for %s to allow for compaction etc\n", sleepDuration)
-	time.Sleep(sleepDuration)
+	//sleepDuration := 30 * time.Second
+	//log.Printf("Waiting for %s to allow for compaction etc\n", sleepDuration)
+	//time.Sleep(sleepDuration)
+	waitReady(cfg, startTime, 300 * time.Second, 1000)
 }
 
 var annBenchmarkCommand = &cobra.Command{
