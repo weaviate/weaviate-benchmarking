@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -39,6 +40,8 @@ type ResultsJSONBenchmark struct {
 	QueriesPerSecond float64 `json:"qps"`
 	Shards           int     `json:"shards"`
 	Parallelization  int     `json:"parallelization"`
+	Limit            int     `json:"limit"`
+	ImportTime       float64 `json:"importTime"`
 	RunID            string  `json:"run_id"`
 	Dataset          string  `json:"dataset_file"`
 	Recall           float64 `json:"recall"`
@@ -193,7 +196,7 @@ func updateEf(ef int, cfg *Config) {
 	// log.Printf("Updated ef to %f\n", ef)
 }
 
-func waitReady(cfg *Config, indexStart time.Time, maxDuration time.Duration, minQueueSize int64) {
+func waitReady(cfg *Config, indexStart time.Time, maxDuration time.Duration, minQueueSize int64) time.Time {
 	wcfg := weaviate.Config{
 		Host: cfg.HttpOrigin,
 		Scheme: "http",
@@ -223,12 +226,13 @@ func waitReady(cfg *Config, indexStart time.Time, maxDuration time.Duration, min
 		if totalShardQueue < minQueueSize {
 			log.WithFields(log.Fields{"duration": current.Sub(start)}).Printf("Queue ready\n")
 			log.WithFields(log.Fields{"duration": current.Sub(indexStart)}).Printf("Total load and queue ready\n")
-			return
+			return current
 		}
 		time.Sleep(2 * time.Second)
 		current = time.Now()
 	}
 	log.Fatalf("Queue wasn't ready in %s\n", maxDuration)
+	return current
 }
 
 // Update ef parameter on the Weaviate schema
@@ -531,7 +535,8 @@ func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint) uint
 }
 
 // Load an hdf5 file in the format of ann-benchmarks.com
-func loadANNBenchmarksFile(file *hdf5.File, cfg *Config) {
+// returns total time duration for load
+func loadANNBenchmarksFile(file *hdf5.File, cfg *Config) time.Duration {
 
 	if !cfg.ExistingSchema {
 		createSchema(cfg)
@@ -552,10 +557,11 @@ func loadANNBenchmarksFile(file *hdf5.File, cfg *Config) {
 	endTime := time.Now()
 	log.WithFields(log.Fields{"duration": endTime.Sub(startTime)}).Printf("Total load time\n")
 
-	//sleepDuration := 30 * time.Second
-	//log.Printf("Waiting for %s to allow for compaction etc\n", sleepDuration)
-	//time.Sleep(sleepDuration)
-	waitReady(cfg, startTime, 300 * time.Second, 1000)
+	importTime := waitReady(cfg, startTime, 4 * time.Hour, 1000)
+	sleepDuration := 30 * time.Second
+	log.Printf("Waiting for %s to allow for compaction etc\n", sleepDuration)
+	time.Sleep(sleepDuration)
+	return importTime.Sub(startTime)
 }
 
 var annBenchmarkCommand = &cobra.Command{
@@ -581,10 +587,11 @@ var annBenchmarkCommand = &cobra.Command{
 		}
 		defer file.Close()
 
+		importTime := 0 * time.Second
 		if !cfg.QueryOnly {
 			log.WithFields(log.Fields{"efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
 				"distance": cfg.DistanceMetric, "dataset": cfg.BenchmarkFile}).Info("Starting import")
-			loadANNBenchmarksFile(file, &cfg)
+			importTime = loadANNBenchmarksFile(file, &cfg)
 		}
 
 		log.WithFields(log.Fields{"efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
@@ -612,7 +619,8 @@ var annBenchmarkCommand = &cobra.Command{
 			result := benchmarkANN(cfg, testData, neighbors)
 
 			log.WithFields(log.Fields{"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall,
-				"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed}).Info("Benchmark result")
+			"parallel": cfg.Parallel, "limit": cfg.Limit,
+			"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed}).Info("Benchmark result")
 
 			dataset := filepath.Base(cfg.BenchmarkFile)
 
@@ -627,6 +635,8 @@ var annBenchmarkCommand = &cobra.Command{
 				QueriesPerSecond: result.QueriesPerSecond,
 				Shards:           cfg.Shards,
 				Parallelization:  cfg.Parallel,
+				Limit:            cfg.Limit,
+				ImportTime:       importTime.Seconds(),
 				RunID:            runID,
 				Dataset:          dataset,
 				Recall:           result.Recall,
@@ -668,8 +678,11 @@ var annBenchmarkCommand = &cobra.Command{
 
 func initAnnBenchmark() {
 	rootCmd.AddCommand(annBenchmarkCommand)
-	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.Labels,
-		"labels", "l", "", "Labels of format key1=value1,key2=value2,...")
+
+	numCPU := runtime.NumCPU()
+
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.Labels,
+		"labels", "", "Labels of format key1=value1,key2=value2,...")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.BenchmarkFile,
 		"vectors", "v", "", "Path to the hdf5 file containing the vectors")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.ClassName,
@@ -693,7 +706,7 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().IntVarP(&globalConfig.BatchSize,
 		"batchSize", "b", 1000, "Batch size for insert operations")
 	annBenchmarkCommand.PersistentFlags().IntVarP(&globalConfig.Parallel,
-		"parallel", "p", 8, "Set the number of parallel threads which send queries")
+		"parallel", "p", numCPU, "Set the number of parallel threads which send queries")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.ExistingSchema,
 		"existingSchema", false, "Leave the schema as-is (default false)")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.Tenant,
@@ -706,6 +719,8 @@ func initAnnBenchmark() {
 		"httpOrigin", "localhost:8080", "The http origin for Weaviate (only used if grpc enabled)")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.OutputFormat,
 		"format", "f", "text", "Output format, one of [text, json]")
+	annBenchmarkCommand.PersistentFlags().IntVarP(&globalConfig.Limit,
+		"limit", "l", 10, "Set the query limit / k (default 10)")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.OutputFile,
 		"output", "o", "", "Filename for an output file. If none provided, output to stdout only")
 }
