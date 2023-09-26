@@ -30,6 +30,7 @@ type Config struct {
 	Labels         string
 	LabelMap       map[string]string
 	EfConstruction int
+	EfArray        string
 	QueryOnly      bool
 	EnablePQ       bool
 	PQRatio        uint

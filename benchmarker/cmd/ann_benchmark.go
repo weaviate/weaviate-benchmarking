@@ -5,10 +5,11 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"runtime"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -36,7 +37,8 @@ type ResultsJSONBenchmark struct {
 	Ef               int     `json:"ef"`
 	EfConstruction   int     `json:"efConstruction"`
 	MaxConnections   int     `json:"maxConnections"`
-	Mean             float64 `json:"mean"`
+	Mean             float64 `json:"meanLatency"`
+	P99Latency       float64 `json:"p99Latency"`
 	QueriesPerSecond float64 `json:"qps"`
 	Shards           int     `json:"shards"`
 	Parallelization  int     `json:"parallelization"`
@@ -111,7 +113,7 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 // Re/create Weaviate schema
 func createSchema(cfg *Config) {
 	wcfg := weaviate.Config{
-		Host: cfg.HttpOrigin,
+		Host:   cfg.HttpOrigin,
 		Scheme: "http",
 	}
 	client, err := weaviate.NewClient(wcfg)
@@ -154,7 +156,7 @@ func addTenantIfNeeded(cfg *Config) {
 		return
 	}
 	wcfg := weaviate.Config{
-		Host: cfg.HttpOrigin,
+		Host:   cfg.HttpOrigin,
 		Scheme: "http",
 	}
 	client, err := weaviate.NewClient(wcfg)
@@ -170,7 +172,7 @@ func addTenantIfNeeded(cfg *Config) {
 // Update ef parameter on the Weaviate schema
 func updateEf(ef int, cfg *Config) {
 	wcfg := weaviate.Config{
-		Host: cfg.HttpOrigin,
+		Host:   cfg.HttpOrigin,
 		Scheme: "http",
 	}
 	client, err := weaviate.NewClient(wcfg)
@@ -198,7 +200,7 @@ func updateEf(ef int, cfg *Config) {
 
 func waitReady(cfg *Config, indexStart time.Time, maxDuration time.Duration, minQueueSize int64) time.Time {
 	wcfg := weaviate.Config{
-		Host: cfg.HttpOrigin,
+		Host:   cfg.HttpOrigin,
 		Scheme: "http",
 	}
 	client, err := weaviate.NewClient(wcfg)
@@ -238,7 +240,7 @@ func waitReady(cfg *Config, indexStart time.Time, maxDuration time.Duration, min
 // Update ef parameter on the Weaviate schema
 func enablePQ(cfg *Config, dimensions uint) {
 	wcfg := weaviate.Config{
-		Host: cfg.HttpOrigin,
+		Host:   cfg.HttpOrigin,
 		Scheme: "http",
 	}
 	client, err := weaviate.NewClient(wcfg)
@@ -557,11 +559,24 @@ func loadANNBenchmarksFile(file *hdf5.File, cfg *Config) time.Duration {
 	endTime := time.Now()
 	log.WithFields(log.Fields{"duration": endTime.Sub(startTime)}).Printf("Total load time\n")
 
-	importTime := waitReady(cfg, startTime, 4 * time.Hour, 1000)
+	importTime := waitReady(cfg, startTime, 4*time.Hour, 1000)
 	sleepDuration := 30 * time.Second
 	log.Printf("Waiting for %s to allow for compaction etc\n", sleepDuration)
 	time.Sleep(sleepDuration)
 	return importTime.Sub(startTime)
+}
+
+func parseEfValues(s string) ([]int, error) {
+	strs := strings.Split(s, ",")
+	nums := make([]int, len(strs))
+	for i, str := range strs {
+		num, err := strconv.Atoi(str)
+		if err != nil {
+			return nil, fmt.Errorf("error converting efArray '%s' to integer: %v", str, err)
+		}
+		nums[i] = num
+	}
+	return nums, nil
 }
 
 var annBenchmarkCommand = &cobra.Command{
@@ -579,11 +594,16 @@ var annBenchmarkCommand = &cobra.Command{
 
 		cfg.parseLabels()
 
+		efCandidates, err := parseEfValues(cfg.EfArray)
+		if err != nil {
+			log.Fatalf("Error parsing efArray, expected commas separated format \"16,32,64\" but:%v\n", err)
+		}
+
 		runID := strconv.FormatInt(time.Now().Unix(), 10)
 
 		file, err := hdf5.OpenFile(cfg.BenchmarkFile, hdf5.F_ACC_RDONLY)
 		if err != nil {
-			log.Fatalf("Error opening file: %v", err)
+			log.Fatalf("Error opening file: %v\n", err)
 		}
 		defer file.Close()
 
@@ -600,18 +620,6 @@ var annBenchmarkCommand = &cobra.Command{
 		neighbors := loadHdf5Neighbors(file, "neighbors")
 		testData := loadHdf5Float32(file, "test")
 
-		efCandidates := []int{
-			16,
-			24,
-			32,
-			48,
-			64,
-			96,
-			128,
-			256,
-			512,
-		}
-
 		var benchmarkResultsMap []map[string]interface{}
 
 		for _, ef := range efCandidates {
@@ -619,8 +627,8 @@ var annBenchmarkCommand = &cobra.Command{
 			result := benchmarkANN(cfg, testData, neighbors)
 
 			log.WithFields(log.Fields{"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall,
-			"parallel": cfg.Parallel, "limit": cfg.Limit,
-			"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed}).Info("Benchmark result")
+				"parallel": cfg.Parallel, "limit": cfg.Limit,
+				"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed}).Info("Benchmark result")
 
 			dataset := filepath.Base(cfg.BenchmarkFile)
 
@@ -632,6 +640,7 @@ var annBenchmarkCommand = &cobra.Command{
 				EfConstruction:   cfg.EfConstruction,
 				MaxConnections:   cfg.MaxConnections,
 				Mean:             result.Mean.Seconds(),
+				P99Latency:       result.Percentiles[len(result.Percentiles)-1].Seconds(),
 				QueriesPerSecond: result.QueriesPerSecond,
 				Shards:           cfg.Shards,
 				Parallelization:  cfg.Parallel,
@@ -699,6 +708,8 @@ func initAnnBenchmark() {
 		"trainingLimit", 100000, "Set PQ trainingLimit (default 100000)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.EfConstruction,
 		"efConstruction", 256, "Set Weaviate efConstruction parameter (default 256)")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.EfArray,
+		"efArray", "16,24,32,48,64,96,128,256,512", "Array of ef parameters as comma separated list")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MaxConnections,
 		"maxConnections", 16, "Set Weaviate efConstruction parameter (default 16)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.Shards,
