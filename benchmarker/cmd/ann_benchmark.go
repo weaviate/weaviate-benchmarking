@@ -91,8 +91,7 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 		Objects: objects,
 	}
 
-	// 4. Use the BatchObjects RPC method to send the batch of vectors.
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
 
 	response, err := (*client).BatchObjects(ctx, batchRequest)
