@@ -32,6 +32,7 @@ type Config struct {
 	EfConstruction int
 	EfArray        string
 	QueryOnly      bool
+	QueryDuration  int
 	EnablePQ       bool
 	PQRatio        uint
 	TrainingLimit  int

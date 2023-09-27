@@ -623,7 +623,14 @@ var annBenchmarkCommand = &cobra.Command{
 
 		for _, ef := range efCandidates {
 			updateEf(ef, &cfg)
-			result := benchmarkANN(cfg, testData, neighbors)
+
+			var result Results
+
+			if cfg.QueryDuration > 0 {
+				result = benchmarkANNDuration(cfg, testData, neighbors)
+			} else {
+				result = benchmarkANN(cfg, testData, neighbors)
+			}
 
 			log.WithFields(log.Fields{"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall,
 				"parallel": cfg.Parallel, "limit": cfg.Limit,
@@ -699,6 +706,8 @@ func initAnnBenchmark() {
 		"distance", "d", "", "Set distance metric (mandatory)")
 	annBenchmarkCommand.PersistentFlags().BoolVarP(&globalConfig.QueryOnly,
 		"query", "q", false, "Do not import data and only run query tests")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.QueryDuration,
+		"queryDuration", 0, "Instead of querying the test dataset once, query for the specified duration in seconds (default 0)")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.EnablePQ,
 		"pq", false, "Enable product quantization (default false)")
 	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.PQRatio,
@@ -748,4 +757,19 @@ func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors) Results {
 		}
 
 	})
+}
+
+func benchmarkANNDuration(cfg Config, queries Queries, neighbors Neighbors) Results {
+	cfg.Queries = len(queries)
+
+	startTime := time.Now()
+
+	var results Results
+
+	for time.Since(startTime) < time.Duration(cfg.QueryDuration)*time.Second {
+		results = benchmarkANN(cfg, queries, neighbors)
+	}
+
+	return results
+
 }
