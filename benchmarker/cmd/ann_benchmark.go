@@ -21,7 +21,7 @@ import (
 	"github.com/weaviate/weaviate-go-client/v4/weaviate"
 	"github.com/weaviate/weaviate-go-client/v4/weaviate/fault"
 	"github.com/weaviate/weaviate/entities/models"
-	weaviategrpc "github.com/weaviate/weaviate/grpc"
+	weaviategrpc "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
 	"google.golang.org/grpc"
 )
 
@@ -78,9 +78,9 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 
 	for i, vector := range chunk.Vectors {
 		objects[i] = &weaviategrpc.BatchObject{
-			Uuid:      uuidFromInt(i + chunk.Offset),
-			Vector:    vector,
-			ClassName: cfg.ClassName,
+			Uuid:       uuidFromInt(i + chunk.Offset),
+			Vector:     vector,
+			Collection: cfg.ClassName,
 		}
 		if cfg.Tenant != "" {
 			objects[i].Tenant = cfg.Tenant
@@ -99,7 +99,7 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 		log.Fatalf("could not send batch: %v", err)
 	}
 
-	for _, result := range response.GetResults() {
+	for _, result := range response.GetErrors() {
 		if result.Error != "" {
 			log.Printf("Error for index %d: %s", result.Index, result.Error)
 		} else {
@@ -197,44 +197,44 @@ func updateEf(ef int, cfg *Config) {
 	// log.Printf("Updated ef to %f\n", ef)
 }
 
-func waitReady(cfg *Config, indexStart time.Time, maxDuration time.Duration, minQueueSize int64) time.Time {
-	wcfg := weaviate.Config{
-		Host:   cfg.HttpOrigin,
-		Scheme: "http",
-	}
-	client, err := weaviate.NewClient(wcfg)
-	if err != nil {
-		panic(err)
-	}
+// func waitReady(cfg *Config, indexStart time.Time, maxDuration time.Duration, minQueueSize int64) time.Time {
+// 	wcfg := weaviate.Config{
+// 		Host:   cfg.HttpOrigin,
+// 		Scheme: "http",
+// 	}
+// 	client, err := weaviate.NewClient(wcfg)
+// 	if err != nil {
+// 		panic(err)
+// 	}
 
-	start := time.Now()
-	current := time.Now()
+// 	start := time.Now()
+// 	current := time.Now()
 
-	log.Infof("Waiting for queue to be empty\n")
-	for current.Sub(start) < maxDuration {
-		nodesStatus, err := client.Cluster().NodesStatusGetter().Do(context.Background())
-		if err != nil {
-			panic(err)
-		}
-		totalShardQueue := int64(0)
-		for _, n := range nodesStatus.Nodes {
-			for _, s := range n.Shards {
-				if s.Class == cfg.ClassName && s.VectorQueueLength > 0 {
-					totalShardQueue += s.VectorQueueLength
-				}
-			}
-		}
-		if totalShardQueue < minQueueSize {
-			log.WithFields(log.Fields{"duration": current.Sub(start)}).Printf("Queue ready\n")
-			log.WithFields(log.Fields{"duration": current.Sub(indexStart)}).Printf("Total load and queue ready\n")
-			return current
-		}
-		time.Sleep(2 * time.Second)
-		current = time.Now()
-	}
-	log.Fatalf("Queue wasn't ready in %s\n", maxDuration)
-	return current
-}
+// 	log.Infof("Waiting for queue to be empty\n")
+// 	for current.Sub(start) < maxDuration {
+// 		nodesStatus, err := client.Cluster().NodesStatusGetter().Do(context.Background())
+// 		if err != nil {
+// 			panic(err)
+// 		}
+// 		totalShardQueue := int64(0)
+// 		for _, n := range nodesStatus.Nodes {
+// 			for _, s := range n.Shards {
+// 				if s.Class == cfg.ClassName && s.VectorQueueLength > 0 {
+// 					totalShardQueue += s.VectorQueueLength
+// 				}
+// 			}
+// 		}
+// 		if totalShardQueue < minQueueSize {
+// 			log.WithFields(log.Fields{"duration": current.Sub(start)}).Printf("Queue ready\n")
+// 			log.WithFields(log.Fields{"duration": current.Sub(indexStart)}).Printf("Total load and queue ready\n")
+// 			return current
+// 		}
+// 		time.Sleep(2 * time.Second)
+// 		current = time.Now()
+// 	}
+// 	log.Fatalf("Queue wasn't ready in %s\n", maxDuration)
+// 	return current
+// }
 
 // Update ef parameter on the Weaviate schema
 func enablePQ(cfg *Config, dimensions uint) {
@@ -325,7 +325,7 @@ func getHDF5ByteSize(dataset *hdf5.Dataset) uint {
 		log.Fatalf("Unabled to read datatype\n")
 	}
 
-	log.WithFields(log.Fields{"size": datatype.Size()}).Printf("Parsing HDF5 byte format\n")
+	// log.WithFields(log.Fields{"size": datatype.Size()}).Printf("Parsing HDF5 byte format\n")
 	byteSize := datatype.Size()
 	if byteSize != 4 && byteSize != 8 {
 		log.Fatalf("Unable to load dataset with byte size %d\n", byteSize)
@@ -558,11 +558,12 @@ func loadANNBenchmarksFile(file *hdf5.File, cfg *Config) time.Duration {
 	endTime := time.Now()
 	log.WithFields(log.Fields{"duration": endTime.Sub(startTime)}).Printf("Total load time\n")
 
-	importTime := waitReady(cfg, startTime, 4*time.Hour, 1000)
+	// importTime := waitReady(cfg, startTime, 4*time.Hour, 1000)
 	sleepDuration := 30 * time.Second
 	log.Printf("Waiting for %s to allow for compaction etc\n", sleepDuration)
 	time.Sleep(sleepDuration)
-	return importTime.Sub(startTime)
+	// return importTime.Sub(startTime)
+	return endTime.Sub(startTime)
 }
 
 func parseEfValues(s string) ([]int, error) {
@@ -581,7 +582,7 @@ func parseEfValues(s string) ([]int, error) {
 var annBenchmarkCommand = &cobra.Command{
 	Use:   "ann-benchmark",
 	Short: "Benchmark ANN Benchmark style hdf5 files",
-	Long:  `Specify an existing dataset as a list of GraphQL queries`,
+	Long:  `Run a gRPC benchmark on an hdf5 file in the format of ann-benchmarks.com`,
 	Run: func(cmd *cobra.Command, args []string) {
 
 		cfg := globalConfig
@@ -733,7 +734,7 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.API,
 		"api", "a", "grpc", "The API to use on benchmarks")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.Origin,
-		"origin", "u", "localhost:50051", "The origin that Weaviate is running at")
+		"origin", "u", "localhost:50051", "The gRPC origin that Weaviate is running at")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.HttpOrigin,
 		"httpOrigin", "localhost:8080", "The http origin for Weaviate (only used if grpc enabled)")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.OutputFormat,

@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	weaviategrpc "github.com/weaviate/weaviate/grpc"
+	weaviategrpc "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -126,12 +126,12 @@ func nearVectorQueryJSONRest(className string, vec []float32, limit int) []byte 
 func nearVectorQueryGrpc(className string, vec []float32, limit int, tenant string) []byte {
 
 	searchRequest := &weaviategrpc.SearchRequest{
-		ClassName: className,
-		Limit:     uint32(limit),
-		NearVector: &weaviategrpc.NearVectorParams{
+		Collection: className,
+		Limit:      uint32(limit),
+		NearVector: &weaviategrpc.NearVector{
 			Vector: vec,
 		},
-		AdditionalProperties: &weaviategrpc.AdditionalProperties{
+		Metadata: &weaviategrpc.MetadataRequest{
 			Certainty: false,
 			Distance:  false,
 			Uuid:      true,

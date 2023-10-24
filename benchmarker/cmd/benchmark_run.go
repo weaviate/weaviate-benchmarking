@@ -18,7 +18,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	weaviategrpc "github.com/weaviate/weaviate/grpc"
+	weaviategrpc "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 )
@@ -115,11 +115,9 @@ func processQueueGrpc(queue []QueryWithNeighbors, cfg *Config, grpcConn *grpc.Cl
 
 		ids := make([]int, 0, len(searchReply.GetResults()))
 		for _, result := range searchReply.GetResults() {
-			ids = append(ids, intFromUUID(result.GetAdditionalProperties().Id))
+			ids = append(ids, intFromUUID(result.GetMetadata().Id))
 		}
-		// fmt.Printf("ids = %v\n", ids)
-		// fmt.Printf("neighbors = %v\n", query.Neighbors[:cfg.Limit])
-		// os.Exit(0)
+
 		recallQuery := float64(len(intersection(ids, query.Neighbors[:cfg.Limit]))) / float64(cfg.Limit)
 
 		m.Lock()

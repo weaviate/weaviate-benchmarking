@@ -10,7 +10,7 @@ Usage:
   benchmarker [command]
 
 Available Commands:
-  ann-benchmark  Benchmark ANN Benchmark style hdf5 files
+  ann-benchmark  Benchmark ANN Benchmark style hdf5 files (this is generally what you want to use)
   dataset        Benchmark vectors from an existing dataset
   help           Help about any command
   random-text    Benchmark nearText searches
@@ -23,25 +23,40 @@ Flags:
 Use "benchmarker [command] --help" for more information about a command.
 ```
 
-Once you picked the command you're interested in, you can again use the help command to learn about the flags, for example running `benchmarker dataset -h` results in the following output:
+Once you picked the command you're interested in, you can again use the help command to learn about the flags, for example running `benchmarker ann-benchmark -h` results in the following output:
 
 ```
-Specify an existing dataset as a list of query vectors in a .json file to parse the query vectors and then query them with the specified parallelism
+Run a gRPC benchmark on an hdf5 file in the format of ann-benchmarks.com
 
 Usage:
-  benchmarker dataset [flags]
+  benchmarker ann-benchmark [flags]
 
 Flags:
-  -a, --api string         The API to use on benchmarks (default "graphql")
-  -c, --className string   The Weaviate class to run the benchmark against
-  -f, --format string      Output format, one of [text, json] (default "text")
-  -h, --help               help for dataset
-  -l, --limit int          Set the query limit (top_k) (default 10)
-  -u, --origin string      The origin that Weaviate is running at (default "http://localhost:8080")
-  -o, --output string      Filename for an output file. If none provided, output to stdout only
-  -p, --parallel int       Set the number of parallel threads which send queries (default 8)
-  -q, --queries string     Point to the queries file, (.json)
-  -w, --where string       An entire where filter as a string
+  -a, --api string           The API to use on benchmarks (default "grpc")
+  -b, --batchSize int        Batch size for insert operations (default 1000)
+  -c, --className string     Class name for testing (default "Vector")
+  -d, --distance string      Set distance metric (mandatory)
+      --efArray string       Array of ef parameters as comma separated list (default "16,24,32,48,64,96,128,256,512")
+      --efConstruction int   Set Weaviate efConstruction parameter (default 256) (default 256)
+      --existingSchema       Leave the schema as-is (default false)
+  -f, --format string        Output format, one of [text, json] (default "text")
+  -h, --help                 help for ann-benchmark
+      --httpOrigin string    The http origin for Weaviate (only used if grpc enabled) (default "localhost:8080")
+      --labels string        Labels of format key1=value1,key2=value2,...
+  -l, --limit int            Set the query limit / k (default 10) (default 10)
+      --maxConnections int   Set Weaviate efConstruction parameter (default 16) (default 16)
+  -u, --origin string        The gRPC origin that Weaviate is running at (default "localhost:50051")
+  -o, --output string        Filename for an output file. If none provided, output to stdout only
+  -p, --parallel int         Set the number of parallel threads which send queries (default 10)
+      --pq                   Enable product quantization (default false)
+      --pqRatio uint         Set PQ segments = dimensions / ratio (must divide evenly default 4) (default 4)
+  -q, --query                Do not import data and only run query tests
+      --queryDuration int    Instead of querying the test dataset once, query for the specified duration in seconds (default 0)
+      --shards int           Set number of Weaviate shards (default 1)
+      --tenant string        Tenant name to use
+      --trainingLimit int    Set PQ trainingLimit (default 100000) (default 100000)
+  -v, --vectors string       Path to the hdf5 file containing the vectors
+
 ```
 
 ### Installation / Running the CLI
@@ -49,19 +64,27 @@ Flags:
 #### HDF5 Dependency
 
 The benchmarker requires the hdf5 library for reusing ann-benchmark.com style test datasets
-with training vectors, test vectors, and pre-computed neighbours all in the same file.
+with training vectors, test vectors, and pre-computed neighbors all in the same file.
 
-On Mac you can install via homebrew.
+On Mac you can install via homebrew:
 
 ```
 brew install hdf5
 ```
 
-#### Option 1: Download a pre-compiled binary
+Or on ubuntu:
 
-Not supported yet, there is no CI pipeline yet that pushes artifacts
+```
+apt install libhdf5-dev
+```
+
+#### Option 1: Docker compose
+
+Follow instructions in parent README.md to run in Docker compose.
 
 #### Option 2: With a local Go runtime, compiling on the fly
+
+Ensure you have go and hdf5 installed.
 
 Print the available commands
 ```
@@ -72,10 +95,11 @@ go run . help
 An example command
 
 ```
-go run . random-vectors -c MyClass -d 384 -q 10000 -p 8 -a graphql -l 10
+go run . ann-benchmark -v ~/datasets/dbpedia-100k-openai-ada002.hdf5 -d l2-squared
+
 ```
 
-or the same command with the long-style flags:
+or random vectors with long-style flags:
 
 ```
 go run . \
@@ -93,7 +117,7 @@ go run . \
 Install:
 
 ```
-cd benchmarker && go install .
+cd benchmarker && CGO_ENABLED=1 go install .
 ```
 
 (Make sure your `PATH` is configured correctly to run go-install-ed binaries)

@@ -11,7 +11,7 @@ require (
 	github.com/spf13/cobra v1.0.0
 	github.com/stretchr/testify v1.8.4
 	github.com/weaviate/hdf5 v0.0.0-20230911114900-3cd888ffadcd
-	github.com/weaviate/weaviate v1.21.3-0.20230918031611-ad034f5914fb
+	github.com/weaviate/weaviate v1.22.0-rc.0.0.20231020140519-9bd0307ee69d
 	github.com/weaviate/weaviate-go-client/v4 v4.10.1-0.20230830035039-7db88cfa955e
 	google.golang.org/grpc v1.57.0
 	google.golang.org/protobuf v1.30.0
@@ -40,10 +40,10 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/spf13/pflag v1.0.3 // indirect
 	go.mongodb.org/mongo-driver v1.11.3 // indirect
-	golang.org/x/net v0.10.0 // indirect
+	golang.org/x/net v0.17.0 // indirect
 	golang.org/x/oauth2 v0.8.0 // indirect
-	golang.org/x/sys v0.11.0 // indirect
-	golang.org/x/text v0.9.0 // indirect
+	golang.org/x/sys v0.13.0 // indirect
+	golang.org/x/text v0.13.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230530153820-e85fd2cbaebc // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
