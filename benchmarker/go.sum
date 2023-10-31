@@ -207,8 +207,12 @@ github.com/tmc/grpc-websocket-proxy v0.0.0-20190109142713-0ad062ec5ee5/go.mod h1
 github.com/ugorji/go v1.1.4/go.mod h1:uQMGLiO92mf5W77hV/PUCpI3pbzQx3CRekS0kk+RGrc=
 github.com/weaviate/hdf5 v0.0.0-20230911114900-3cd888ffadcd h1:I2WJ4TPa4ngF3a0m3XtlV4DdyJBuGJzM+9olvkDZTxM=
 github.com/weaviate/hdf5 v0.0.0-20230911114900-3cd888ffadcd/go.mod h1:7IHygf+QCR1KkP64KC167pb7H4JAjcNrYDjSW7stYQ8=
+github.com/weaviate/weaviate v1.21.1 h1:DszA+761jkYGKcUPa1hxe8C2gyHV85LpmrQDPglliCc=
+github.com/weaviate/weaviate v1.21.1/go.mod h1:OP1Ufd8N94229IHD1KTDW63Suzmx2xqhkx8nuBHLl+4=
 github.com/weaviate/weaviate v1.22.0-rc.0.0.20231020140519-9bd0307ee69d h1:XO+J8FhA6UOIlX03qL41tjY+zU6P4JjjOG1aQMJDjh0=
 github.com/weaviate/weaviate v1.22.0-rc.0.0.20231020140519-9bd0307ee69d/go.mod h1:d6P+Hhn0oDzjZv539ZGdCEbTYlFIAtElpKXTN/WmEF4=
+github.com/weaviate/weaviate v1.22.1 h1:No7L5saNpRYE+l7UGRMP/fa1N49j3aejLU76L3FQ2GM=
+github.com/weaviate/weaviate v1.22.1/go.mod h1:d6P+Hhn0oDzjZv539ZGdCEbTYlFIAtElpKXTN/WmEF4=
 github.com/weaviate/weaviate-go-client/v4 v4.10.1-0.20230830035039-7db88cfa955e h1:/YvikU+GDRWNi81pNEk/o6uzBFFCy28fPH+5TIkkLtU=
 github.com/weaviate/weaviate-go-client/v4 v4.10.1-0.20230830035039-7db88cfa955e/go.mod h1:1wUSKRvtHFDq5s1u7tyr7cYSwPODDt3zVbNpS8VhJ0s=
 github.com/xdg-go/pbkdf2 v1.0.0/go.mod h1:jrpuAogTd400dnrH08LKmI/xc1MbPOebTwRqcT5RDeI=

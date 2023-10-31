@@ -18,7 +18,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	weaviategrpc "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
+	wv1 "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
 )
@@ -88,11 +88,11 @@ func processQueueHttp(queue []QueryWithNeighbors, cfg *Config, c *http.Client, m
 
 func processQueueGrpc(queue []QueryWithNeighbors, cfg *Config, grpcConn *grpc.ClientConn, m *sync.Mutex, times *[]time.Duration, recall *[]float64) {
 
-	grpcClient := weaviategrpc.NewWeaviateClient(grpcConn)
+	grpcClient := wv1.NewWeaviateClient(grpcConn)
 
 	for _, query := range queue {
 
-		searchRequest := &weaviategrpc.SearchRequest{}
+		searchRequest := &wv1.SearchRequest{}
 		err := proto.Unmarshal(query.Query, searchRequest)
 		if err != nil {
 			log.Fatalf("Failed to unmarshal grpc query: %v", err)

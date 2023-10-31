@@ -197,44 +197,44 @@ func updateEf(ef int, cfg *Config) {
 	// log.Printf("Updated ef to %f\n", ef)
 }
 
-// func waitReady(cfg *Config, indexStart time.Time, maxDuration time.Duration, minQueueSize int64) time.Time {
-// 	wcfg := weaviate.Config{
-// 		Host:   cfg.HttpOrigin,
-// 		Scheme: "http",
-// 	}
-// 	client, err := weaviate.NewClient(wcfg)
-// 	if err != nil {
-// 		panic(err)
-// 	}
+func waitReady(cfg *Config, indexStart time.Time, maxDuration time.Duration, minQueueSize int64) time.Time {
+	wcfg := weaviate.Config{
+		Host:   cfg.HttpOrigin,
+		Scheme: "http",
+	}
+	client, err := weaviate.NewClient(wcfg)
+	if err != nil {
+		panic(err)
+	}
 
-// 	start := time.Now()
-// 	current := time.Now()
+	start := time.Now()
+	current := time.Now()
 
-// 	log.Infof("Waiting for queue to be empty\n")
-// 	for current.Sub(start) < maxDuration {
-// 		nodesStatus, err := client.Cluster().NodesStatusGetter().Do(context.Background())
-// 		if err != nil {
-// 			panic(err)
-// 		}
-// 		totalShardQueue := int64(0)
-// 		for _, n := range nodesStatus.Nodes {
-// 			for _, s := range n.Shards {
-// 				if s.Class == cfg.ClassName && s.VectorQueueLength > 0 {
-// 					totalShardQueue += s.VectorQueueLength
-// 				}
-// 			}
-// 		}
-// 		if totalShardQueue < minQueueSize {
-// 			log.WithFields(log.Fields{"duration": current.Sub(start)}).Printf("Queue ready\n")
-// 			log.WithFields(log.Fields{"duration": current.Sub(indexStart)}).Printf("Total load and queue ready\n")
-// 			return current
-// 		}
-// 		time.Sleep(2 * time.Second)
-// 		current = time.Now()
-// 	}
-// 	log.Fatalf("Queue wasn't ready in %s\n", maxDuration)
-// 	return current
-// }
+	log.Infof("Waiting for queue to be empty\n")
+	for current.Sub(start) < maxDuration {
+		nodesStatus, err := client.Cluster().NodesStatusGetter().Do(context.Background())
+		if err != nil {
+			panic(err)
+		}
+		totalShardQueue := int64(0)
+		for _, n := range nodesStatus.Nodes {
+			for _, s := range n.Shards {
+				if s.Class == cfg.ClassName && s.VectorQueueLength > 0 {
+					totalShardQueue += s.VectorQueueLength
+				}
+			}
+		}
+		if totalShardQueue < minQueueSize {
+			log.WithFields(log.Fields{"duration": current.Sub(start)}).Printf("Queue ready\n")
+			log.WithFields(log.Fields{"duration": current.Sub(indexStart)}).Printf("Total load and queue ready\n")
+			return current
+		}
+		time.Sleep(2 * time.Second)
+		current = time.Now()
+	}
+	log.Fatalf("Queue wasn't ready in %s\n", maxDuration)
+	return current
+}
 
 // Update ef parameter on the Weaviate schema
 func enablePQ(cfg *Config, dimensions uint) {
@@ -514,7 +514,7 @@ func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint) uint
 
 	var wg sync.WaitGroup
 
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 8; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -558,12 +558,11 @@ func loadANNBenchmarksFile(file *hdf5.File, cfg *Config) time.Duration {
 	endTime := time.Now()
 	log.WithFields(log.Fields{"duration": endTime.Sub(startTime)}).Printf("Total load time\n")
 
-	// importTime := waitReady(cfg, startTime, 4*time.Hour, 1000)
+	importTime := waitReady(cfg, startTime, 4*time.Hour, 1000)
 	sleepDuration := 30 * time.Second
 	log.Printf("Waiting for %s to allow for compaction etc\n", sleepDuration)
 	time.Sleep(sleepDuration)
-	// return importTime.Sub(startTime)
-	return endTime.Sub(startTime)
+	return importTime.Sub(startTime)
 }
 
 func parseEfValues(s string) ([]int, error) {

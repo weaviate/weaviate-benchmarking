@@ -11,7 +11,7 @@ require (
 	github.com/spf13/cobra v1.0.0
 	github.com/stretchr/testify v1.8.4
 	github.com/weaviate/hdf5 v0.0.0-20230911114900-3cd888ffadcd
-	github.com/weaviate/weaviate v1.22.0-rc.0.0.20231020140519-9bd0307ee69d
+	github.com/weaviate/weaviate v1.22.1
 	github.com/weaviate/weaviate-go-client/v4 v4.10.1-0.20230830035039-7db88cfa955e
 	google.golang.org/grpc v1.57.0
 	google.golang.org/protobuf v1.30.0
