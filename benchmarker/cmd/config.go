@@ -15,6 +15,7 @@ type Config struct {
 	Parallel       int
 	Limit          int
 	ClassName      string
+	IndexType      string
 	API            string
 	HttpAuth       string
 	Dimensions     int
@@ -37,6 +38,7 @@ type Config struct {
 	PQRatio        uint
 	TrainingLimit  int
 	Tenant         string
+	NumTenants     int
 	ExistingSchema bool
 	HttpOrigin     string
 }

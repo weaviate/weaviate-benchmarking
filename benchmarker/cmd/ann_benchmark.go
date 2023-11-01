@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -126,21 +127,41 @@ func createSchema(cfg *Config) {
 	}
 
 	multiTenancyEnabled := false
-	if cfg.Tenant != "" {
+	if cfg.NumTenants > 0 {
 		multiTenancyEnabled = true
 	}
 
-	classObj := &models.Class{
-		Class:       cfg.ClassName,
-		Description: fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
-		VectorIndexConfig: map[string]interface{}{
-			"distance":       cfg.DistanceMetric,
-			"efConstruction": float64(cfg.EfConstruction),
-			"maxConnections": float64(cfg.MaxConnections),
-		},
-		MultiTenancyConfig: &models.MultiTenancyConfig{
-			Enabled: multiTenancyEnabled,
-		},
+	var classObj *models.Class
+	if cfg.IndexType == "hnsw" {
+		classObj = &models.Class{
+			Class:           cfg.ClassName,
+			Description:     fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
+			VectorIndexType: cfg.IndexType,
+			VectorIndexConfig: map[string]interface{}{
+				"distance":       cfg.DistanceMetric,
+				"efConstruction": float64(cfg.EfConstruction),
+				"maxConnections": float64(cfg.MaxConnections),
+			},
+			MultiTenancyConfig: &models.MultiTenancyConfig{
+				Enabled: multiTenancyEnabled,
+			},
+		}
+	} else if cfg.IndexType == "flat" {
+		classObj = &models.Class{
+			Class:           cfg.ClassName,
+			Description:     fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
+			VectorIndexType: cfg.IndexType,
+			VectorIndexConfig: map[string]interface{}{
+				"distance":     cfg.DistanceMetric,
+				"fullyOnDisk":  true,
+				"quantization": false,
+			},
+			MultiTenancyConfig: &models.MultiTenancyConfig{
+				Enabled: multiTenancyEnabled,
+			},
+		}
+	} else {
+		log.Fatalf("Unknown index type %s", cfg.IndexType)
 	}
 
 	err = client.Schema().ClassCreator().WithClass(classObj).Do(context.Background())
@@ -539,11 +560,7 @@ func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint) uint
 // returns total time duration for load
 func loadANNBenchmarksFile(file *hdf5.File, cfg *Config) time.Duration {
 
-	if !cfg.ExistingSchema {
-		createSchema(cfg)
-	}
 	addTenantIfNeeded(cfg)
-
 	startTime := time.Now()
 
 	if cfg.EnablePQ {
@@ -557,12 +574,23 @@ func loadANNBenchmarksFile(file *hdf5.File, cfg *Config) time.Duration {
 	}
 	endTime := time.Now()
 	log.WithFields(log.Fields{"duration": endTime.Sub(startTime)}).Printf("Total load time\n")
-
 	importTime := waitReady(cfg, startTime, 4*time.Hour, 1000)
-	sleepDuration := 30 * time.Second
-	log.Printf("Waiting for %s to allow for compaction etc\n", sleepDuration)
-	time.Sleep(sleepDuration)
 	return importTime.Sub(startTime)
+}
+
+// Load a dataset multiple time with different tenants
+func loadHdf5MultiTenant(file *hdf5.File, cfg *Config) time.Duration {
+
+	startTime := time.Now()
+
+	for i := 0; i < cfg.NumTenants; i++ {
+		cfg.Tenant = fmt.Sprintf("%d", i)
+		loadANNBenchmarksFile(file, cfg)
+	}
+
+	endTime := time.Now()
+	log.WithFields(log.Fields{"duration": endTime.Sub(startTime)}).Printf("Multi-tenant load time\n")
+	return endTime.Sub(startTime)
 }
 
 func parseEfValues(s string) ([]int, error) {
@@ -608,12 +636,26 @@ var annBenchmarkCommand = &cobra.Command{
 
 		importTime := 0 * time.Second
 		if !cfg.QueryOnly {
-			log.WithFields(log.Fields{"efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
+
+			if !cfg.ExistingSchema {
+				createSchema(&cfg)
+			}
+
+			log.WithFields(log.Fields{"index": cfg.IndexType, "efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
 				"distance": cfg.DistanceMetric, "dataset": cfg.BenchmarkFile}).Info("Starting import")
-			importTime = loadANNBenchmarksFile(file, &cfg)
+
+			if cfg.NumTenants > 0 {
+				importTime = loadHdf5MultiTenant(file, &cfg)
+			} else {
+				importTime = loadANNBenchmarksFile(file, &cfg)
+			}
+
+			sleepDuration := 30 * time.Second
+			log.Printf("Waiting for %s to allow for compaction etc\n", sleepDuration)
+			time.Sleep(sleepDuration)
 		}
 
-		log.WithFields(log.Fields{"efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
+		log.WithFields(log.Fields{"index": cfg.IndexType, "efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
 			"distance": cfg.DistanceMetric, "dataset": cfg.BenchmarkFile}).Info("Starting query")
 
 		neighbors := loadHdf5Neighbors(file, "neighbors")
@@ -718,6 +760,8 @@ func initAnnBenchmark() {
 		"efConstruction", 256, "Set Weaviate efConstruction parameter (default 256)")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.EfArray,
 		"efArray", "16,24,32,48,64,96,128,256,512", "Array of ef parameters as comma separated list")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.IndexType,
+		"indexType", "hnsw", "Index type (hnsw or flat)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MaxConnections,
 		"maxConnections", 16, "Set Weaviate efConstruction parameter (default 16)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.Shards,
@@ -728,8 +772,8 @@ func initAnnBenchmark() {
 		"parallel", "p", numCPU, "Set the number of parallel threads which send queries")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.ExistingSchema,
 		"existingSchema", false, "Leave the schema as-is (default false)")
-	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.Tenant,
-		"tenant", "", "Tenant name to use")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.NumTenants,
+		"numTenants", 0, "Number of tenants to use (default 0)")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.API,
 		"api", "a", "grpc", "The API to use on benchmarks")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.Origin,
@@ -751,8 +795,13 @@ func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors) Results {
 	return benchmark(cfg, func(className string) QueryWithNeighbors {
 		defer func() { i++ }()
 
+		tenant := ""
+		if cfg.NumTenants > 0 {
+			tenant = fmt.Sprint(rand.Intn(cfg.NumTenants))
+		}
+
 		return QueryWithNeighbors{
-			Query:     nearVectorQueryGrpc(cfg.ClassName, queries[i], cfg.Limit, cfg.Tenant),
+			Query:     nearVectorQueryGrpc(cfg.ClassName, queries[i], cfg.Limit, tenant),
 			Neighbors: neighbors[i],
 		}
 
