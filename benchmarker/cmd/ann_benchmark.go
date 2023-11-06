@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 	"github.com/weaviate/weaviate/entities/models"
 	weaviategrpc "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -564,8 +566,12 @@ func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint) uint
 		go func() {
 			defer wg.Done()
 			grpcCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+
+			creds := credentials.NewTLS(&tls.Config{
+				InsecureSkipVerify: true,
+			})
 			defer cancel()
-			grpcConn, err := grpc.DialContext(grpcCtx, cfg.Origin, grpc.WithInsecure())
+			grpcConn, err := grpc.DialContext(grpcCtx, cfg.Origin, grpc.WithTransportCredentials(creds))
 			if err != nil {
 				log.Fatalf("Did not connect: %v", err)
 			}
