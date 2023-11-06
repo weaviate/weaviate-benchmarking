@@ -25,7 +25,7 @@ import (
 	"github.com/weaviate/weaviate/entities/models"
 	weaviategrpc "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/grpclog"
+	"google.golang.org/grpc/metadata"
 )
 
 // Batch of vectors and offset for writing to Weaviate
@@ -97,13 +97,12 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
 
-	// if cfg.HttpAuth != "" {
-	// 	fmt.Printf("Using auth %s\n", cfg.HttpAuth)
-	// 	md := metadata.Pairs(
-	// 		"Authorization", fmt.Sprintf("Bearer %s", cfg.HttpAuth),
-	// 	)
-	// 	ctx = metadata.NewOutgoingContext(ctx, md)
-	// }
+	if cfg.HttpAuth != "" {
+		md := metadata.Pairs(
+			"Authorization", fmt.Sprintf("Bearer %s", cfg.HttpAuth),
+		)
+		ctx = metadata.NewOutgoingContext(ctx, md)
+	}
 
 	response, err := (*client).BatchObjects(ctx, batchRequest)
 	if err != nil {
@@ -559,8 +558,6 @@ func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint) uint
 	}()
 
 	var wg sync.WaitGroup
-
-	grpclog.SetLoggerV2(grpclog.NewLoggerV2(os.Stdout, os.Stderr, os.Stderr))
 
 	for i := 0; i < 8; i++ {
 		wg.Add(1)
