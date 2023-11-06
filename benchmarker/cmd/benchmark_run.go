@@ -20,6 +20,7 @@ import (
 
 	wv1 "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -103,6 +104,13 @@ func processQueueGrpc(queue []QueryWithNeighbors, cfg *Config, grpcConn *grpc.Cl
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
+		if cfg.HttpAuth != "" {
+			md := metadata.Pairs(
+				"Authorization", fmt.Sprintf("Bearer %s", cfg.HttpAuth),
+			)
+			ctx = metadata.NewOutgoingContext(ctx, md)
+		}
+
 		searchReply, err := grpcClient.Search(ctx, searchRequest)
 		if err != nil {
 			log.Fatalf("Could not search with grpc: %v", err)
@@ -147,7 +155,9 @@ func benchmark(cfg Config, getQueryFn func(className string) QueryWithNeighbors)
 
 	httpClient := &http.Client{Transport: t}
 
-	grpcConn, err := grpc.Dial(cfg.Origin, grpc.WithInsecure(), grpc.WithBlock())
+	grpcCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	grpcConn, err := grpc.DialContext(grpcCtx, cfg.Origin, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
 		log.Fatalf("Did not connect: %v", err)
 	}

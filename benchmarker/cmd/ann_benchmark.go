@@ -20,10 +20,12 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/weaviate/hdf5"
 	"github.com/weaviate/weaviate-go-client/v4/weaviate"
+	"github.com/weaviate/weaviate-go-client/v4/weaviate/auth"
 	"github.com/weaviate/weaviate-go-client/v4/weaviate/fault"
 	"github.com/weaviate/weaviate/entities/models"
 	weaviategrpc "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/grpclog"
 )
 
 // Batch of vectors and offset for writing to Weaviate
@@ -95,6 +97,14 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
 
+	// if cfg.HttpAuth != "" {
+	// 	fmt.Printf("Using auth %s\n", cfg.HttpAuth)
+	// 	md := metadata.Pairs(
+	// 		"Authorization", fmt.Sprintf("Bearer %s", cfg.HttpAuth),
+	// 	)
+	// 	ctx = metadata.NewOutgoingContext(ctx, md)
+	// }
+
 	response, err := (*client).BatchObjects(ctx, batchRequest)
 	if err != nil {
 		log.Fatalf("could not send batch: %v", err)
@@ -114,7 +124,10 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 func createSchema(cfg *Config) {
 	wcfg := weaviate.Config{
 		Host:   cfg.HttpOrigin,
-		Scheme: "http",
+		Scheme: cfg.HttpScheme,
+	}
+	if cfg.HttpAuth != "" {
+		wcfg.AuthConfig = auth.ApiKey{Value: cfg.HttpAuth}
 	}
 	client, err := weaviate.NewClient(wcfg)
 	if err != nil {
@@ -177,7 +190,10 @@ func addTenantIfNeeded(cfg *Config) {
 	}
 	wcfg := weaviate.Config{
 		Host:   cfg.HttpOrigin,
-		Scheme: "http",
+		Scheme: cfg.HttpScheme,
+	}
+	if cfg.HttpAuth != "" {
+		wcfg.AuthConfig = auth.ApiKey{Value: cfg.HttpAuth}
 	}
 	client, err := weaviate.NewClient(wcfg)
 	if err != nil {
@@ -193,7 +209,10 @@ func addTenantIfNeeded(cfg *Config) {
 func updateEf(ef int, cfg *Config) {
 	wcfg := weaviate.Config{
 		Host:   cfg.HttpOrigin,
-		Scheme: "http",
+		Scheme: cfg.HttpScheme,
+	}
+	if cfg.HttpAuth != "" {
+		wcfg.AuthConfig = auth.ApiKey{Value: cfg.HttpAuth}
 	}
 	client, err := weaviate.NewClient(wcfg)
 	if err != nil {
@@ -221,7 +240,10 @@ func updateEf(ef int, cfg *Config) {
 func waitReady(cfg *Config, indexStart time.Time, maxDuration time.Duration, minQueueSize int64) time.Time {
 	wcfg := weaviate.Config{
 		Host:   cfg.HttpOrigin,
-		Scheme: "http",
+		Scheme: cfg.HttpScheme,
+	}
+	if cfg.HttpAuth != "" {
+		wcfg.AuthConfig = auth.ApiKey{Value: cfg.HttpAuth}
 	}
 	client, err := weaviate.NewClient(wcfg)
 	if err != nil {
@@ -261,7 +283,10 @@ func waitReady(cfg *Config, indexStart time.Time, maxDuration time.Duration, min
 func enablePQ(cfg *Config, dimensions uint) {
 	wcfg := weaviate.Config{
 		Host:   cfg.HttpOrigin,
-		Scheme: "http",
+		Scheme: cfg.HttpScheme,
+	}
+	if cfg.HttpAuth != "" {
+		wcfg.AuthConfig = auth.ApiKey{Value: cfg.HttpAuth}
 	}
 	client, err := weaviate.NewClient(wcfg)
 	if err != nil {
@@ -535,11 +560,15 @@ func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint) uint
 
 	var wg sync.WaitGroup
 
+	grpclog.SetLoggerV2(grpclog.NewLoggerV2(os.Stdout, os.Stderr, os.Stderr))
+
 	for i := 0; i < 8; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			grpcConn, err := grpc.Dial(cfg.Origin, grpc.WithInsecure(), grpc.WithBlock())
+			grpcCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			grpcConn, err := grpc.DialContext(grpcCtx, cfg.Origin, grpc.WithInsecure())
 			if err != nil {
 				log.Fatalf("Did not connect: %v", err)
 			}
@@ -780,6 +809,8 @@ func initAnnBenchmark() {
 		"origin", "u", "localhost:50051", "The gRPC origin that Weaviate is running at")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.HttpOrigin,
 		"httpOrigin", "localhost:8080", "The http origin for Weaviate (only used if grpc enabled)")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.HttpScheme,
+		"httpScheme", "http", "The http scheme (http or https)")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.OutputFormat,
 		"format", "f", "text", "Output format, one of [text, json]")
 	annBenchmarkCommand.PersistentFlags().IntVarP(&globalConfig.Limit,

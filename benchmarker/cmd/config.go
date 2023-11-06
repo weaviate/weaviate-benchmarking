@@ -41,9 +41,10 @@ type Config struct {
 	NumTenants     int
 	ExistingSchema bool
 	HttpOrigin     string
+	HttpScheme     string
 }
 
-func (c Config) Validate() error {
+func (c *Config) Validate() error {
 	if err := c.validateCommon(); err != nil {
 		return err
 	}
@@ -63,7 +64,7 @@ func (c Config) Validate() error {
 	}
 }
 
-func (c Config) validateCommon() error {
+func (c *Config) validateCommon() error {
 	if c.Origin == "" {
 		return errors.Errorf("origin must be set")
 	}
