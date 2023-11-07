@@ -38,6 +38,7 @@ type Config struct {
 	PQRatio        uint
 	TrainingLimit  int
 	Tenant         string
+	StartTenantNum int
 	NumTenants     int
 	ExistingSchema bool
 	HttpOrigin     string

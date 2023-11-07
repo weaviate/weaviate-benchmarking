@@ -200,14 +200,24 @@ func addTenantIfNeeded(cfg *Config) {
 	if err != nil {
 		panic(err)
 	}
-	client.Schema().TenantsCreator().
+	err = client.Schema().TenantsCreator().
 		WithClassName(cfg.ClassName).
 		WithTenants(models.Tenant{Name: cfg.Tenant}).
 		Do(context.Background())
+	if err != nil {
+		log.Printf("Error adding tenant retrying in 1 second %v", err)
+		time.Sleep(1 * time.Second)
+		addTenantIfNeeded(cfg)
+	}
 }
 
 // Update ef parameter on the Weaviate schema
 func updateEf(ef int, cfg *Config) {
+
+	if cfg.IndexType == "flat" {
+		return
+	}
+
 	wcfg := weaviate.Config{
 		Host:   cfg.HttpOrigin,
 		Scheme: cfg.HttpScheme,
@@ -235,7 +245,6 @@ func updateEf(ef int, cfg *Config) {
 		panic(err)
 	}
 
-	// log.Printf("Updated ef to %f\n", ef)
 }
 
 func waitReady(cfg *Config, indexStart time.Time, maxDuration time.Duration, minQueueSize int64) time.Time {
@@ -806,6 +815,8 @@ func initAnnBenchmark() {
 		"existingSchema", false, "Leave the schema as-is (default false)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.NumTenants,
 		"numTenants", 0, "Number of tenants to use (default 0)")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.StartTenantNum,
+		"startTenant", 0, "Tenant # to start at if using multiple tenants (default 0)")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.API,
 		"api", "a", "grpc", "The API to use on benchmarks")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.Origin,
