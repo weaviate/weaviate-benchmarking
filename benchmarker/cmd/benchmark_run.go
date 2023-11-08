@@ -156,13 +156,19 @@ func benchmark(cfg Config, getQueryFn func(className string) QueryWithNeighbors)
 	}
 
 	httpClient := &http.Client{Transport: t}
-	creds := credentials.NewTLS(&tls.Config{
-		InsecureSkipVerify: true,
-	})
+
+	httpOption := grpc.WithInsecure()
+
+	if cfg.HttpScheme == "https" {
+		creds := credentials.NewTLS(&tls.Config{
+			InsecureSkipVerify: true,
+		})
+		httpOption = grpc.WithTransportCredentials(creds)
+	}
 
 	grpcCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	grpcConn, err := grpc.DialContext(grpcCtx, cfg.Origin, grpc.WithTransportCredentials(creds))
+	grpcConn, err := grpc.DialContext(grpcCtx, cfg.Origin, httpOption)
 	if err != nil {
 		log.Fatalf("Did not connect: %v", err)
 	}
