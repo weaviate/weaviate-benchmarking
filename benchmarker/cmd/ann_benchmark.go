@@ -621,8 +621,10 @@ func loadANNBenchmarksFile(file *hdf5.File, cfg *Config) time.Duration {
 	}
 	endTime := time.Now()
 	log.WithFields(log.Fields{"duration": endTime.Sub(startTime)}).Printf("Total load time\n")
-	importTime := waitReady(cfg, startTime, 4*time.Hour, 1000)
-	return importTime.Sub(startTime)
+	if !cfg.SkipAsyncReady {
+		endTime = waitReady(cfg, startTime, 4*time.Hour, 1000)
+	}
+	return endTime.Sub(startTime)
 }
 
 // Load a dataset multiple time with different tenants
@@ -801,6 +803,8 @@ func initAnnBenchmark() {
 		"pq", false, "Enable product quantization (default false)")
 	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.PQRatio,
 		"pqRatio", 4, "Set PQ segments = dimensions / ratio (must divide evenly default 4)")
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.SkipAsyncReady,
+		"skipAsyncReady", false, "Skip async ready (default false)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.TrainingLimit,
 		"trainingLimit", 100000, "Set PQ trainingLimit (default 100000)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.EfConstruction,

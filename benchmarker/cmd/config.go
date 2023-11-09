@@ -35,6 +35,7 @@ type Config struct {
 	QueryOnly      bool
 	QueryDuration  int
 	EnablePQ       bool
+	SkipAsyncReady bool
 	PQRatio        uint
 	TrainingLimit  int
 	Tenant         string
