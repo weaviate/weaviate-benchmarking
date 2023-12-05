@@ -160,6 +160,18 @@ func createSchema(cfg *Config) {
 				Enabled: multiTenancyEnabled,
 			},
 		}
+		if cfg.PQ == "auto" {
+			classObj.VectorIndexConfig = map[string]interface{}{
+				"distance":       cfg.DistanceMetric,
+				"efConstruction": float64(cfg.EfConstruction),
+				"maxConnections": float64(cfg.MaxConnections),
+				"pq": map[string]interface{}{
+					"enabled":       true,
+					"segments":      cfg.PQSegments,
+					"trainingLimit": cfg.TrainingLimit,
+				},
+			}
+		}
 	} else if cfg.IndexType == "flat" {
 		classObj = &models.Class{
 			Class:           cfg.ClassName,
@@ -610,7 +622,7 @@ func loadANNBenchmarksFile(file *hdf5.File, cfg *Config) time.Duration {
 	addTenantIfNeeded(cfg)
 	startTime := time.Now()
 
-	if cfg.EnablePQ {
+	if cfg.PQ == "enabled" {
 		dimensions := loadHdf5Train(file, cfg, 0, uint(cfg.TrainingLimit))
 		log.Printf("Pausing to enable PQ.")
 		enablePQ(cfg, dimensions)
@@ -799,10 +811,12 @@ func initAnnBenchmark() {
 		"query", "q", false, "Do not import data and only run query tests")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.QueryDuration,
 		"queryDuration", 0, "Instead of querying the test dataset once, query for the specified duration in seconds (default 0)")
-	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.EnablePQ,
-		"pq", false, "Enable product quantization (default false)")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.PQ,
+		"pq", "disabled", "Set PQ (disabled, auto, or enabled) (default disabled)")
 	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.PQRatio,
 		"pqRatio", 4, "Set PQ segments = dimensions / ratio (must divide evenly default 4)")
+	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.PQSegments,
+		"pqSegments", 256, "Set PQ segments")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.SkipAsyncReady,
 		"skipAsyncReady", false, "Skip async ready (default false)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.TrainingLimit,

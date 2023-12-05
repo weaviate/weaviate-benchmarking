@@ -34,9 +34,10 @@ type Config struct {
 	EfArray        string
 	QueryOnly      bool
 	QueryDuration  int
-	EnablePQ       bool
+	PQ             string
 	SkipAsyncReady bool
 	PQRatio        uint
+	PQSegments     uint
 	TrainingLimit  int
 	Tenant         string
 	StartTenantNum int
