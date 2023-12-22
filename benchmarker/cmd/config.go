@@ -34,6 +34,7 @@ type Config struct {
 	EfArray        string
 	QueryOnly      bool
 	QueryDuration  int
+	BQ             bool
 	PQ             string
 	SkipAsyncReady bool
 	PQRatio        uint

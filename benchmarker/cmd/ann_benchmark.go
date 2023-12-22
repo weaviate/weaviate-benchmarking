@@ -171,6 +171,16 @@ func createSchema(cfg *Config) {
 					"trainingLimit": cfg.TrainingLimit,
 				},
 			}
+		} else if cfg.BQ {
+			classObj.VectorIndexConfig = map[string]interface{}{
+				"distance":       cfg.DistanceMetric,
+				"efConstruction": float64(cfg.EfConstruction),
+				"maxConnections": float64(cfg.MaxConnections),
+				"bq": map[string]interface{}{
+					"enabled": true,
+					"cache":   true,
+				},
+			}
 		}
 	} else if cfg.IndexType == "flat" {
 		classObj = &models.Class{
@@ -178,14 +188,23 @@ func createSchema(cfg *Config) {
 			Description:     fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
 			VectorIndexType: cfg.IndexType,
 			VectorIndexConfig: map[string]interface{}{
-				"distance":     cfg.DistanceMetric,
-				"fullyOnDisk":  true,
-				"quantization": false,
+				"distance": cfg.DistanceMetric,
 			},
 			MultiTenancyConfig: &models.MultiTenancyConfig{
 				Enabled: multiTenancyEnabled,
 			},
 		}
+		if cfg.BQ {
+			classObj.VectorIndexConfig = map[string]interface{}{
+				"distance": cfg.DistanceMetric,
+				"bq": map[string]interface{}{
+					"enabled": true,
+					"cache":   true,
+				},
+			}
+
+		}
+
 	} else {
 		log.Fatalf("Unknown index type %s", cfg.IndexType)
 	}
@@ -811,6 +830,8 @@ func initAnnBenchmark() {
 		"query", "q", false, "Do not import data and only run query tests")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.QueryDuration,
 		"queryDuration", 0, "Instead of querying the test dataset once, query for the specified duration in seconds (default 0)")
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.BQ,
+		"bq", false, "Set BQ")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.PQ,
 		"pq", "disabled", "Set PQ (disabled, auto, or enabled) (default disabled)")
 	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.PQRatio,
