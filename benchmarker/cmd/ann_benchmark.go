@@ -152,9 +152,10 @@ func createSchema(cfg *Config) {
 			Description:     fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
 			VectorIndexType: cfg.IndexType,
 			VectorIndexConfig: map[string]interface{}{
-				"distance":       cfg.DistanceMetric,
-				"efConstruction": float64(cfg.EfConstruction),
-				"maxConnections": float64(cfg.MaxConnections),
+				"distance":               cfg.DistanceMetric,
+				"efConstruction":         float64(cfg.EfConstruction),
+				"maxConnections":         float64(cfg.MaxConnections),
+				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
 			},
 			MultiTenancyConfig: &models.MultiTenancyConfig{
 				Enabled: multiTenancyEnabled,
@@ -162,9 +163,10 @@ func createSchema(cfg *Config) {
 		}
 		if cfg.PQ == "auto" {
 			classObj.VectorIndexConfig = map[string]interface{}{
-				"distance":       cfg.DistanceMetric,
-				"efConstruction": float64(cfg.EfConstruction),
-				"maxConnections": float64(cfg.MaxConnections),
+				"distance":               cfg.DistanceMetric,
+				"efConstruction":         float64(cfg.EfConstruction),
+				"maxConnections":         float64(cfg.MaxConnections),
+				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
 				"pq": map[string]interface{}{
 					"enabled":       true,
 					"segments":      cfg.PQSegments,
@@ -173,9 +175,10 @@ func createSchema(cfg *Config) {
 			}
 		} else if cfg.BQ {
 			classObj.VectorIndexConfig = map[string]interface{}{
-				"distance":       cfg.DistanceMetric,
-				"efConstruction": float64(cfg.EfConstruction),
-				"maxConnections": float64(cfg.MaxConnections),
+				"distance":               cfg.DistanceMetric,
+				"efConstruction":         float64(cfg.EfConstruction),
+				"maxConnections":         float64(cfg.MaxConnections),
+				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
 				"bq": map[string]interface{}{
 					"enabled": true,
 					"cache":   true,
@@ -582,6 +585,19 @@ func loadHdf5Neighbors(file *hdf5.File, name string) [][]int {
 	return chunkData
 }
 
+func calculateHdf5TrainExtent(file *hdf5.File, cfg *Config) (uint, uint) {
+	dataset, err := file.OpenDataset("train")
+	if err != nil {
+		log.Fatalf("Error opening dataset: %v", err)
+	}
+	defer dataset.Close()
+	dataspace := dataset.Space()
+	extent, _, _ := dataspace.SimpleExtentDims()
+	dimensions := extent[1]
+	rows := extent[0]
+	return rows, dimensions
+}
+
 func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint) uint {
 	dataset, err := file.OpenDataset("train")
 	if err != nil {
@@ -636,7 +652,7 @@ func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint) uint
 
 // Load an hdf5 file in the format of ann-benchmarks.com
 // returns total time duration for load
-func loadANNBenchmarksFile(file *hdf5.File, cfg *Config) time.Duration {
+func loadANNBenchmarksFile(file *hdf5.File, cfg *Config, maxRows uint) time.Duration {
 
 	addTenantIfNeeded(cfg)
 	startTime := time.Now()
@@ -648,7 +664,7 @@ func loadANNBenchmarksFile(file *hdf5.File, cfg *Config) time.Duration {
 		loadHdf5Train(file, cfg, uint(cfg.TrainingLimit), 0)
 
 	} else {
-		loadHdf5Train(file, cfg, 0, 0)
+		loadHdf5Train(file, cfg, 0, maxRows)
 	}
 	endTime := time.Now()
 	log.WithFields(log.Fields{"duration": endTime.Sub(startTime)}).Printf("Total load time\n")
@@ -665,7 +681,7 @@ func loadHdf5MultiTenant(file *hdf5.File, cfg *Config) time.Duration {
 
 	for i := 0; i < cfg.NumTenants; i++ {
 		cfg.Tenant = fmt.Sprintf("%d", i)
-		loadANNBenchmarksFile(file, cfg)
+		loadANNBenchmarksFile(file, cfg, 0)
 	}
 
 	endTime := time.Now()
@@ -727,7 +743,18 @@ var annBenchmarkCommand = &cobra.Command{
 			if cfg.NumTenants > 0 {
 				importTime = loadHdf5MultiTenant(file, &cfg)
 			} else {
-				importTime = loadANNBenchmarksFile(file, &cfg)
+				importTime = loadANNBenchmarksFile(file, &cfg, 0)
+			}
+
+			if cfg.UpdatePercentage > 0 && cfg.UpdatePercentage < 1 {
+
+				totalRowCount, _ := calculateHdf5TrainExtent(file, &cfg)
+				updateRowCount := uint(float64(totalRowCount) * cfg.UpdatePercentage)
+
+				log.WithFields(log.Fields{"index": cfg.IndexType, "efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
+					"distance": cfg.DistanceMetric, "dataset": cfg.BenchmarkFile, "updateCount": updateRowCount}).Info("Starting update")
+				updateTime := loadANNBenchmarksFile(file, &cfg, updateRowCount)
+				log.WithFields(log.Fields{"duration": updateTime.Seconds()}).Printf("Total update time\n")
 			}
 
 			sleepDuration := 30 * time.Second
@@ -874,6 +901,10 @@ func initAnnBenchmark() {
 		"format", "f", "text", "Output format, one of [text, json]")
 	annBenchmarkCommand.PersistentFlags().IntVarP(&globalConfig.Limit,
 		"limit", "l", 10, "Set the query limit / k (default 10)")
+	annBenchmarkCommand.PersistentFlags().Float64Var(&globalConfig.UpdatePercentage,
+		"updatePercentage", 0.0, "After loading the dataset, update the specified percentage of vectors")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.CleanupIntervalSeconds,
+		"cleanupIntervalSeconds", 300, "HNSW cleanup interval seconds (default 300)")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.OutputFile,
 		"output", "o", "", "Filename for an output file. If none provided, output to stdout only")
 }
