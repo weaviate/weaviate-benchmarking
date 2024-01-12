@@ -47,6 +47,7 @@ type Config struct {
 	HttpOrigin             string
 	HttpScheme             string
 	UpdatePercentage       float64
+	UpdateIterations       int
 	CleanupIntervalSeconds int
 }
 
@@ -68,6 +69,10 @@ func (c *Config) Validate() error {
 	default:
 		return errors.Errorf("unrecognized mode %q", c.Mode)
 	}
+}
+
+func (c *Config) performUpdates() bool {
+	return c.UpdatePercentage > 0 && c.UpdatePercentage < 1 && c.UpdateIterations > 0
 }
 
 func (c *Config) validateCommon() error {

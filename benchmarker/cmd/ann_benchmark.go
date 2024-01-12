@@ -6,7 +6,10 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"math"
 	"math/rand"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -15,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/common/expfmt"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/google/uuid"
@@ -702,6 +706,136 @@ func parseEfValues(s string) ([]int, error) {
 	return nums, nil
 }
 
+func waitTombstonesEmpty(cfg *Config) error {
+
+	prometheusURL := fmt.Sprintf("http://%s/metrics", strings.Replace(cfg.HttpOrigin, "8080", "2112", -1))
+	metricName := "vector_index_tombstones"
+
+	log.Printf("Waiting to allow for tombstone cleanup\n")
+
+	start := time.Now()
+
+	for {
+		response, err := http.Get(prometheusURL)
+		if err != nil {
+			return err
+		}
+		defer response.Body.Close()
+
+		if response.StatusCode != http.StatusOK {
+			return fmt.Errorf("HTTP request failed with status code %d", response.StatusCode)
+		}
+
+		body, err := ioutil.ReadAll(response.Body)
+		if err != nil {
+			return err
+		}
+		bodyReader := strings.NewReader(string(body))
+
+		parser := expfmt.TextParser{}
+		metrics, err := parser.TextToMetricFamilies(bodyReader)
+		if err != nil {
+			return err
+		}
+
+		var totalSum float64 = 0
+		if vectorMetric, ok := metrics[metricName]; ok {
+			for _, m := range vectorMetric.Metric {
+				value := m.GetGauge().GetValue()
+				totalSum += value
+			}
+		}
+
+		if totalSum == 0 {
+			break
+		}
+
+		time.Sleep(time.Second * 10)
+	}
+
+	log.WithFields(log.Fields{"duration": time.Since(start)}).Infof("Tombstones empty\n")
+
+	return nil
+}
+
+func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, neighbors [][]int) {
+
+	runID := strconv.FormatInt(time.Now().Unix(), 10)
+
+	efCandidates, err := parseEfValues(cfg.EfArray)
+	if err != nil {
+		log.Fatalf("Error parsing efArray, expected commas separated format \"16,32,64\" but:%v\n", err)
+	}
+
+	var benchmarkResultsMap []map[string]interface{}
+	for _, ef := range efCandidates {
+		updateEf(ef, cfg)
+
+		var result Results
+
+		if cfg.QueryDuration > 0 {
+			result = benchmarkANNDuration(*cfg, testData, neighbors)
+		} else {
+			result = benchmarkANN(*cfg, testData, neighbors)
+		}
+
+		log.WithFields(log.Fields{"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall,
+			"parallel": cfg.Parallel, "limit": cfg.Limit,
+			"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed}).Info("Benchmark result")
+
+		dataset := filepath.Base(cfg.BenchmarkFile)
+
+		var resultMap map[string]interface{}
+
+		benchResult := ResultsJSONBenchmark{
+			Api:              cfg.API,
+			Ef:               ef,
+			EfConstruction:   cfg.EfConstruction,
+			MaxConnections:   cfg.MaxConnections,
+			Mean:             result.Mean.Seconds(),
+			P99Latency:       result.Percentiles[len(result.Percentiles)-1].Seconds(),
+			QueriesPerSecond: result.QueriesPerSecond,
+			Shards:           cfg.Shards,
+			Parallelization:  cfg.Parallel,
+			Limit:            cfg.Limit,
+			ImportTime:       importTime.Seconds(),
+			RunID:            runID,
+			Dataset:          dataset,
+			Recall:           result.Recall,
+		}
+
+		jsonData, err := json.Marshal(benchResult)
+		if err != nil {
+			log.Fatalf("Error converting result to json")
+		}
+
+		if err := json.Unmarshal(jsonData, &resultMap); err != nil {
+			log.Fatalf("Error converting json to map")
+		}
+
+		if cfg.LabelMap != nil {
+			for key, value := range cfg.LabelMap {
+				resultMap[key] = value
+			}
+		}
+
+		benchmarkResultsMap = append(benchmarkResultsMap, resultMap)
+
+	}
+
+	data, err := json.MarshalIndent(benchmarkResultsMap, "", "    ")
+	if err != nil {
+		log.Fatalf("Error marshaling benchmark results: %v", err)
+	}
+
+	os.Mkdir("./results", 0755)
+
+	err = os.WriteFile(fmt.Sprintf("./results/%s.json", runID), data, 0644)
+	if err != nil {
+		log.Fatalf("Error writing benchmark results to file: %v", err)
+	}
+}
+
 var annBenchmarkCommand = &cobra.Command{
 	Use:   "ann-benchmark",
 	Short: "Benchmark ANN Benchmark style hdf5 files",
@@ -717,13 +851,6 @@ var annBenchmarkCommand = &cobra.Command{
 
 		cfg.parseLabels()
 
-		efCandidates, err := parseEfValues(cfg.EfArray)
-		if err != nil {
-			log.Fatalf("Error parsing efArray, expected commas separated format \"16,32,64\" but:%v\n", err)
-		}
-
-		runID := strconv.FormatInt(time.Now().Unix(), 10)
-
 		file, err := hdf5.OpenFile(cfg.BenchmarkFile, hdf5.F_ACC_RDONLY)
 		if err != nil {
 			log.Fatalf("Error opening file: %v\n", err)
@@ -731,6 +858,7 @@ var annBenchmarkCommand = &cobra.Command{
 		defer file.Close()
 
 		importTime := 0 * time.Second
+
 		if !cfg.QueryOnly {
 
 			if !cfg.ExistingSchema {
@@ -746,95 +874,43 @@ var annBenchmarkCommand = &cobra.Command{
 				importTime = loadANNBenchmarksFile(file, &cfg, 0)
 			}
 
-			if cfg.UpdatePercentage > 0 && cfg.UpdatePercentage < 1 {
-
-				totalRowCount, _ := calculateHdf5TrainExtent(file, &cfg)
-				updateRowCount := uint(float64(totalRowCount) * cfg.UpdatePercentage)
-
-				log.WithFields(log.Fields{"index": cfg.IndexType, "efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
-					"distance": cfg.DistanceMetric, "dataset": cfg.BenchmarkFile, "updateCount": updateRowCount}).Info("Starting update")
-				updateTime := loadANNBenchmarksFile(file, &cfg, updateRowCount)
-				log.WithFields(log.Fields{"duration": updateTime.Seconds()}).Printf("Total update time\n")
-			}
-
 			sleepDuration := 30 * time.Second
 			log.Printf("Waiting for %s to allow for compaction etc\n", sleepDuration)
 			time.Sleep(sleepDuration)
 		}
 
 		log.WithFields(log.Fields{"index": cfg.IndexType, "efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
-			"distance": cfg.DistanceMetric, "dataset": cfg.BenchmarkFile}).Info("Starting query")
+			"distance": cfg.DistanceMetric, "dataset": cfg.BenchmarkFile}).Info("Benchmark configuration")
 
 		neighbors := loadHdf5Neighbors(file, "neighbors")
 		testData := loadHdf5Float32(file, "test")
 
-		var benchmarkResultsMap []map[string]interface{}
+		if cfg.performUpdates() {
 
-		for _, ef := range efCandidates {
-			updateEf(ef, &cfg)
+			// If updates are enabled we
 
-			var result Results
+			totalRowCount, _ := calculateHdf5TrainExtent(file, &cfg)
+			updateRowCount := uint(math.Floor(float64(totalRowCount) * cfg.UpdatePercentage))
 
-			if cfg.QueryDuration > 0 {
-				result = benchmarkANNDuration(cfg, testData, neighbors)
-			} else {
-				result = benchmarkANN(cfg, testData, neighbors)
-			}
+			log.Printf("Performing %d update iterations\n", cfg.UpdateIterations)
 
-			log.WithFields(log.Fields{"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall,
-				"parallel": cfg.Parallel, "limit": cfg.Limit,
-				"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed}).Info("Benchmark result")
+			for i := 0; i < cfg.UpdateIterations; i++ {
+				log.WithFields(log.Fields{"index": cfg.IndexType, "efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
+					"distance": cfg.DistanceMetric, "dataset": cfg.BenchmarkFile, "updateCount": updateRowCount}).Info("Starting update")
+				updateTime := loadANNBenchmarksFile(file, &cfg, updateRowCount)
+				log.WithFields(log.Fields{"duration": updateTime.Seconds()}).Printf("Total update time\n")
 
-			dataset := filepath.Base(cfg.BenchmarkFile)
-
-			var resultMap map[string]interface{}
-
-			benchResult := ResultsJSONBenchmark{
-				Api:              cfg.API,
-				Ef:               ef,
-				EfConstruction:   cfg.EfConstruction,
-				MaxConnections:   cfg.MaxConnections,
-				Mean:             result.Mean.Seconds(),
-				P99Latency:       result.Percentiles[len(result.Percentiles)-1].Seconds(),
-				QueriesPerSecond: result.QueriesPerSecond,
-				Shards:           cfg.Shards,
-				Parallelization:  cfg.Parallel,
-				Limit:            cfg.Limit,
-				ImportTime:       importTime.Seconds(),
-				RunID:            runID,
-				Dataset:          dataset,
-				Recall:           result.Recall,
-			}
-
-			jsonData, err := json.Marshal(benchResult)
-			if err != nil {
-				log.Fatalf("Error converting result to json")
-			}
-
-			if err := json.Unmarshal(jsonData, &resultMap); err != nil {
-				log.Fatalf("Error converting json to map")
-			}
-
-			if cfg.LabelMap != nil {
-				for key, value := range cfg.LabelMap {
-					resultMap[key] = value
+				err := waitTombstonesEmpty(&cfg)
+				if err != nil {
+					log.Fatalf("Error waiting for tombstones to be empty: %v", err)
 				}
+
+				runQueries(&cfg, importTime, testData, neighbors)
+
 			}
 
-			benchmarkResultsMap = append(benchmarkResultsMap, resultMap)
-
-		}
-
-		data, err := json.MarshalIndent(benchmarkResultsMap, "", "    ")
-		if err != nil {
-			log.Fatalf("Error marshaling benchmark results: %v", err)
-		}
-
-		os.Mkdir("./results", 0755)
-
-		err = os.WriteFile(fmt.Sprintf("./results/%s.json", runID), data, 0644)
-		if err != nil {
-			log.Fatalf("Error writing benchmark results to file: %v", err)
+		} else {
+			runQueries(&cfg, importTime, testData, neighbors)
 		}
 
 	},
@@ -903,6 +979,8 @@ func initAnnBenchmark() {
 		"limit", "l", 10, "Set the query limit / k (default 10)")
 	annBenchmarkCommand.PersistentFlags().Float64Var(&globalConfig.UpdatePercentage,
 		"updatePercentage", 0.0, "After loading the dataset, update the specified percentage of vectors")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.UpdateIterations,
+		"updateIterations", 1, "Number of iterations to update the dataset if updatePercentage is set")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.CleanupIntervalSeconds,
 		"cleanupIntervalSeconds", 300, "HNSW cleanup interval seconds (default 300)")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.OutputFile,
