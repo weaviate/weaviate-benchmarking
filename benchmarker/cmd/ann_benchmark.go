@@ -885,6 +885,8 @@ var annBenchmarkCommand = &cobra.Command{
 		neighbors := loadHdf5Neighbors(file, "neighbors")
 		testData := loadHdf5Float32(file, "test")
 
+		runQueries(&cfg, importTime, testData, neighbors)
+
 		if cfg.performUpdates() {
 
 			// If updates are enabled we
@@ -909,8 +911,6 @@ var annBenchmarkCommand = &cobra.Command{
 
 			}
 
-		} else {
-			runQueries(&cfg, importTime, testData, neighbors)
 		}
 
 	},
