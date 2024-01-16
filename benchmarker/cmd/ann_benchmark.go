@@ -87,7 +87,7 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 
 	for i, vector := range chunk.Vectors {
 		objects[i] = &weaviategrpc.BatchObject{
-			Uuid:       uuidFromInt(i + chunk.Offset),
+			Uuid:       uuidFromInt(i + chunk.Offset + cfg.Offset),
 			Vector:     vector,
 			Collection: cfg.ClassName,
 		}
@@ -983,6 +983,8 @@ func initAnnBenchmark() {
 		"updateIterations", 1, "Number of iterations to update the dataset if updatePercentage is set")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.CleanupIntervalSeconds,
 		"cleanupIntervalSeconds", 300, "HNSW cleanup interval seconds (default 300)")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.Offset,
+		"offset", 0, "Offset for uuids (useful to load the same dataset multiple times)")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.OutputFile,
 		"output", "o", "", "Filename for an output file. If none provided, output to stdout only")
 }
