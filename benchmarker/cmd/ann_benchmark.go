@@ -223,6 +223,31 @@ func createSchema(cfg *Config) {
 	log.Printf("Created class %s", cfg.ClassName)
 }
 
+func deleteRange(cfg *Config, start int, end int) {
+	wcfg := weaviate.Config{
+		Host:   cfg.HttpOrigin,
+		Scheme: cfg.HttpScheme,
+	}
+	if cfg.HttpAuth != "" {
+		wcfg.AuthConfig = auth.ApiKey{Value: cfg.HttpAuth}
+	}
+	client, err := weaviate.NewClient(wcfg)
+	if err != nil {
+		panic(err)
+	}
+
+	log.Printf("Deleting range %d-%d on class %s", start, end, cfg.ClassName)
+	for i := start; i < end; i++ {
+		err = client.Data().Deleter().WithClassName(cfg.ClassName).WithID(uuidFromInt(i)).Do(context.Background())
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	log.Printf("Completed deletes")
+
+}
+
 func addTenantIfNeeded(cfg *Config) {
 	if cfg.Tenant == "" {
 		return
@@ -897,6 +922,9 @@ var annBenchmarkCommand = &cobra.Command{
 			log.Printf("Performing %d update iterations\n", cfg.UpdateIterations)
 
 			for i := 0; i < cfg.UpdateIterations; i++ {
+
+				deleteRange(&cfg, 0, int(updateRowCount))
+
 				log.WithFields(log.Fields{"index": cfg.IndexType, "efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
 					"distance": cfg.DistanceMetric, "dataset": cfg.BenchmarkFile, "updateCount": updateRowCount}).Info("Starting update")
 				updateTime := loadANNBenchmarksFile(file, &cfg, updateRowCount)
