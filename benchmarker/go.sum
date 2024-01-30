@@ -215,8 +215,8 @@ github.com/weaviate/hdf5 v0.0.0-20230911114900-3cd888ffadcd h1:I2WJ4TPa4ngF3a0m3
 github.com/weaviate/hdf5 v0.0.0-20230911114900-3cd888ffadcd/go.mod h1:7IHygf+QCR1KkP64KC167pb7H4JAjcNrYDjSW7stYQ8=
 github.com/weaviate/weaviate v1.23.4 h1:BptzPjE6t8ljdmJJ/INeUgVCiZIYBVdAUoi61PdQBLY=
 github.com/weaviate/weaviate v1.23.4/go.mod h1:afludwbcyIZa9HEBELvHNb8zjH+KcjcW/jb4SZ5C2T4=
-github.com/weaviate/weaviate-go-client/v4 v4.10.1-0.20230830035039-7db88cfa955e h1:/YvikU+GDRWNi81pNEk/o6uzBFFCy28fPH+5TIkkLtU=
-github.com/weaviate/weaviate-go-client/v4 v4.10.1-0.20230830035039-7db88cfa955e/go.mod h1:1wUSKRvtHFDq5s1u7tyr7cYSwPODDt3zVbNpS8VhJ0s=
+github.com/weaviate/weaviate-go-client/v4 v4.12.1 h1:XFKL49BgSOcxrFs5IV+Q5pydLTsh0HQHuWbKNSLMWLU=
+github.com/weaviate/weaviate-go-client/v4 v4.12.1/go.mod h1:r1PlU5sAZKFvAPgymEHQj0hjSAuEV9X77PJ/ffZ6cEo=
 github.com/xdg-go/pbkdf2 v1.0.0/go.mod h1:jrpuAogTd400dnrH08LKmI/xc1MbPOebTwRqcT5RDeI=
 github.com/xdg-go/scram v1.0.2/go.mod h1:1WAq6h33pAW+iRreB34OORO2Nf7qel3VV3fjBj+hCSs=
 github.com/xdg-go/scram v1.1.1/go.mod h1:RaEWvsqvNKKvBPvcKeFjrG2cJqOkHTiyTpzz23ni57g=

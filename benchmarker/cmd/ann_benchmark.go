@@ -328,7 +328,7 @@ func waitReady(cfg *Config, indexStart time.Time, maxDuration time.Duration, min
 
 	log.Infof("Waiting for queue to be empty\n")
 	for current.Sub(start) < maxDuration {
-		nodesStatus, err := client.Cluster().NodesStatusGetter().Do(context.Background())
+		nodesStatus, err := client.Cluster().NodesStatusGetter().WithOutput("verbose").Do(context.Background())
 		if err != nil {
 			panic(err)
 		}

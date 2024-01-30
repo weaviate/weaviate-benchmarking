@@ -13,7 +13,7 @@ require (
 	github.com/stretchr/testify v1.8.4
 	github.com/weaviate/hdf5 v0.0.0-20230911114900-3cd888ffadcd
 	github.com/weaviate/weaviate v1.23.4
-	github.com/weaviate/weaviate-go-client/v4 v4.10.1-0.20230830035039-7db88cfa955e
+	github.com/weaviate/weaviate-go-client/v4 v4.12.1
 	google.golang.org/grpc v1.59.0
 	google.golang.org/protobuf v1.31.0
 )
