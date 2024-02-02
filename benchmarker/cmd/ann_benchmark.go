@@ -125,8 +125,7 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 
 }
 
-// Re/create Weaviate schema
-func createSchema(cfg *Config) {
+func createClient(cfg *Config) *weaviate.Client {
 	wcfg := weaviate.Config{
 		Host:   cfg.HttpOrigin,
 		Scheme: cfg.HttpScheme,
@@ -136,12 +135,17 @@ func createSchema(cfg *Config) {
 	}
 	client, err := weaviate.NewClient(wcfg)
 	if err != nil {
-		panic(err)
+		log.Fatalf("Error creating client: %v", err)
 	}
+	return client
+}
 
-	err = client.Schema().ClassDeleter().WithClassName(cfg.ClassName).Do(context.Background())
+// Re/create Weaviate schema
+func createSchema(cfg *Config, client *weaviate.Client) {
+
+	err := client.Schema().ClassDeleter().WithClassName(cfg.ClassName).Do(context.Background())
 	if err != nil {
-		panic(err)
+		log.Fatalf("Error deleting class: %v", err)
 	}
 
 	multiTenancyEnabled := false
@@ -223,74 +227,56 @@ func createSchema(cfg *Config) {
 	log.Printf("Created class %s", cfg.ClassName)
 }
 
-func deleteRange(cfg *Config, start int, end int) {
-	wcfg := weaviate.Config{
-		Host:   cfg.HttpOrigin,
-		Scheme: cfg.HttpScheme,
-	}
-	if cfg.HttpAuth != "" {
-		wcfg.AuthConfig = auth.ApiKey{Value: cfg.HttpAuth}
-	}
-	client, err := weaviate.NewClient(wcfg)
-	if err != nil {
-		panic(err)
-	}
-
-	log.Printf("Deleting range %d-%d on class %s", start, end, cfg.ClassName)
-	for i := start; i < end; i++ {
-		err = client.Data().Deleter().WithClassName(cfg.ClassName).WithID(uuidFromInt(i)).Do(context.Background())
+func deleteChunk(chunk *Batch, client *weaviate.Client, cfg *Config) {
+	log.Debugf("Deleting chunk of %d vectors index %d", len(chunk.Vectors), chunk.Offset)
+	for i := range chunk.Vectors {
+		uuid := uuidFromInt(i + chunk.Offset + cfg.Offset)
+		err := client.Data().Deleter().WithClassName(cfg.ClassName).WithID(uuid).Do(context.Background())
 		if err != nil {
-			panic(err)
+			log.Fatalf("Error deleting object: %v", err)
 		}
 	}
-
-	log.Printf("Completed deletes")
-
 }
 
-func addTenantIfNeeded(cfg *Config) {
+func deleteUuidSlice(cfg *Config, client *weaviate.Client, slice []int) {
+	log.WithFields(log.Fields{"length": len(slice), "class": cfg.ClassName}).Printf("Deleting objects to trigger tombstone operations")
+	for _, i := range slice {
+		err := client.Data().Deleter().WithClassName(cfg.ClassName).WithID(uuidFromInt(i)).Do(context.Background())
+		if err != nil {
+			log.Fatalf("Error deleting object: %v", err)
+		}
+	}
+	log.WithFields(log.Fields{"length": len(slice), "class": cfg.ClassName}).Printf("Completed deletes")
+}
+
+func deleteUuidRange(cfg *Config, client *weaviate.Client, start int, end int) {
+	var slice []int
+	for i := start; i < end; i++ {
+		slice = append(slice, i)
+	}
+	deleteUuidSlice(cfg, client, slice)
+}
+
+func addTenantIfNeeded(cfg *Config, client *weaviate.Client) {
 	if cfg.Tenant == "" {
 		return
 	}
-	wcfg := weaviate.Config{
-		Host:   cfg.HttpOrigin,
-		Scheme: cfg.HttpScheme,
-	}
-	if cfg.HttpAuth != "" {
-		wcfg.AuthConfig = auth.ApiKey{Value: cfg.HttpAuth}
-	}
-	client, err := weaviate.NewClient(wcfg)
-	if err != nil {
-		panic(err)
-	}
-	err = client.Schema().TenantsCreator().
+	err := client.Schema().TenantsCreator().
 		WithClassName(cfg.ClassName).
 		WithTenants(models.Tenant{Name: cfg.Tenant}).
 		Do(context.Background())
 	if err != nil {
 		log.Printf("Error adding tenant retrying in 1 second %v", err)
 		time.Sleep(1 * time.Second)
-		addTenantIfNeeded(cfg)
+		addTenantIfNeeded(cfg, client)
 	}
 }
 
 // Update ef parameter on the Weaviate schema
-func updateEf(ef int, cfg *Config) {
+func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 
 	if cfg.IndexType == "flat" {
 		return
-	}
-
-	wcfg := weaviate.Config{
-		Host:   cfg.HttpOrigin,
-		Scheme: cfg.HttpScheme,
-	}
-	if cfg.HttpAuth != "" {
-		wcfg.AuthConfig = auth.ApiKey{Value: cfg.HttpAuth}
-	}
-	client, err := weaviate.NewClient(wcfg)
-	if err != nil {
-		panic(err)
 	}
 
 	classConfig, err := client.Schema().ClassGetter().WithClassName(cfg.ClassName).Do(context.Background())
@@ -310,18 +296,7 @@ func updateEf(ef int, cfg *Config) {
 
 }
 
-func waitReady(cfg *Config, indexStart time.Time, maxDuration time.Duration, minQueueSize int64) time.Time {
-	wcfg := weaviate.Config{
-		Host:   cfg.HttpOrigin,
-		Scheme: cfg.HttpScheme,
-	}
-	if cfg.HttpAuth != "" {
-		wcfg.AuthConfig = auth.ApiKey{Value: cfg.HttpAuth}
-	}
-	client, err := weaviate.NewClient(wcfg)
-	if err != nil {
-		panic(err)
-	}
+func waitReady(cfg *Config, client *weaviate.Client, indexStart time.Time, maxDuration time.Duration, minQueueSize int64) time.Time {
 
 	start := time.Now()
 	current := time.Now()
@@ -353,19 +328,7 @@ func waitReady(cfg *Config, indexStart time.Time, maxDuration time.Duration, min
 }
 
 // Update ef parameter on the Weaviate schema
-func enablePQ(cfg *Config, dimensions uint) {
-	wcfg := weaviate.Config{
-		Host:   cfg.HttpOrigin,
-		Scheme: cfg.HttpScheme,
-	}
-	if cfg.HttpAuth != "" {
-		wcfg.AuthConfig = auth.ApiKey{Value: cfg.HttpAuth}
-	}
-	client, err := weaviate.NewClient(wcfg)
-	if err != nil {
-		panic(err)
-	}
-
+func enablePQ(cfg *Config, client *weaviate.Client, dimensions uint) {
 	classConfig, err := client.Schema().ClassGetter().WithClassName(cfg.ClassName).Do(context.Background())
 	if err != nil {
 		panic(err)
@@ -627,7 +590,7 @@ func calculateHdf5TrainExtent(file *hdf5.File, cfg *Config) (uint, uint) {
 	return rows, dimensions
 }
 
-func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint) uint {
+func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint, updatePercent float32) uint {
 	dataset, err := file.OpenDataset("train")
 	if err != nil {
 		log.Fatalf("Error opening dataset: %v", err)
@@ -650,27 +613,35 @@ func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint) uint
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+
+			// Import workers will primary use the direct gRPC client
+			// If triggering deletes before import, we need to use the normal go client
 			grpcCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-
 			httpOption := grpc.WithInsecure()
-
 			if cfg.HttpScheme == "https" {
 				creds := credentials.NewTLS(&tls.Config{
 					InsecureSkipVerify: true,
 				})
 				httpOption = grpc.WithTransportCredentials(creds)
 			}
-
 			defer cancel()
 			grpcConn, err := grpc.DialContext(grpcCtx, cfg.Origin, httpOption)
 			if err != nil {
 				log.Fatalf("Did not connect: %v", err)
 			}
 			defer grpcConn.Close()
+			grpcClient := weaviategrpc.NewWeaviateClient(grpcConn)
+			weaviateClient := createClient(cfg)
 
-			client := weaviategrpc.NewWeaviateClient(grpcConn)
 			for chunk := range chunks {
-				writeChunk(&chunk, &client, cfg)
+				if updatePercent > 0 {
+					if rand.Float32() < updatePercent {
+						deleteChunk(&chunk, weaviateClient, cfg)
+						writeChunk(&chunk, &grpcClient, cfg)
+					}
+				} else {
+					writeChunk(&chunk, &grpcClient, cfg)
+				}
 			}
 		}()
 	}
@@ -681,36 +652,36 @@ func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint) uint
 
 // Load an hdf5 file in the format of ann-benchmarks.com
 // returns total time duration for load
-func loadANNBenchmarksFile(file *hdf5.File, cfg *Config, maxRows uint) time.Duration {
+func loadANNBenchmarksFile(file *hdf5.File, cfg *Config, client *weaviate.Client, maxRows uint) time.Duration {
 
-	addTenantIfNeeded(cfg)
+	addTenantIfNeeded(cfg, client)
 	startTime := time.Now()
 
 	if cfg.PQ == "enabled" {
-		dimensions := loadHdf5Train(file, cfg, 0, uint(cfg.TrainingLimit))
+		dimensions := loadHdf5Train(file, cfg, 0, uint(cfg.TrainingLimit), 0)
 		log.Printf("Pausing to enable PQ.")
-		enablePQ(cfg, dimensions)
-		loadHdf5Train(file, cfg, uint(cfg.TrainingLimit), 0)
+		enablePQ(cfg, client, dimensions)
+		loadHdf5Train(file, cfg, 0, uint(cfg.TrainingLimit), 0)
 
 	} else {
-		loadHdf5Train(file, cfg, 0, maxRows)
+		loadHdf5Train(file, cfg, 0, maxRows, 0)
 	}
 	endTime := time.Now()
 	log.WithFields(log.Fields{"duration": endTime.Sub(startTime)}).Printf("Total load time\n")
 	if !cfg.SkipAsyncReady {
-		endTime = waitReady(cfg, startTime, 4*time.Hour, 1000)
+		endTime = waitReady(cfg, client, startTime, 4*time.Hour, 1000)
 	}
 	return endTime.Sub(startTime)
 }
 
 // Load a dataset multiple time with different tenants
-func loadHdf5MultiTenant(file *hdf5.File, cfg *Config) time.Duration {
+func loadHdf5MultiTenant(file *hdf5.File, cfg *Config, client *weaviate.Client) time.Duration {
 
 	startTime := time.Now()
 
 	for i := 0; i < cfg.NumTenants; i++ {
 		cfg.Tenant = fmt.Sprintf("%d", i)
-		loadANNBenchmarksFile(file, cfg, 0)
+		loadANNBenchmarksFile(file, cfg, client, 0)
 	}
 
 	endTime := time.Now()
@@ -792,9 +763,11 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 		log.Fatalf("Error parsing efArray, expected commas separated format \"16,32,64\" but:%v\n", err)
 	}
 
+	client := createClient(cfg)
+
 	var benchmarkResultsMap []map[string]interface{}
 	for _, ef := range efCandidates {
-		updateEf(ef, cfg)
+		updateEf(ef, cfg, client)
 
 		var result Results
 
@@ -882,21 +855,23 @@ var annBenchmarkCommand = &cobra.Command{
 		}
 		defer file.Close()
 
+		client := createClient(&cfg)
+
 		importTime := 0 * time.Second
 
 		if !cfg.QueryOnly {
 
 			if !cfg.ExistingSchema {
-				createSchema(&cfg)
+				createSchema(&cfg, client)
 			}
 
 			log.WithFields(log.Fields{"index": cfg.IndexType, "efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
 				"distance": cfg.DistanceMetric, "dataset": cfg.BenchmarkFile}).Info("Starting import")
 
 			if cfg.NumTenants > 0 {
-				importTime = loadHdf5MultiTenant(file, &cfg)
+				importTime = loadHdf5MultiTenant(file, &cfg, client)
 			} else {
-				importTime = loadANNBenchmarksFile(file, &cfg, 0)
+				importTime = loadANNBenchmarksFile(file, &cfg, client, 0)
 			}
 
 			sleepDuration := 30 * time.Second
@@ -914,8 +889,6 @@ var annBenchmarkCommand = &cobra.Command{
 
 		if cfg.performUpdates() {
 
-			// If updates are enabled we
-
 			totalRowCount, _ := calculateHdf5TrainExtent(file, &cfg)
 			updateRowCount := uint(math.Floor(float64(totalRowCount) * cfg.UpdatePercentage))
 
@@ -923,12 +896,16 @@ var annBenchmarkCommand = &cobra.Command{
 
 			for i := 0; i < cfg.UpdateIterations; i++ {
 
-				deleteRange(&cfg, 0, int(updateRowCount))
+				startTime := time.Now()
 
-				log.WithFields(log.Fields{"index": cfg.IndexType, "efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
-					"distance": cfg.DistanceMetric, "dataset": cfg.BenchmarkFile, "updateCount": updateRowCount}).Info("Starting update")
-				updateTime := loadANNBenchmarksFile(file, &cfg, updateRowCount)
-				log.WithFields(log.Fields{"duration": updateTime.Seconds()}).Printf("Total update time\n")
+				if cfg.UpdateRandomized {
+					loadHdf5Train(file, &cfg, 0, 0, float32(cfg.UpdatePercentage))
+				} else {
+					deleteUuidRange(&cfg, client, 0, int(updateRowCount))
+					loadHdf5Train(file, &cfg, 0, updateRowCount, 0)
+				}
+
+				log.WithFields(log.Fields{"duration": time.Since(startTime)}).Printf("Total delete and update time\n")
 
 				err := waitTombstonesEmpty(&cfg)
 				if err != nil {
@@ -1007,6 +984,8 @@ func initAnnBenchmark() {
 		"limit", "l", 10, "Set the query limit / k (default 10)")
 	annBenchmarkCommand.PersistentFlags().Float64Var(&globalConfig.UpdatePercentage,
 		"updatePercentage", 0.0, "After loading the dataset, update the specified percentage of vectors")
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.UpdateRandomized,
+		"updateRandomized", false, "Whether to randomize which vectors are updated (default false)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.UpdateIterations,
 		"updateIterations", 1, "Number of iterations to update the dataset if updatePercentage is set")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.CleanupIntervalSeconds,

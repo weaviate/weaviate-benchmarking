@@ -47,6 +47,7 @@ type Config struct {
 	HttpOrigin             string
 	HttpScheme             string
 	UpdatePercentage       float64
+	UpdateRandomized       bool
 	UpdateIterations       int
 	Offset                 int
 	CleanupIntervalSeconds int
