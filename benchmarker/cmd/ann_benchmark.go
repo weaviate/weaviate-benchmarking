@@ -209,8 +209,9 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 			classObj.VectorIndexConfig = map[string]interface{}{
 				"distance": cfg.DistanceMetric,
 				"bq": map[string]interface{}{
-					"enabled": true,
-					"cache":   true,
+					"enabled":      true,
+					"rescoreLimit": cfg.RescoreLimit,
+					"cache":        true,
 				},
 			}
 
@@ -661,7 +662,7 @@ func loadANNBenchmarksFile(file *hdf5.File, cfg *Config, client *weaviate.Client
 		dimensions := loadHdf5Train(file, cfg, 0, uint(cfg.TrainingLimit), 0)
 		log.Printf("Pausing to enable PQ.")
 		enablePQ(cfg, client, dimensions)
-		loadHdf5Train(file, cfg, 0, uint(cfg.TrainingLimit), 0)
+		loadHdf5Train(file, cfg, uint(cfg.TrainingLimit), 0, 0)
 
 	} else {
 		loadHdf5Train(file, cfg, 0, maxRows, 0)
@@ -940,6 +941,8 @@ func initAnnBenchmark() {
 		"queryDuration", 0, "Instead of querying the test dataset once, query for the specified duration in seconds (default 0)")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.BQ,
 		"bq", false, "Set BQ")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.RescoreLimit,
+		"rescoreLimit", 100, "Rescore limit (default 250) for BQ")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.PQ,
 		"pq", "disabled", "Set PQ (disabled, auto, or enabled) (default disabled)")
 	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.PQRatio,
