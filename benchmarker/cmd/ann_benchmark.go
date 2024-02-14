@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
+	"github.com/hashicorp/go-retryablehttp"
 	"github.com/prometheus/common/expfmt"
 	log "github.com/sirupsen/logrus"
 
@@ -126,9 +128,13 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 }
 
 func createClient(cfg *Config) *weaviate.Client {
+	retryClient := retryablehttp.NewClient()
+	retryClient.RetryMax = 10
+
 	wcfg := weaviate.Config{
-		Host:   cfg.HttpOrigin,
-		Scheme: cfg.HttpScheme,
+		Host:             cfg.HttpOrigin,
+		Scheme:           cfg.HttpScheme,
+		ConnectionClient: retryClient.HTTPClient,
 	}
 	if cfg.HttpAuth != "" {
 		wcfg.AuthConfig = auth.ApiKey{Value: cfg.HttpAuth}
@@ -617,7 +623,7 @@ func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint, upda
 
 			// Import workers will primary use the direct gRPC client
 			// If triggering deletes before import, we need to use the normal go client
-			grpcCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			grpcCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			httpOption := grpc.WithInsecure()
 			if cfg.HttpScheme == "https" {
 				creds := credentials.NewTLS(&tls.Config{
@@ -626,7 +632,10 @@ func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint, upda
 				httpOption = grpc.WithTransportCredentials(creds)
 			}
 			defer cancel()
-			grpcConn, err := grpc.DialContext(grpcCtx, cfg.Origin, httpOption)
+			opts := []retry.CallOption{
+				retry.WithBackoff(retry.BackoffExponential(100 * time.Millisecond)),
+			}
+			grpcConn, err := grpc.DialContext(grpcCtx, cfg.Origin, httpOption, grpc.WithUnaryInterceptor(retry.UnaryClientInterceptor(opts...)))
 			if err != nil {
 				log.Fatalf("Did not connect: %v", err)
 			}
