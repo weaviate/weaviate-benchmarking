@@ -10,7 +10,14 @@ CLI tool that makes use of the same library
 
 ### ANN benchmark
 
-Spin up two machines:
+There are two components you will need to run for the benchmarks:
+
+1. `weaviate` the standard Weaviate image
+2. `benchmarker` a Go based benchmarking tool
+
+You can run both as containers on the same machine via Docker compose.
+
+For replicating our benchmarks we recommend setting up two separate machines 
 
 | Machine description | CPU type | CPUs | Memory | Disk size | Disk type | Misc. |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -23,23 +30,36 @@ Clone this repo and cd into it `$ git clone https://github.com/semi-technologies
 
 Run the following command to spin up Weaviate: `$ docker-compose up weaviate -d`
 
-Copy the interal IP address and amount of CPU cores this machine has.
+Copy the IP address and amount of CPU cores this machine has.
 
 #### Prepare the benchmark machine
 
-Check if the Weaviate machine is available: `$ http://{IP OF WEAVIATE INSTANCE}/v1/meta`. Note that the instance runs on port `8080`, e.g., `http://10.128.15.12:8080/v1/meta`
+Check if the Weaviate machine is available: `curl http://{IP OF WEAVIATE INSTANCE}/v1/meta`. Note that the instance runs on port `8080`, e.g., `http://10.128.15.12:8080/v1/meta`.
+You will also need to allow port `50051` for gRPC. You can verify this via `nc -zv localhost 50051`.
 
 Clone this repo and cd into it `$ git clone https://github.com/semi-technologies/weaviate-benchmarking && cd weaviate-benchmarking`
 
-Download the files into a benchmark-data folder as outlined below.
+Download the files into a datasets folder as outlined below.
 
 ```sh
-$ mkdir benchmark-data && \
-    curl -o ./benchmark-data/deep-image-96-angular.hdf5 http://ann-benchmarks.com/deep-image-96-angular.hdf5 && \
-    curl -o ./benchmark-data/mnist-784-euclidean.hdf5 http://ann-benchmarks.com/mnist-784-euclidean.hdf5 && \
-    curl -o ./benchmark-data/gist-960-euclidean.hdf5 http://ann-benchmarks.com/gist-960-euclidean.hdf5 && \
-    curl -o ./benchmark-data/glove-25-angular.hdf5 http://ann-benchmarks.com/glove-25-angular.hdf5
+mkdir datasets && \
+    curl -o ./datasets/deep-image-96-angular.hdf5 http://ann-benchmarks.com/deep-image-96-angular.hdf5 && \
+    curl -o ./datasets/mnist-784-euclidean.hdf5 http://ann-benchmarks.com/mnist-784-euclidean.hdf5 && \
+    curl -o ./datasets/gist-960-euclidean.hdf5 http://ann-benchmarks.com/gist-960-euclidean.hdf5 && \
+    curl -o ./datasets/glove-25-angular.hdf5 http://ann-benchmarks.com/glove-25-angular.hdf5
 ```
+
+Run a single performance test
+
+
+
+```sh
+docker-compose run --rm benchmarker ann-benchmark -v ./datasets/dbpedia-100k-openai-ada002.hdf5 --origin weaviate:50051 --httpOrigin weaviate:8080 -d l2-squared
+```
+
+
+
+
 
 Update the following lines in [docker-compose.yml](docker-compose.yml).
 

@@ -1,7 +1,6 @@
-FROM golang:alpine as builder
-WORKDIR /build
+FROM golang:alpine
+RUN apk add --no-cache hdf5-dev gcc libc-dev python3
+WORKDIR /app
 COPY . .
-RUN go build -o app .
-
-FROM alpine
-COPY --from=builder /build/app /benchmarker
+RUN CGO_ENABLED=1 go build -o benchmarker .
+ENTRYPOINT ["/app/benchmarker"]

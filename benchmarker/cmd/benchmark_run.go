@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"bytes"
+	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,10 +16,132 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	log "github.com/sirupsen/logrus"
+
+	wv1 "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/proto"
 )
 
-func benchmark(cfg Config, getQueryFn func(className string) []byte) Results {
+type QueryWithNeighbors struct {
+	Query     []byte
+	Neighbors []int
+}
+
+func processQueueHttp(queue []QueryWithNeighbors, cfg *Config, c *http.Client, m *sync.Mutex, times *[]time.Duration) {
+	for _, query := range queue {
+		r := bytes.NewReader(query.Query)
+		before := time.Now()
+		var url string
+		if cfg.API == "graphql" {
+			url = cfg.Origin + "/v1/graphql"
+		} else if cfg.API == "rest" {
+			url = fmt.Sprintf("%s/v1/objects/%s/_search", cfg.Origin, cfg.ClassName)
+		}
+		req, err := http.NewRequest("POST", url, r)
+		if err != nil {
+			fmt.Printf("ERROR: %v\n", err)
+			continue
+		}
+
+		req.Header.Set("content-type", "application/json")
+
+		if cfg.HttpAuth != "" {
+			req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", cfg.HttpAuth))
+		}
+
+		res, err := c.Do(req)
+		if err != nil {
+			fmt.Printf("ERROR: %v\n", err)
+			continue
+		}
+		took := time.Since(before)
+		bytes, _ := ioutil.ReadAll(res.Body)
+		res.Body.Close()
+		var result map[string]interface{}
+		if err := json.Unmarshal(bytes, &result); err != nil {
+			fmt.Printf("JSON error: %v\n", err)
+		}
+		if cfg.API == "graphql" {
+			if result["data"] != nil && result["errors"] == nil {
+				m.Lock()
+				*times = append(*times, took)
+				m.Unlock()
+			} else {
+				fmt.Printf("GraphQL Error: %v\n", result)
+			}
+		} else {
+			if list, ok := result["objects"].([]interface{}); ok {
+				if len(list) > 0 {
+					m.Lock()
+					*times = append(*times, took)
+					m.Unlock()
+				} else {
+					fmt.Printf("REST Error: %v\n", result)
+				}
+			} else {
+				fmt.Printf("REST Error: %v\n", result)
+			}
+		}
+	}
+}
+
+func processQueueGrpc(queue []QueryWithNeighbors, cfg *Config, grpcConn *grpc.ClientConn, m *sync.Mutex, times *[]time.Duration, recall *[]float64) {
+
+	grpcClient := wv1.NewWeaviateClient(grpcConn)
+
+	for _, query := range queue {
+
+		searchRequest := &wv1.SearchRequest{}
+		err := proto.Unmarshal(query.Query, searchRequest)
+		if err != nil {
+			log.Fatalf("Failed to unmarshal grpc query: %v", err)
+		}
+
+		before := time.Now()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		if cfg.HttpAuth != "" {
+			md := metadata.Pairs(
+				"Authorization", fmt.Sprintf("Bearer %s", cfg.HttpAuth),
+			)
+			ctx = metadata.NewOutgoingContext(ctx, md)
+		}
+
+		searchReply, err := grpcClient.Search(ctx, searchRequest)
+		if err != nil {
+			log.Fatalf("Could not search with grpc: %v", err)
+		}
+		took := time.Since(before)
+
+		if len(searchReply.GetResults()) != cfg.Limit {
+			fmt.Printf("Warning grpc got %d results, expected %d\n", len(searchReply.GetResults()), cfg.Limit)
+		}
+
+		ids := make([]int, 0, len(searchReply.GetResults()))
+		for _, result := range searchReply.GetResults() {
+			ids = append(ids, intFromUUID(result.GetMetadata().Id))
+		}
+
+		recallQuery := float64(len(intersection(ids, query.Neighbors[:cfg.Limit]))) / float64(cfg.Limit)
+
+		log.Debugf("Query took %s, recall %f", took, recallQuery)
+
+		m.Lock()
+		*times = append(*times, took)
+		*recall = append(*recall, recallQuery)
+		m.Unlock()
+	}
+}
+
+func benchmark(cfg Config, getQueryFn func(className string) QueryWithNeighbors) Results {
 	var times []time.Duration
+	var recall []float64
 	m := &sync.Mutex{}
 
 	t := &http.Transport{
@@ -33,14 +157,30 @@ func benchmark(cfg Config, getQueryFn func(className string) []byte) Results {
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 
-	c := &http.Client{Transport: t}
+	httpClient := &http.Client{Transport: t}
 
-	queues := make([][][]byte, cfg.Parallel)
+	httpOption := grpc.WithInsecure()
+
+	if cfg.HttpScheme == "https" {
+		creds := credentials.NewTLS(&tls.Config{
+			InsecureSkipVerify: true,
+		})
+		httpOption = grpc.WithTransportCredentials(creds)
+	}
+
+	grpcCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	grpcConn, err := grpc.DialContext(grpcCtx, cfg.Origin, httpOption)
+	if err != nil {
+		log.Fatalf("Did not connect: %v", err)
+	}
+	defer grpcConn.Close()
+
+	queues := make([][]QueryWithNeighbors, cfg.Parallel)
 	rand.Seed(time.Now().UnixNano())
 
 	for i := 0; i < cfg.Queries; i++ {
 		query := getQueryFn(cfg.ClassName)
-
 		worker := i % cfg.Parallel
 		queues[worker] = append(queues[worker], query)
 	}
@@ -49,66 +189,18 @@ func benchmark(cfg Config, getQueryFn func(className string) []byte) Results {
 	before := time.Now()
 	for _, queue := range queues {
 		wg.Add(1)
-		go func(queue [][]byte) {
+		go func(queue []QueryWithNeighbors) {
 			defer wg.Done()
-
-			for _, query := range queue {
-				r := bytes.NewReader(query)
-				before := time.Now()
-				var url string
-				if cfg.API == "graphql" {
-					url = cfg.Origin + "/v1/graphql"
-				} else if cfg.API == "rest" {
-					url = fmt.Sprintf("%s/v1/objects/%s/_search", cfg.Origin, cfg.ClassName)
-				}
-				req, err := http.NewRequest("POST", url, r)
-				if err != nil {
-					fmt.Printf("ERROR: %v\n", err)
-					continue
-				}
-
-				req.Header.Set("content-type", "application/json")
-
-				res, err := c.Do(req)
-				if err != nil {
-					fmt.Printf("ERROR: %v\n", err)
-					continue
-				}
-				took := time.Since(before)
-				bytes, _ := ioutil.ReadAll(res.Body)
-				res.Body.Close()
-				var result map[string]interface{}
-				if err := json.Unmarshal(bytes, &result); err != nil {
-					fmt.Printf("JSON error: %v\n", err)
-				}
-				if cfg.API == "graphql" {
-					if result["data"] != nil && result["errors"] == nil {
-						m.Lock()
-						times = append(times, took)
-						m.Unlock()
-					} else {
-						fmt.Printf("GraphQL Error: %v\n", result)
-					}
-				} else {
-					if list, ok := result["objects"].([]interface{}); ok {
-						if len(list) > 0 {
-							m.Lock()
-							times = append(times, took)
-							m.Unlock()
-						} else {
-							fmt.Printf("REST Error: %v\n", result)
-						}
-					} else {
-						fmt.Printf("REST Error: %v\n", result)
-					}
-				}
+			if cfg.API == "grpc" {
+				processQueueGrpc(queue, &cfg, grpcConn, m, &times, &recall)
+			} else {
+				processQueueHttp(queue, &cfg, httpClient, m, &times)
 			}
 		}(queue)
 	}
-
 	wg.Wait()
 
-	return analyze(cfg, times, time.Since(before))
+	return analyze(cfg, times, time.Since(before), recall)
 }
 
 var targetPercentiles = []int{50, 90, 95, 98, 99}
@@ -125,9 +217,10 @@ type Results struct {
 	Successful        int
 	Failed            int
 	Parallelization   int
+	Recall            float64
 }
 
-func analyze(cfg Config, times []time.Duration, total time.Duration) Results {
+func analyze(cfg Config, times []time.Duration, total time.Duration, recall []float64) Results {
 	out := Results{Min: math.MaxInt64, PercentilesLabels: targetPercentiles}
 	var sum time.Duration
 
@@ -144,12 +237,18 @@ func analyze(cfg Config, times []time.Duration, total time.Duration) Results {
 		sum += time
 	}
 
+	var sumRecall float64
+	for _, r := range recall {
+		sumRecall += r
+	}
+
 	out.Total = cfg.Queries
 	out.Failed = cfg.Queries - out.Successful
 	out.Parallelization = cfg.Parallel
 	out.Mean = sum / time.Duration(len(times))
 	out.Took = total
 	out.QueriesPerSecond = float64(len(times)) / float64(float64(total)/float64(time.Second))
+	out.Recall = sumRecall / float64(len(recall))
 
 	sort.Slice(times, func(a, b int) bool {
 		return times[a] < times[b]
@@ -171,6 +270,24 @@ func analyze(cfg Config, times []time.Duration, total time.Duration) Results {
 	return out
 }
 
+func intersection(a, b []int) []int {
+	setA := make(map[int]bool)
+	var result []int
+
+	for _, item := range a {
+		setA[item] = true
+	}
+
+	for _, item := range b {
+		if setA[item] {
+			result = append(result, item)
+			delete(setA, item) // Ensure unique items in the result
+		}
+	}
+
+	return result
+}
+
 func (r Results) WriteTextTo(w io.Writer) (int64, error) {
 	b := strings.Builder{}
 
@@ -181,8 +298,8 @@ func (r Results) WriteTextTo(w io.Writer) (int64, error) {
 	}
 
 	n, err := w.Write([]byte(fmt.Sprintf(
-		"Results\nSuccessful: %d\nMin: %s\nMean: %s\n%sTook: %s\nQPS: %f\n",
-		r.Successful, r.Min, r.Mean, b.String(), r.Took, r.QueriesPerSecond)))
+		"Results\nSuccessful: %d\nMin: %s\nMean: %s\n%sTook: %s\nQPS: %f\nRecall: %f\n",
+		r.Successful, r.Min, r.Mean, b.String(), r.Took, r.QueriesPerSecond, r.Recall)))
 	return int64(n), err
 }
 
