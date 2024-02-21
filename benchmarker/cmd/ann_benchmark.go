@@ -282,18 +282,21 @@ func addTenantIfNeeded(cfg *Config, client *weaviate.Client) {
 // Update ef parameter on the Weaviate schema
 func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 
-	if cfg.IndexType == "flat" {
-		return
-	}
-
 	classConfig, err := client.Schema().ClassGetter().WithClassName(cfg.ClassName).Do(context.Background())
 	if err != nil {
 		panic(err)
 	}
 
-	vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
-	vectorIndexConfig["ef"] = ef
-	classConfig.VectorIndexConfig = vectorIndexConfig
+	if cfg.IndexType == "flat" {
+		vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
+		bq := (vectorIndexConfig["bq"].(map[string]interface{}))
+		bq["rescoreLimit"] = ef
+		classConfig.VectorIndexConfig = vectorIndexConfig
+	} else {
+		vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
+		vectorIndexConfig["ef"] = ef
+		classConfig.VectorIndexConfig = vectorIndexConfig
+	}
 
 	err = client.Schema().ClassUpdater().WithClass(classConfig).Do(context.Background())
 
