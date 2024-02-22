@@ -35,6 +35,7 @@ type Config struct {
 	QueryOnly              bool
 	QueryDuration          int
 	BQ                     bool
+	Cache                  bool
 	RescoreLimit           int
 	PQ                     string
 	SkipAsyncReady         bool

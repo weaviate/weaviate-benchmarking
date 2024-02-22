@@ -217,7 +217,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				"bq": map[string]interface{}{
 					"enabled":      true,
 					"rescoreLimit": cfg.RescoreLimit,
-					"cache":        true,
+					"cache":        cfg.Cache,
 				},
 			}
 
@@ -953,6 +953,8 @@ func initAnnBenchmark() {
 		"queryDuration", 0, "Instead of querying the test dataset once, query for the specified duration in seconds (default 0)")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.BQ,
 		"bq", false, "Set BQ")
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.Cache,
+		"cache", false, "Set cache")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.RescoreLimit,
 		"rescoreLimit", 100, "Rescore limit (default 250) for BQ")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.PQ,
