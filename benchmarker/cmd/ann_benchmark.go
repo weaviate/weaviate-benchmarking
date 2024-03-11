@@ -217,7 +217,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				"bq": map[string]interface{}{
 					"enabled":      true,
 					"rescoreLimit": cfg.RescoreLimit,
-					"cache":        true,
+					"cache":        cfg.Cache,
 				},
 			}
 
@@ -282,18 +282,21 @@ func addTenantIfNeeded(cfg *Config, client *weaviate.Client) {
 // Update ef parameter on the Weaviate schema
 func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 
-	if cfg.IndexType == "flat" {
-		return
-	}
-
 	classConfig, err := client.Schema().ClassGetter().WithClassName(cfg.ClassName).Do(context.Background())
 	if err != nil {
 		panic(err)
 	}
 
-	vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
-	vectorIndexConfig["ef"] = ef
-	classConfig.VectorIndexConfig = vectorIndexConfig
+	if cfg.IndexType == "flat" {
+		vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
+		bq := (vectorIndexConfig["bq"].(map[string]interface{}))
+		bq["rescoreLimit"] = ef
+		classConfig.VectorIndexConfig = vectorIndexConfig
+	} else {
+		vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
+		vectorIndexConfig["ef"] = ef
+		classConfig.VectorIndexConfig = vectorIndexConfig
+	}
 
 	err = client.Schema().ClassUpdater().WithClass(classConfig).Do(context.Background())
 
@@ -950,6 +953,8 @@ func initAnnBenchmark() {
 		"queryDuration", 0, "Instead of querying the test dataset once, query for the specified duration in seconds (default 0)")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.BQ,
 		"bq", false, "Set BQ")
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.Cache,
+		"cache", false, "Set cache")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.RescoreLimit,
 		"rescoreLimit", 100, "Rescore limit (default 250) for BQ")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.PQ,
