@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,6 +23,7 @@ import (
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/prometheus/common/expfmt"
 	log "github.com/sirupsen/logrus"
+	"golang.org/x/exp/constraints"
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
@@ -1033,8 +1035,43 @@ func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors) Results {
 	})
 }
 
+type Number interface {
+	constraints.Float | constraints.Integer
+}
+
+func median[T Number](data []T) float64 {
+	dataCopy := make([]T, len(data))
+	copy(dataCopy, data)
+
+	slices.Sort(dataCopy)
+
+	var median float64
+	l := len(dataCopy)
+	if l == 0 {
+		return 0
+	} else if l%2 == 0 {
+		median = float64((dataCopy[l/2-1] + dataCopy[l/2]) / 2.0)
+	} else {
+		median = float64(dataCopy[l/2])
+	}
+
+	return median
+}
+
+type sampledResults struct {
+	Min              []time.Duration
+	Max              []time.Duration
+	Mean             []time.Duration
+	Took             []time.Duration
+	QueriesPerSecond []float64
+	Recall           []float64
+	Results          []Results
+}
+
 func benchmarkANNDuration(cfg Config, queries Queries, neighbors Neighbors) Results {
 	cfg.Queries = len(queries)
+
+	var samples sampledResults
 
 	startTime := time.Now()
 
@@ -1042,8 +1079,29 @@ func benchmarkANNDuration(cfg Config, queries Queries, neighbors Neighbors) Resu
 
 	for time.Since(startTime) < time.Duration(cfg.QueryDuration)*time.Second {
 		results = benchmarkANN(cfg, queries, neighbors)
+		samples.Min = append(samples.Min, results.Min)
+		samples.Max = append(samples.Max, results.Max)
+		samples.Mean = append(samples.Mean, results.Mean)
+		samples.Took = append(samples.Took, results.Took)
+		samples.QueriesPerSecond = append(samples.QueriesPerSecond, results.QueriesPerSecond)
+		samples.Recall = append(samples.Recall, results.Recall)
+		samples.Results = append(samples.Results, results)
 	}
 
-	return results
+	var medianResult Results
 
+	medianResult.Min = time.Duration(median(samples.Min))
+	medianResult.Max = time.Duration(median(samples.Max))
+	medianResult.Mean = time.Duration(median(samples.Mean))
+	medianResult.Took = time.Duration(median(samples.Took))
+	medianResult.QueriesPerSecond = median(samples.QueriesPerSecond)
+	medianResult.Percentiles = results.Percentiles
+	medianResult.PercentilesLabels = results.PercentilesLabels
+	medianResult.Total = results.Total
+	medianResult.Successful = results.Successful
+	medianResult.Failed = results.Failed
+	medianResult.Parallelization = cfg.Parallel
+	medianResult.Recall = median(samples.Recall)
+
+	return medianResult
 }
