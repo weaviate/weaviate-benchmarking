@@ -223,9 +223,53 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 					"cache":        cfg.Cache,
 				},
 			}
-
 		}
 
+	} else if cfg.IndexType == "composer" {
+		classObj = &models.Class{
+			Class:           cfg.ClassName,
+			Description:     fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
+			VectorIndexType: cfg.IndexType,
+			VectorIndexConfig: map[string]interface{}{
+				"distance": cfg.DistanceMetric,
+				"hnswuc": map[string]interface{}{
+					"efConstruction":         float64(cfg.EfConstruction),
+					"maxConnections":         float64(cfg.MaxConnections),
+					"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+				},
+			},
+			MultiTenancyConfig: &models.MultiTenancyConfig{
+				Enabled: multiTenancyEnabled,
+			},
+		}
+		if cfg.PQ == "auto" {
+			classObj.VectorIndexConfig = map[string]interface{}{
+				"hnswuc": map[string]interface{}{
+					"distance":               cfg.DistanceMetric,
+					"efConstruction":         float64(cfg.EfConstruction),
+					"maxConnections":         float64(cfg.MaxConnections),
+					"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+					"pq": map[string]interface{}{
+						"enabled":       true,
+						"segments":      cfg.PQSegments,
+						"trainingLimit": cfg.TrainingLimit,
+					},
+				},
+			}
+		} else if cfg.BQ {
+			classObj.VectorIndexConfig = map[string]interface{}{
+				"hnswuc": map[string]interface{}{
+					"distance":               cfg.DistanceMetric,
+					"efConstruction":         float64(cfg.EfConstruction),
+					"maxConnections":         float64(cfg.MaxConnections),
+					"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+					"bq": map[string]interface{}{
+						"enabled": true,
+						"cache":   true,
+					},
+				},
+			}
+		}
 	} else {
 		log.Fatalf("Unknown index type %s", cfg.IndexType)
 	}
@@ -290,16 +334,18 @@ func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 		panic(err)
 	}
 
-	if cfg.IndexType == "flat" {
-		vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
+	vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
+	switch cfg.IndexType {
+	case "hnsw":
+		vectorIndexConfig["ef"] = ef
+	case "flat":
 		bq := (vectorIndexConfig["bq"].(map[string]interface{}))
 		bq["rescoreLimit"] = ef
-		classConfig.VectorIndexConfig = vectorIndexConfig
-	} else {
-		vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
-		vectorIndexConfig["ef"] = ef
-		classConfig.VectorIndexConfig = vectorIndexConfig
+	case "composer":
+		hnswConfig := vectorIndexConfig["hnswuc"].(map[string]interface{})
+		hnswConfig["ef"] = ef
 	}
+	classConfig.VectorIndexConfig = vectorIndexConfig
 
 	err = client.Schema().ClassUpdater().WithClass(classConfig).Do(context.Background())
 
