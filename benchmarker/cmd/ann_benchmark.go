@@ -6,10 +6,8 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"math/rand"
-	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -21,7 +19,6 @@ import (
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
 	"github.com/hashicorp/go-retryablehttp"
-	"github.com/prometheus/common/expfmt"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/exp/constraints"
 
@@ -45,6 +42,7 @@ type Batch struct {
 }
 
 // Weaviate https://github.com/weaviate/weaviate-chaos-engineering/tree/main/apps/ann-benchmarks style format
+// mixed camel / snake case for compatibility
 type ResultsJSONBenchmark struct {
 	Api              string  `json:"api"`
 	Ef               int     `json:"ef"`
@@ -60,6 +58,9 @@ type ResultsJSONBenchmark struct {
 	RunID            string  `json:"run_id"`
 	Dataset          string  `json:"dataset_file"`
 	Recall           float64 `json:"recall"`
+	HeapAllocBytes   float64 `json:"heap_alloc_bytes"`
+	HeapInuseBytes   float64 `json:"heap_inuse_bytes"`
+	HeapSysBytes     float64 `json:"heap_sys_bytes"`
 }
 
 // Convert an int to a uuid formatted string
@@ -717,58 +718,6 @@ func parseEfValues(s string) ([]int, error) {
 	return nums, nil
 }
 
-func waitTombstonesEmpty(cfg *Config) error {
-
-	prometheusURL := fmt.Sprintf("http://%s/metrics", strings.Replace(cfg.HttpOrigin, "8080", "2112", -1))
-	metricName := "vector_index_tombstones"
-
-	log.Printf("Waiting to allow for tombstone cleanup\n")
-
-	start := time.Now()
-
-	for {
-		response, err := http.Get(prometheusURL)
-		if err != nil {
-			return err
-		}
-		defer response.Body.Close()
-
-		if response.StatusCode != http.StatusOK {
-			return fmt.Errorf("HTTP request failed with status code %d", response.StatusCode)
-		}
-
-		body, err := ioutil.ReadAll(response.Body)
-		if err != nil {
-			return err
-		}
-		bodyReader := strings.NewReader(string(body))
-
-		parser := expfmt.TextParser{}
-		metrics, err := parser.TextToMetricFamilies(bodyReader)
-		if err != nil {
-			return err
-		}
-
-		var totalSum float64 = 0
-		if vectorMetric, ok := metrics[metricName]; ok {
-			for _, m := range vectorMetric.Metric {
-				value := m.GetGauge().GetValue()
-				totalSum += value
-			}
-		}
-
-		if totalSum == 0 {
-			break
-		}
-
-		time.Sleep(time.Second * 10)
-	}
-
-	log.WithFields(log.Fields{"duration": time.Since(start)}).Infof("Tombstones empty\n")
-
-	return nil
-}
-
 func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, neighbors [][]int) {
 
 	runID := strconv.FormatInt(time.Now().Unix(), 10)
@@ -776,6 +725,12 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 	efCandidates, err := parseEfValues(cfg.EfArray)
 	if err != nil {
 		log.Fatalf("Error parsing efArray, expected commas separated format \"16,32,64\" but:%v\n", err)
+	}
+
+	// Read once at this point (after import and compaction delay) to get accurate memory stats
+	memstats, err := readMemoryMetrics(cfg)
+	if err != nil {
+		log.Warnf("Error reading memory stats: %v", err)
 	}
 
 	client := createClient(cfg)
@@ -815,6 +770,9 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 			RunID:            runID,
 			Dataset:          dataset,
 			Recall:           result.Recall,
+			HeapAllocBytes:   memstats.HeapAllocBytes,
+			HeapInuseBytes:   memstats.HeapInuseBytes,
+			HeapSysBytes:     memstats.HeapSysBytes,
 		}
 
 		jsonData, err := json.Marshal(benchResult)
