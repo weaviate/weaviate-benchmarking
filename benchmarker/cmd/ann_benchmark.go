@@ -162,6 +162,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		multiTenancyEnabled = true
 	}
 
+	fmt.Println(cfg.ComposerThreshold)
 	var classObj *models.Class
 	if cfg.IndexType == "hnsw" {
 		classObj = &models.Class{
@@ -231,7 +232,8 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 			Description:     fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
 			VectorIndexType: cfg.IndexType,
 			VectorIndexConfig: map[string]interface{}{
-				"distance": cfg.DistanceMetric,
+				"distance":  cfg.DistanceMetric,
+				"threshold": cfg.ComposerThreshold,
 				"hnswuc": map[string]interface{}{
 					"efConstruction":         float64(cfg.EfConstruction),
 					"maxConnections":         float64(cfg.MaxConnections),
@@ -1023,6 +1025,8 @@ func initAnnBenchmark() {
 		"offset", 0, "Offset for uuids (useful to load the same dataset multiple times)")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.OutputFile,
 		"output", "o", "", "Filename for an output file. If none provided, output to stdout only")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.ComposerThreshold,
+		"composerThreshold", 10_000, "Threshold to trigger the update in the composer index (default 10 000)")
 }
 
 func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors) Results {
