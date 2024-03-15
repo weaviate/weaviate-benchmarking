@@ -847,7 +847,7 @@ var annBenchmarkCommand = &cobra.Command{
 				importTime = loadANNBenchmarksFile(file, &cfg, client, 0)
 			}
 
-			sleepDuration := 30 * time.Second
+			sleepDuration := time.Duration(cfg.QueryDelaySeconds) * time.Second
 			log.Printf("Waiting for %s to allow for compaction etc\n", sleepDuration)
 			time.Sleep(sleepDuration)
 		}
@@ -880,9 +880,11 @@ var annBenchmarkCommand = &cobra.Command{
 
 				log.WithFields(log.Fields{"duration": time.Since(startTime)}).Printf("Total delete and update time\n")
 
-				err := waitTombstonesEmpty(&cfg)
-				if err != nil {
-					log.Fatalf("Error waiting for tombstones to be empty: %v", err)
+				if !cfg.SkipTombstonesEmpty {
+					err := waitTombstonesEmpty(&cfg)
+					if err != nil {
+						log.Fatalf("Error waiting for tombstones to be empty: %v", err)
+					}
 				}
 
 				runQueries(&cfg, importTime, testData, neighbors)
@@ -925,6 +927,8 @@ func initAnnBenchmark() {
 		"pqSegments", 256, "Set PQ segments")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.SkipAsyncReady,
 		"skipAsyncReady", false, "Skip async ready (default false)")
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.SkipTombstonesEmpty,
+		"skipTombstonesEmpty", false, "Skip waiting for tombstone to be empty after update (default false)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.TrainingLimit,
 		"trainingLimit", 100000, "Set PQ trainingLimit (default 100000)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.EfConstruction,
@@ -967,6 +971,8 @@ func initAnnBenchmark() {
 		"updateIterations", 1, "Number of iterations to update the dataset if updatePercentage is set")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.CleanupIntervalSeconds,
 		"cleanupIntervalSeconds", 300, "HNSW cleanup interval seconds (default 300)")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.QueryDelaySeconds,
+		"queryDelaySeconds", 30, "How long to wait before querying (default 30)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.Offset,
 		"offset", 0, "Offset for uuids (useful to load the same dataset multiple times)")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.OutputFile,
