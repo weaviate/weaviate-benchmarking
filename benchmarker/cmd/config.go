@@ -39,6 +39,7 @@ type Config struct {
 	RescoreLimit           int
 	PQ                     string
 	SkipAsyncReady         bool
+	SkipTombstonesEmpty    bool
 	PQRatio                uint
 	PQSegments             uint
 	TrainingLimit          int
@@ -53,6 +54,7 @@ type Config struct {
 	UpdateIterations       int
 	Offset                 int
 	CleanupIntervalSeconds int
+	QueryDelaySeconds      int
 }
 
 func (c *Config) Validate() error {
