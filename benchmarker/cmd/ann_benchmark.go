@@ -162,7 +162,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		multiTenancyEnabled = true
 	}
 
-	fmt.Println(cfg.ComposerThreshold)
+	fmt.Println(cfg.DynamicThreshold)
 	var classObj *models.Class
 	if cfg.IndexType == "hnsw" {
 		classObj = &models.Class{
@@ -226,15 +226,15 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 			}
 		}
 
-	} else if cfg.IndexType == "composer" {
+	} else if cfg.IndexType == "dynamic" {
 		classObj = &models.Class{
 			Class:           cfg.ClassName,
 			Description:     fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
 			VectorIndexType: cfg.IndexType,
 			VectorIndexConfig: map[string]interface{}{
 				"distance":  cfg.DistanceMetric,
-				"threshold": cfg.ComposerThreshold,
-				"hnswuc": map[string]interface{}{
+				"threshold": cfg.DynamicThreshold,
+				"hnsw": map[string]interface{}{
 					"efConstruction":         float64(cfg.EfConstruction),
 					"maxConnections":         float64(cfg.MaxConnections),
 					"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
@@ -246,7 +246,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		}
 		if cfg.PQ == "auto" {
 			classObj.VectorIndexConfig = map[string]interface{}{
-				"hnswuc": map[string]interface{}{
+				"hnsw": map[string]interface{}{
 					"distance":               cfg.DistanceMetric,
 					"efConstruction":         float64(cfg.EfConstruction),
 					"maxConnections":         float64(cfg.MaxConnections),
@@ -260,7 +260,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 			}
 		} else if cfg.BQ {
 			classObj.VectorIndexConfig = map[string]interface{}{
-				"hnswuc": map[string]interface{}{
+				"hnsw": map[string]interface{}{
 					"distance":               cfg.DistanceMetric,
 					"efConstruction":         float64(cfg.EfConstruction),
 					"maxConnections":         float64(cfg.MaxConnections),
@@ -343,7 +343,7 @@ func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 	case "flat":
 		bq := (vectorIndexConfig["bq"].(map[string]interface{}))
 		bq["rescoreLimit"] = ef
-	case "composer":
+	case "dynamic":
 		hnswConfig := vectorIndexConfig["hnswuc"].(map[string]interface{})
 		hnswConfig["ef"] = ef
 	}
@@ -1025,8 +1025,8 @@ func initAnnBenchmark() {
 		"offset", 0, "Offset for uuids (useful to load the same dataset multiple times)")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.OutputFile,
 		"output", "o", "", "Filename for an output file. If none provided, output to stdout only")
-	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.ComposerThreshold,
-		"composerThreshold", 10_000, "Threshold to trigger the update in the composer index (default 10 000)")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.DynamicThreshold,
+		"dynamicThreshold", 10_000, "Threshold to trigger the update in the dynamic index (default 10 000)")
 }
 
 func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors) Results {
