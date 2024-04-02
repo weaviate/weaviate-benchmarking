@@ -55,6 +55,7 @@ type Config struct {
 	Offset                 int
 	CleanupIntervalSeconds int
 	QueryDelaySeconds      int
+	DynamicThreshold       int
 }
 
 func (c *Config) Validate() error {

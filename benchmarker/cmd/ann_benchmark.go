@@ -223,9 +223,55 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 					"cache":        cfg.Cache,
 				},
 			}
-
 		}
 
+	} else if cfg.IndexType == "dynamic" {
+		log.WithFields(log.Fields{"threshold": cfg.DynamicThreshold}).Info("Building dynamic vector index")
+		classObj = &models.Class{
+			Class:           cfg.ClassName,
+			Description:     fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
+			VectorIndexType: cfg.IndexType,
+			VectorIndexConfig: map[string]interface{}{
+				"distance":  cfg.DistanceMetric,
+				"threshold": cfg.DynamicThreshold,
+				"hnsw": map[string]interface{}{
+					"efConstruction":         float64(cfg.EfConstruction),
+					"maxConnections":         float64(cfg.MaxConnections),
+					"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+				},
+			},
+			MultiTenancyConfig: &models.MultiTenancyConfig{
+				Enabled: multiTenancyEnabled,
+			},
+		}
+		if cfg.PQ == "auto" {
+			classObj.VectorIndexConfig = map[string]interface{}{
+				"hnsw": map[string]interface{}{
+					"distance":               cfg.DistanceMetric,
+					"efConstruction":         float64(cfg.EfConstruction),
+					"maxConnections":         float64(cfg.MaxConnections),
+					"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+					"pq": map[string]interface{}{
+						"enabled":       true,
+						"segments":      cfg.PQSegments,
+						"trainingLimit": cfg.TrainingLimit,
+					},
+				},
+			}
+		} else if cfg.BQ {
+			classObj.VectorIndexConfig = map[string]interface{}{
+				"hnsw": map[string]interface{}{
+					"distance":               cfg.DistanceMetric,
+					"efConstruction":         float64(cfg.EfConstruction),
+					"maxConnections":         float64(cfg.MaxConnections),
+					"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+					"bq": map[string]interface{}{
+						"enabled": true,
+						"cache":   true,
+					},
+				},
+			}
+		}
 	} else {
 		log.Fatalf("Unknown index type %s", cfg.IndexType)
 	}
@@ -290,16 +336,18 @@ func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 		panic(err)
 	}
 
-	if cfg.IndexType == "flat" {
-		vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
+	vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
+	switch cfg.IndexType {
+	case "hnsw":
+		vectorIndexConfig["ef"] = ef
+	case "flat":
 		bq := (vectorIndexConfig["bq"].(map[string]interface{}))
 		bq["rescoreLimit"] = ef
-		classConfig.VectorIndexConfig = vectorIndexConfig
-	} else {
-		vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
-		vectorIndexConfig["ef"] = ef
-		classConfig.VectorIndexConfig = vectorIndexConfig
+	case "dynamic":
+		hnswConfig := vectorIndexConfig["hnsw"].(map[string]interface{})
+		hnswConfig["ef"] = ef
 	}
+	classConfig.VectorIndexConfig = vectorIndexConfig
 
 	err = client.Schema().ClassUpdater().WithClass(classConfig).Do(context.Background())
 
@@ -977,6 +1025,8 @@ func initAnnBenchmark() {
 		"offset", 0, "Offset for uuids (useful to load the same dataset multiple times)")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.OutputFile,
 		"output", "o", "", "Filename for an output file. If none provided, output to stdout only")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.DynamicThreshold,
+		"dynamicThreshold", 10_000, "Threshold to trigger the update in the dynamic index (default 10 000)")
 }
 
 func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors) Results {
