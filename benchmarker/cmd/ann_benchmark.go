@@ -162,7 +162,6 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		multiTenancyEnabled = true
 	}
 
-	fmt.Println(cfg.DynamicThreshold)
 	var classObj *models.Class
 	if cfg.IndexType == "hnsw" {
 		classObj = &models.Class{
@@ -227,6 +226,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		}
 
 	} else if cfg.IndexType == "dynamic" {
+		log.WithFields(log.Fields{"threshold": cfg.DynamicThreshold}).Info("Building dynamic vector index")
 		classObj = &models.Class{
 			Class:           cfg.ClassName,
 			Description:     fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
