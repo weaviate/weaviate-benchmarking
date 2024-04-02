@@ -344,7 +344,7 @@ func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 		bq := (vectorIndexConfig["bq"].(map[string]interface{}))
 		bq["rescoreLimit"] = ef
 	case "dynamic":
-		hnswConfig := vectorIndexConfig["hnswuc"].(map[string]interface{})
+		hnswConfig := vectorIndexConfig["hnsw"].(map[string]interface{})
 		hnswConfig["ef"] = ef
 	}
 	classConfig.VectorIndexConfig = vectorIndexConfig
