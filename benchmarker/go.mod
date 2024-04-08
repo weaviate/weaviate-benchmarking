@@ -2,8 +2,6 @@ module github.com/semi-technologies/weaviate-benchmarking/benchmarker
 
 go 1.21
 
-toolchain go1.21.0
-
 require (
 	github.com/google/uuid v1.3.1
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.0.1
