@@ -186,6 +186,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
 				"pq": map[string]interface{}{
 					"enabled":       true,
+					"rescoreLimit":  cfg.RescoreLimit,
 					"segments":      cfg.PQSegments,
 					"trainingLimit": cfg.TrainingLimit,
 				},
@@ -197,8 +198,9 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				"maxConnections":         float64(cfg.MaxConnections),
 				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
 				"bq": map[string]interface{}{
-					"enabled": true,
-					"cache":   true,
+					"enabled":      true,
+					"rescoreLimit": cfg.RescoreLimit,
+					"cache":        true,
 				},
 			}
 		}
@@ -253,6 +255,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 					"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
 					"pq": map[string]interface{}{
 						"enabled":       true,
+						"rescoreLimit":  cfg.RescoreLimit,
 						"segments":      cfg.PQSegments,
 						"trainingLimit": cfg.TrainingLimit,
 					},
@@ -266,8 +269,9 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 					"maxConnections":         float64(cfg.MaxConnections),
 					"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
 					"bq": map[string]interface{}{
-						"enabled": true,
-						"cache":   true,
+						"enabled":      true,
+						"rescoreLimit": cfg.RescoreLimit,
+						"cache":        true,
 					},
 				},
 			}
@@ -405,6 +409,7 @@ func enablePQ(cfg *Config, client *weaviate.Client, dimensions uint) {
 	vectorIndexConfig["pq"] = map[string]interface{}{
 		"enabled":       true,
 		"segments":      segments,
+		"rescoreLimit":  cfg.RescoreLimit,
 		"trainingLimit": cfg.TrainingLimit,
 	}
 
@@ -966,7 +971,7 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.Cache,
 		"cache", false, "Set cache")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.RescoreLimit,
-		"rescoreLimit", 100, "Rescore limit (default 250) for BQ")
+		"rescoreLimit", 256, "Rescore limit (default 256) for BQ")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.PQ,
 		"pq", "disabled", "Set PQ (disabled, auto, or enabled) (default disabled)")
 	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.PQRatio,
