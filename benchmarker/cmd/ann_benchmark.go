@@ -784,6 +784,7 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 	memstats, err := readMemoryMetrics(cfg)
 	if err != nil {
 		log.Warnf("Error reading memory stats: %v", err)
+		memstats = &Memstats{}
 	}
 
 	client := createClient(cfg)
