@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"strings"
+	"unsafe"
 
 	"github.com/spf13/cobra"
 	weaviategrpc "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
@@ -123,13 +124,17 @@ func nearVectorQueryJSONRest(className string, vec []float32, limit int) []byte 
 }`, string(vecJSON), limit))
 }
 
+func encodeUnsafe(fs []float32) []byte {
+	return unsafe.Slice((*byte)(unsafe.Pointer(&fs[0])), len(fs)*4)
+}
+
 func nearVectorQueryGrpc(className string, vec []float32, limit int, tenant string) []byte {
 
 	searchRequest := &weaviategrpc.SearchRequest{
 		Collection: className,
 		Limit:      uint32(limit),
 		NearVector: &weaviategrpc.NearVector{
-			Vector: vec,
+			VectorBytes: encodeUnsafe(vec),
 		},
 		Metadata: &weaviategrpc.MetadataRequest{
 			Certainty: false,
