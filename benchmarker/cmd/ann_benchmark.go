@@ -93,7 +93,7 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 	for i, vector := range chunk.Vectors {
 		objects[i] = &weaviategrpc.BatchObject{
 			Uuid:        uuidFromInt(i + chunk.Offset + cfg.Offset),
-			VectorBytes: encodeUnsafe(vector),
+			VectorBytes: encodeVector(vector),
 			Collection:  cfg.ClassName,
 		}
 		if cfg.Tenant != "" {
