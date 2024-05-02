@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
 	"os"
 	"strings"
@@ -123,13 +125,21 @@ func nearVectorQueryJSONRest(className string, vec []float32, limit int) []byte 
 }`, string(vecJSON), limit))
 }
 
+func encodeVector(fs []float32) []byte {
+	buf := make([]byte, len(fs)*4)
+	for i, f := range fs {
+		binary.LittleEndian.PutUint32(buf[i*4:], math.Float32bits(f))
+	}
+	return buf
+}
+
 func nearVectorQueryGrpc(className string, vec []float32, limit int, tenant string) []byte {
 
 	searchRequest := &weaviategrpc.SearchRequest{
 		Collection: className,
 		Limit:      uint32(limit),
 		NearVector: &weaviategrpc.NearVector{
-			Vector: vec,
+			VectorBytes: encodeVector(vec),
 		},
 		Metadata: &weaviategrpc.MetadataRequest{
 			Certainty: false,
