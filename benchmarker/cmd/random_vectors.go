@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -133,7 +134,7 @@ func encodeVector(fs []float32) []byte {
 	return buf
 }
 
-func nearVectorQueryGrpc(className string, vec []float32, limit int, tenant string) []byte {
+func nearVectorQueryGrpc(className string, vec []float32, limit int, tenant string, filter int) []byte {
 
 	searchRequest := &weaviategrpc.SearchRequest{
 		Collection: className,
@@ -150,6 +151,17 @@ func nearVectorQueryGrpc(className string, vec []float32, limit int, tenant stri
 
 	if tenant != "" {
 		searchRequest.Tenant = tenant
+	}
+
+	if filter >= 0 {
+		searchRequest.Filters = &weaviategrpc.Filters{
+			TestValue: &weaviategrpc.Filters_ValueText{
+				ValueText: strconv.Itoa(filter),
+			},
+			On:       []string{"category"},
+			Operator: weaviategrpc.Filters_OPERATOR_EQUAL,
+		}
+
 	}
 
 	data, err := proto.Marshal(searchRequest)
@@ -176,7 +188,7 @@ func benchmarkNearVector(cfg Config) Results {
 
 		if cfg.API == "grpc" {
 			return QueryWithNeighbors{
-				Query: nearVectorQueryGrpc(cfg.ClassName, randomVector(cfg.Dimensions), cfg.Limit, cfg.Tenant),
+				Query: nearVectorQueryGrpc(cfg.ClassName, randomVector(cfg.Dimensions), cfg.Limit, cfg.Tenant, 0),
 			}
 		}
 

@@ -30,7 +30,8 @@ def main(args):
     target.create_dataset("train", data=original["train"][:])
     target.create_dataset("test", data=original["test"][:])
 
-    name = f"{args.distribution}Text{args.categories}"
+    # name = f"{args.distribution}Text{args.categories}"
+    name = "category"
     print(f"Building categorical filters for {name}...")
 
     train_categories = [generate_categorical_text(args.distribution, args.categories) for _ in range(original["train"].shape[0])]
@@ -39,6 +40,9 @@ def main(args):
     train_properties = [generate_json_properties(name, category) for category in train_categories]
     test_properties = [generate_json_properties(name, category) for category in test_categories]
 
+    target.create_dataset("train_categories", data=np.array(train_categories, dtype=np.int64))
+    target.create_dataset("test_categories", data=np.array(test_categories, dtype=np.int64))
+
     target.create_dataset("train_properties", data=np.array(train_properties, dtype=h5py.special_dtype(vlen=str)))
     target.create_dataset("test_properties", data=np.array(test_properties, dtype=h5py.special_dtype(vlen=str)))
 
@@ -46,7 +50,7 @@ def main(args):
     for value in test_categories:
         filter_data = {
             "path": [name],
-            "valueText": value,
+            "valueText": str(value),
             "operation": "Equal"
         }
         filters.append(json.dumps(filter_data))
@@ -86,7 +90,6 @@ def main(args):
 
             print(f"Distance[0]: {D[0][0]}")
             print(f"Distance[1]: {D[0][1]}")
-        break
 
     target.create_dataset("neighbors", data=neighbors_data)
     target.close()
@@ -97,7 +100,7 @@ if __name__ == "__main__":
     parser.add_argument("original_file", help="Path to the original HDF5 file")
     parser.add_argument("target_file", help="Path to the target HDF5 file")
     parser.add_argument("--distribution", default="normal", choices=["uniform", "normal"], help="Distribution type (default: normal)")
-    parser.add_argument("--categories", type=int, default=20, help="Number of categories for uniform distribution or clipping range for normal distribution (default: 20)")
+    parser.add_argument("--categories", type=int, default=10, help="Number of categories for uniform distribution or clipping range for normal distribution (default: 20)")
     parser.add_argument("--limit", type=int, default=100, help="Limit of each query (default: 100)")
 
     args = parser.parse_args()
