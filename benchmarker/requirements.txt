@@ -13,3 +13,5 @@ pytz==2024.1
 seaborn==0.13.2
 six==1.16.0
 tzdata==2024.1
+faiss-cpu
+h5py

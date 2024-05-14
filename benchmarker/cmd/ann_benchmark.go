@@ -33,12 +33,14 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 // Batch of vectors and offset for writing to Weaviate
 type Batch struct {
 	Vectors [][]float32
 	Offset  int
+	Filters []int
 }
 
 // Weaviate https://github.com/weaviate/weaviate-chaos-engineering/tree/main/apps/ann-benchmarks style format
@@ -98,6 +100,17 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 		}
 		if cfg.Tenant != "" {
 			objects[i].Tenant = cfg.Tenant
+		}
+		if cfg.Filter {
+			nonRefProperties, err := structpb.NewStruct(map[string]interface{}{
+				"category": strconv.Itoa(chunk.Filters[i]),
+			})
+			if err != nil {
+				log.Fatalf("Error creating filtered struct: %v", err)
+			}
+			objects[i].Properties = &weaviategrpc.BatchObject_Properties{
+				NonRefProperties: nonRefProperties,
+			}
 		}
 	}
 
@@ -162,123 +175,81 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		multiTenancyEnabled = true
 	}
 
-	var classObj *models.Class
+	var classObj = &models.Class{
+		Class:           cfg.ClassName,
+		Description:     fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
+		VectorIndexType: cfg.IndexType,
+		MultiTenancyConfig: &models.MultiTenancyConfig{
+			Enabled: multiTenancyEnabled,
+		},
+	}
+
+	var vectorIndexConfig map[string]interface{}
+
 	if cfg.IndexType == "hnsw" {
-		classObj = &models.Class{
-			Class:           cfg.ClassName,
-			Description:     fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
-			VectorIndexType: cfg.IndexType,
-			VectorIndexConfig: map[string]interface{}{
-				"distance":               cfg.DistanceMetric,
-				"efConstruction":         float64(cfg.EfConstruction),
-				"maxConnections":         float64(cfg.MaxConnections),
-				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
-			},
-			MultiTenancyConfig: &models.MultiTenancyConfig{
-				Enabled: multiTenancyEnabled,
-			},
+		vectorIndexConfig = map[string]interface{}{
+			"distance":               cfg.DistanceMetric,
+			"efConstruction":         float64(cfg.EfConstruction),
+			"maxConnections":         float64(cfg.MaxConnections),
+			"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+			"flatSearchCutoff":       cfg.FlatSearchCutoff,
 		}
 		if cfg.PQ == "auto" {
-			classObj.VectorIndexConfig = map[string]interface{}{
-				"distance":               cfg.DistanceMetric,
-				"efConstruction":         float64(cfg.EfConstruction),
-				"maxConnections":         float64(cfg.MaxConnections),
-				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
-				"pq": map[string]interface{}{
-					"enabled":       true,
-					"rescoreLimit":  cfg.RescoreLimit,
-					"segments":      cfg.PQSegments,
-					"trainingLimit": cfg.TrainingLimit,
-				},
+			vectorIndexConfig["pq"] = map[string]interface{}{
+				"enabled":       true,
+				"rescoreLimit":  cfg.RescoreLimit,
+				"segments":      cfg.PQSegments,
+				"trainingLimit": cfg.TrainingLimit,
 			}
 		} else if cfg.BQ {
-			classObj.VectorIndexConfig = map[string]interface{}{
-				"distance":               cfg.DistanceMetric,
-				"efConstruction":         float64(cfg.EfConstruction),
-				"maxConnections":         float64(cfg.MaxConnections),
-				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
-				"bq": map[string]interface{}{
-					"enabled":      true,
-					"rescoreLimit": cfg.RescoreLimit,
-					"cache":        true,
-				},
+			vectorIndexConfig["bq"] = map[string]interface{}{
+				"enabled":      true,
+				"rescoreLimit": cfg.RescoreLimit,
+				"cache":        true,
 			}
 		}
 	} else if cfg.IndexType == "flat" {
-		classObj = &models.Class{
-			Class:           cfg.ClassName,
-			Description:     fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
-			VectorIndexType: cfg.IndexType,
-			VectorIndexConfig: map[string]interface{}{
-				"distance": cfg.DistanceMetric,
-			},
-			MultiTenancyConfig: &models.MultiTenancyConfig{
-				Enabled: multiTenancyEnabled,
-			},
+		vectorIndexConfig = map[string]interface{}{
+			"distance": cfg.DistanceMetric,
 		}
 		if cfg.BQ {
-			classObj.VectorIndexConfig = map[string]interface{}{
-				"distance": cfg.DistanceMetric,
-				"bq": map[string]interface{}{
-					"enabled":      true,
-					"rescoreLimit": cfg.RescoreLimit,
-					"cache":        cfg.Cache,
-				},
+			vectorIndexConfig["bq"] = map[string]interface{}{
+				"enabled":      true,
+				"rescoreLimit": cfg.RescoreLimit,
+				"cache":        cfg.Cache,
 			}
 		}
-
 	} else if cfg.IndexType == "dynamic" {
 		log.WithFields(log.Fields{"threshold": cfg.DynamicThreshold}).Info("Building dynamic vector index")
-		classObj = &models.Class{
-			Class:           cfg.ClassName,
-			Description:     fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
-			VectorIndexType: cfg.IndexType,
-			VectorIndexConfig: map[string]interface{}{
-				"distance":  cfg.DistanceMetric,
-				"threshold": cfg.DynamicThreshold,
-				"hnsw": map[string]interface{}{
-					"efConstruction":         float64(cfg.EfConstruction),
-					"maxConnections":         float64(cfg.MaxConnections),
-					"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
-				},
-			},
-			MultiTenancyConfig: &models.MultiTenancyConfig{
-				Enabled: multiTenancyEnabled,
+		vectorIndexConfig = map[string]interface{}{
+			"distance":  cfg.DistanceMetric,
+			"threshold": cfg.DynamicThreshold,
+			"hnsw": map[string]interface{}{
+				"efConstruction":         float64(cfg.EfConstruction),
+				"maxConnections":         float64(cfg.MaxConnections),
+				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+				"flatSearchCutoff":       cfg.FlatSearchCutoff,
 			},
 		}
 		if cfg.PQ == "auto" {
-			classObj.VectorIndexConfig = map[string]interface{}{
-				"hnsw": map[string]interface{}{
-					"distance":               cfg.DistanceMetric,
-					"efConstruction":         float64(cfg.EfConstruction),
-					"maxConnections":         float64(cfg.MaxConnections),
-					"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
-					"pq": map[string]interface{}{
-						"enabled":       true,
-						"rescoreLimit":  cfg.RescoreLimit,
-						"segments":      cfg.PQSegments,
-						"trainingLimit": cfg.TrainingLimit,
-					},
-				},
+			vectorIndexConfig["hnsw"].(map[string]interface{})["pq"] = map[string]interface{}{
+				"enabled":       true,
+				"rescoreLimit":  cfg.RescoreLimit,
+				"segments":      cfg.PQSegments,
+				"trainingLimit": cfg.TrainingLimit,
 			}
 		} else if cfg.BQ {
-			classObj.VectorIndexConfig = map[string]interface{}{
-				"hnsw": map[string]interface{}{
-					"distance":               cfg.DistanceMetric,
-					"efConstruction":         float64(cfg.EfConstruction),
-					"maxConnections":         float64(cfg.MaxConnections),
-					"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
-					"bq": map[string]interface{}{
-						"enabled":      true,
-						"rescoreLimit": cfg.RescoreLimit,
-						"cache":        true,
-					},
-				},
+			vectorIndexConfig["hnsw"].(map[string]interface{})["bq"] = map[string]interface{}{
+				"enabled":      true,
+				"rescoreLimit": cfg.RescoreLimit,
+				"cache":        true,
 			}
 		}
 	} else {
 		log.Fatalf("Unknown index type %s", cfg.IndexType)
 	}
+
+	classObj.VectorIndexConfig = vectorIndexConfig
 
 	err = client.Schema().ClassCreator().WithClass(classObj).Do(context.Background())
 	if err != nil {
@@ -483,7 +454,7 @@ func getHDF5ByteSize(dataset *hdf5.Dataset) uint {
 
 // Load a large dataset from an hdf5 file and stream it to Weaviate
 // startOffset and maxRecords are ignored if equal to 0
-func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, cfg *Config, startOffset uint, maxRecords uint) {
+func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, cfg *Config, startOffset uint, maxRecords uint, filters []int) {
 	dataspace := dataset.Space()
 	dims, _, _ := dataspace.SimpleExtentDims()
 
@@ -564,7 +535,12 @@ func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, cfg *Config, 
 			log.Printf("Imported %d/%d rows", i+batchRows, rows)
 		}
 
-		chunks <- Batch{Vectors: chunkData, Offset: int(i)}
+		filter := []int{}
+		if len(filters) > 0 {
+			filter = filters[i : i+batchRows]
+		}
+
+		chunks <- Batch{Vectors: chunkData, Offset: int(i), Filters: filter}
 	}
 }
 
@@ -597,6 +573,37 @@ func loadHdf5Float32(file *hdf5.File, name string) [][]float32 {
 		chunkData1D := make([]float64, rows*dimensions)
 		dataset.Read(&chunkData1D)
 		chunkData = convert1DChunk[float64](chunkData1D, int(dimensions), int(rows))
+	}
+
+	return chunkData
+}
+
+func loadHdf5Categories(file *hdf5.File, name string) []int {
+	dataset, err := file.OpenDataset(name)
+	if err != nil {
+		log.Fatalf("Error opening neighbors dataset: %v", err)
+	}
+	defer dataset.Close()
+
+	dataspace := dataset.Space()
+	dims, _, _ := dataspace.SimpleExtentDims()
+	if len(dims) != 1 {
+		log.Fatal("expected 1 dimension")
+	}
+
+	elements := dims[0]
+	byteSize := getHDF5ByteSize(dataset)
+
+	chunkData := make([]int, elements)
+
+	if byteSize == 4 {
+		chunkData32 := make([]int32, elements)
+		dataset.Read(&chunkData32)
+		for i := range chunkData {
+			chunkData[i] = int(chunkData32[i])
+		}
+	} else if byteSize == 8 {
+		dataset.Read(&chunkData)
 	}
 
 	return chunkData
@@ -666,10 +673,15 @@ func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint, upda
 	extent, _, _ := dataspace.SimpleExtentDims()
 	dimensions := extent[1]
 
+	filters := []int{}
+	if cfg.Filter {
+		filters = loadHdf5Categories(file, "train_categories")
+	}
+
 	chunks := make(chan Batch, 10)
 
 	go func() {
-		loadHdf5Streaming(dataset, chunks, cfg, offset, maxRows)
+		loadHdf5Streaming(dataset, chunks, cfg, offset, maxRows, filters)
 		close(chunks)
 	}()
 
@@ -771,7 +783,7 @@ func parseEfValues(s string) ([]int, error) {
 	return nums, nil
 }
 
-func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, neighbors [][]int) {
+func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, neighbors [][]int, filters []int) {
 
 	runID := strconv.FormatInt(time.Now().Unix(), 10)
 
@@ -796,9 +808,9 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 		var result Results
 
 		if cfg.QueryDuration > 0 {
-			result = benchmarkANNDuration(*cfg, testData, neighbors)
+			result = benchmarkANNDuration(*cfg, testData, neighbors, filters)
 		} else {
-			result = benchmarkANN(*cfg, testData, neighbors)
+			result = benchmarkANN(*cfg, testData, neighbors, filters)
 		}
 
 		log.WithFields(log.Fields{"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall,
@@ -911,8 +923,12 @@ var annBenchmarkCommand = &cobra.Command{
 
 		neighbors := loadHdf5Neighbors(file, "neighbors")
 		testData := loadHdf5Float32(file, "test")
+		testFilters := make([]int, 0)
+		if cfg.Filter {
+			testFilters = loadHdf5Categories(file, "test_categories")
+		}
 
-		runQueries(&cfg, importTime, testData, neighbors)
+		runQueries(&cfg, importTime, testData, neighbors, testFilters)
 
 		if cfg.performUpdates() {
 
@@ -941,7 +957,7 @@ var annBenchmarkCommand = &cobra.Command{
 					}
 				}
 
-				runQueries(&cfg, importTime, testData, neighbors)
+				runQueries(&cfg, importTime, testData, neighbors, testFilters)
 
 			}
 
@@ -1033,9 +1049,13 @@ func initAnnBenchmark() {
 		"output", "o", "", "Filename for an output file. If none provided, output to stdout only")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.DynamicThreshold,
 		"dynamicThreshold", 10_000, "Threshold to trigger the update in the dynamic index (default 10 000)")
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.Filter,
+		"filter", false, "Threshold to trigger the update in the dynamic index (default 10 000)")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.FlatSearchCutoff,
+		"flatSearchCutoff", 40000, "Flat search cut off (default 40 000)")
 }
 
-func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors) Results {
+func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors, filters []int) Results {
 	cfg.Queries = len(queries)
 
 	i := 0
@@ -1046,9 +1066,13 @@ func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors) Results {
 		if cfg.NumTenants > 0 {
 			tenant = fmt.Sprint(rand.Intn(cfg.NumTenants))
 		}
+		filter := -1
+		if cfg.Filter {
+			filter = filters[i]
+		}
 
 		return QueryWithNeighbors{
-			Query:     nearVectorQueryGrpc(cfg.ClassName, queries[i], cfg.Limit, tenant),
+			Query:     nearVectorQueryGrpc(cfg.ClassName, queries[i], cfg.Limit, tenant, filter),
 			Neighbors: neighbors[i],
 		}
 
@@ -1088,7 +1112,7 @@ type sampledResults struct {
 	Results          []Results
 }
 
-func benchmarkANNDuration(cfg Config, queries Queries, neighbors Neighbors) Results {
+func benchmarkANNDuration(cfg Config, queries Queries, neighbors Neighbors, filters []int) Results {
 	cfg.Queries = len(queries)
 
 	var samples sampledResults
@@ -1098,7 +1122,7 @@ func benchmarkANNDuration(cfg Config, queries Queries, neighbors Neighbors) Resu
 	var results Results
 
 	for time.Since(startTime) < time.Duration(cfg.QueryDuration)*time.Second {
-		results = benchmarkANN(cfg, queries, neighbors)
+		results = benchmarkANN(cfg, queries, neighbors, filters)
 		samples.Min = append(samples.Min, results.Min)
 		samples.Max = append(samples.Max, results.Max)
 		samples.Mean = append(samples.Mean, results.Mean)
