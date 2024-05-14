@@ -57,6 +57,7 @@ type Config struct {
 	QueryDelaySeconds      int
 	DynamicThreshold       int
 	Filter                 bool
+	FlatSearchCutoff       int
 }
 
 func (c *Config) Validate() error {

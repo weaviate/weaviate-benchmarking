@@ -175,123 +175,81 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		multiTenancyEnabled = true
 	}
 
-	var classObj *models.Class
+	var classObj = &models.Class{
+		Class:           cfg.ClassName,
+		Description:     fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
+		VectorIndexType: cfg.IndexType,
+		MultiTenancyConfig: &models.MultiTenancyConfig{
+			Enabled: multiTenancyEnabled,
+		},
+	}
+
+	var vectorIndexConfig map[string]interface{}
+
 	if cfg.IndexType == "hnsw" {
-		classObj = &models.Class{
-			Class:           cfg.ClassName,
-			Description:     fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
-			VectorIndexType: cfg.IndexType,
-			VectorIndexConfig: map[string]interface{}{
-				"distance":               cfg.DistanceMetric,
-				"efConstruction":         float64(cfg.EfConstruction),
-				"maxConnections":         float64(cfg.MaxConnections),
-				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
-			},
-			MultiTenancyConfig: &models.MultiTenancyConfig{
-				Enabled: multiTenancyEnabled,
-			},
+		vectorIndexConfig = map[string]interface{}{
+			"distance":               cfg.DistanceMetric,
+			"efConstruction":         float64(cfg.EfConstruction),
+			"maxConnections":         float64(cfg.MaxConnections),
+			"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+			"flatSearchCutoff":       cfg.FlatSearchCutoff,
 		}
 		if cfg.PQ == "auto" {
-			classObj.VectorIndexConfig = map[string]interface{}{
-				"distance":               cfg.DistanceMetric,
-				"efConstruction":         float64(cfg.EfConstruction),
-				"maxConnections":         float64(cfg.MaxConnections),
-				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
-				"pq": map[string]interface{}{
-					"enabled":       true,
-					"rescoreLimit":  cfg.RescoreLimit,
-					"segments":      cfg.PQSegments,
-					"trainingLimit": cfg.TrainingLimit,
-				},
+			vectorIndexConfig["pq"] = map[string]interface{}{
+				"enabled":       true,
+				"rescoreLimit":  cfg.RescoreLimit,
+				"segments":      cfg.PQSegments,
+				"trainingLimit": cfg.TrainingLimit,
 			}
 		} else if cfg.BQ {
-			classObj.VectorIndexConfig = map[string]interface{}{
-				"distance":               cfg.DistanceMetric,
-				"efConstruction":         float64(cfg.EfConstruction),
-				"maxConnections":         float64(cfg.MaxConnections),
-				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
-				"bq": map[string]interface{}{
-					"enabled":      true,
-					"rescoreLimit": cfg.RescoreLimit,
-					"cache":        true,
-				},
+			vectorIndexConfig["bq"] = map[string]interface{}{
+				"enabled":      true,
+				"rescoreLimit": cfg.RescoreLimit,
+				"cache":        true,
 			}
 		}
 	} else if cfg.IndexType == "flat" {
-		classObj = &models.Class{
-			Class:           cfg.ClassName,
-			Description:     fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
-			VectorIndexType: cfg.IndexType,
-			VectorIndexConfig: map[string]interface{}{
-				"distance": cfg.DistanceMetric,
-			},
-			MultiTenancyConfig: &models.MultiTenancyConfig{
-				Enabled: multiTenancyEnabled,
-			},
+		vectorIndexConfig = map[string]interface{}{
+			"distance": cfg.DistanceMetric,
 		}
 		if cfg.BQ {
-			classObj.VectorIndexConfig = map[string]interface{}{
-				"distance": cfg.DistanceMetric,
-				"bq": map[string]interface{}{
-					"enabled":      true,
-					"rescoreLimit": cfg.RescoreLimit,
-					"cache":        cfg.Cache,
-				},
+			vectorIndexConfig["bq"] = map[string]interface{}{
+				"enabled":      true,
+				"rescoreLimit": cfg.RescoreLimit,
+				"cache":        cfg.Cache,
 			}
 		}
-
 	} else if cfg.IndexType == "dynamic" {
 		log.WithFields(log.Fields{"threshold": cfg.DynamicThreshold}).Info("Building dynamic vector index")
-		classObj = &models.Class{
-			Class:           cfg.ClassName,
-			Description:     fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
-			VectorIndexType: cfg.IndexType,
-			VectorIndexConfig: map[string]interface{}{
-				"distance":  cfg.DistanceMetric,
-				"threshold": cfg.DynamicThreshold,
-				"hnsw": map[string]interface{}{
-					"efConstruction":         float64(cfg.EfConstruction),
-					"maxConnections":         float64(cfg.MaxConnections),
-					"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
-				},
-			},
-			MultiTenancyConfig: &models.MultiTenancyConfig{
-				Enabled: multiTenancyEnabled,
+		vectorIndexConfig = map[string]interface{}{
+			"distance":  cfg.DistanceMetric,
+			"threshold": cfg.DynamicThreshold,
+			"hnsw": map[string]interface{}{
+				"efConstruction":         float64(cfg.EfConstruction),
+				"maxConnections":         float64(cfg.MaxConnections),
+				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+				"flatSearchCutoff":       cfg.FlatSearchCutoff,
 			},
 		}
 		if cfg.PQ == "auto" {
-			classObj.VectorIndexConfig = map[string]interface{}{
-				"hnsw": map[string]interface{}{
-					"distance":               cfg.DistanceMetric,
-					"efConstruction":         float64(cfg.EfConstruction),
-					"maxConnections":         float64(cfg.MaxConnections),
-					"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
-					"pq": map[string]interface{}{
-						"enabled":       true,
-						"rescoreLimit":  cfg.RescoreLimit,
-						"segments":      cfg.PQSegments,
-						"trainingLimit": cfg.TrainingLimit,
-					},
-				},
+			vectorIndexConfig["hnsw"].(map[string]interface{})["pq"] = map[string]interface{}{
+				"enabled":       true,
+				"rescoreLimit":  cfg.RescoreLimit,
+				"segments":      cfg.PQSegments,
+				"trainingLimit": cfg.TrainingLimit,
 			}
 		} else if cfg.BQ {
-			classObj.VectorIndexConfig = map[string]interface{}{
-				"hnsw": map[string]interface{}{
-					"distance":               cfg.DistanceMetric,
-					"efConstruction":         float64(cfg.EfConstruction),
-					"maxConnections":         float64(cfg.MaxConnections),
-					"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
-					"bq": map[string]interface{}{
-						"enabled":      true,
-						"rescoreLimit": cfg.RescoreLimit,
-						"cache":        true,
-					},
-				},
+			vectorIndexConfig["hnsw"].(map[string]interface{})["bq"] = map[string]interface{}{
+				"enabled":      true,
+				"rescoreLimit": cfg.RescoreLimit,
+				"cache":        true,
 			}
 		}
 	} else {
 		log.Fatalf("Unknown index type %s", cfg.IndexType)
 	}
+
+	classObj.VectorIndexConfig = vectorIndexConfig
 
 	err = client.Schema().ClassCreator().WithClass(classObj).Do(context.Background())
 	if err != nil {
@@ -1093,6 +1051,8 @@ func initAnnBenchmark() {
 		"dynamicThreshold", 10_000, "Threshold to trigger the update in the dynamic index (default 10 000)")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.Filter,
 		"filter", false, "Threshold to trigger the update in the dynamic index (default 10 000)")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.FlatSearchCutoff,
+		"flatSearchCutoff", 40000, "Flat search cut off (default 40 000)")
 }
 
 func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors, filters []int) Results {
