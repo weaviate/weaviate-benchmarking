@@ -7,7 +7,8 @@ import nltk
 from nltk.tokenize import word_tokenize
 import logging
 from tqdm import tqdm
-#import dspy
+import dspy
+import openai
 
 import ssl
 
@@ -52,32 +53,36 @@ def main(args):
 
     keyword = None
 
-    '''
-    class AsesssKeywordQuality(dspy.Signature):
-        """Assess whether this keyword would make for an interesting filter. For example keywords like `lion` or `ocean` are great, but generic words like `case` are not great."""
-
-        keyword: str = dspy.InputField()
-        keyword_quality: bool = dspy.OutputField(desc="Only respond with this value.")
+    if args.dspy_check:
     
-    # would be better to format `lion`: true | `ocean`: true | `case`: false as examples
+        class AsessKeywordQuality(dspy.Signature):
+            """Assess whether this keyword would make for an interesting filter. For example keywords like `lion` or `ocean` are great, but generic words like `case` are not great."""
 
-    ollama_llama3 = dspy.OllamaLocal(model="llama3:8b-instruct-q5_1")
-    dspy.settings.configure(lm=ollama_llama3)
+            keyword: str = dspy.InputField()
+            keyword_quality: bool = dspy.OutputField(desc="Only respond with this value.")
+    
+        # would be better to format `lion`: true | `ocean`: true | `case`: false as examples
 
-    assess_keyword_program = dspy.TypedPredictor(AsesssKeywordQuality)
-    '''
+        gpt_4 = dspy.OpenAI(model="gpt-4")
+        openai.api_key = args.openai_api_key
+        dspy.settings.configure(lm=gpt_4)
 
-    for word, freq in keyword_freq.items():
-        if args.min_frequency <= freq <= args.max_frequency:
-            #keyword_quality = assess_keyword_program(keyword=word).keyword_quality
-            #print(f"Judged keyword quality {word} to be {str(keyword_quality)}\n")
-            '''
-            if keyword_quality:
+        assess_keyword_program = dspy.TypedPredictor(AsessKeywordQuality)
+    
+
+        for word, freq in keyword_freq.items():
+            if args.min_frequency <= freq <= args.max_frequency:
+                keyword_quality = assess_keyword_program(keyword=word).keyword_quality
+                print(f"Judged keyword quality {word} to be {str(keyword_quality)}\n")
+                if keyword_quality:
+                    keyword = word
+                    break
+    
+    else:
+        for word, freq in keyword_freq.items():
+            if args.min_frequency <= freq <= args.max_frequency:
                 keyword = word
                 break
-            '''
-            keyword = word
-            break
 
     if keyword is None:
         raise ValueError(f"No keyword found within the specified frequency range ({args.min_frequency} - {args.max_frequency})")
@@ -125,12 +130,14 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate filtered dataset")
-    parser.add_argument("input_file", help="Path to the input JSONL file")
+    parser.add_argument("input_file", help="Path to the input JSONL file (tested with `sphere.1M.jsonl`)")
     parser.add_argument("output_file", help="Path to the output HDF5 file")
     parser.add_argument("--min-frequency", type=int, default=40000, help="Minimum frequency of the keyword (default: 40000)")
     parser.add_argument("--max-frequency", type=int, default=50000, help="Maximum frequency of the keyword (default: 50000)")
-    parser.add_argument("--num-neighbors", type=int, default=10, help="Number of nearest neighbors to retrieve (default: 10)")
+    parser.add_argument("--num-neighbors", type=int, default=100, help="Number of nearest neighbors to retrieve (default: 100)")
     parser.add_argument("--log-level", default="INFO", help="Logging level (default: INFO)")
+    parser.add_argument("--dspy-check", default=False, help="Enable dspy keyword quality check (default: True)")
+    parser.add_argument("--openai-api-key", help="OpenAI API key")
 
     args = parser.parse_args()
 
