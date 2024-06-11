@@ -38,6 +38,7 @@ type Config struct {
 	Cache                  bool
 	RescoreLimit           int
 	PQ                     string
+	SQ                     string
 	SkipAsyncReady         bool
 	PQRatio                uint
 	PQSegments             uint
