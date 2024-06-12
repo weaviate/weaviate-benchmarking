@@ -36,6 +36,13 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
+type CompressionType byte
+
+const (
+	CompressionTypePQ CompressionType = 0
+	CompressionTypeSQ CompressionType = 1
+)
+
 // Batch of vectors and offset for writing to Weaviate
 type Batch struct {
 	Vectors [][]float32
@@ -207,6 +214,16 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				"rescoreLimit": cfg.RescoreLimit,
 				"cache":        true,
 			}
+		} else if cfg.SQ == "auto" {
+			classObj.VectorIndexConfig = map[string]interface{}{
+				"distance":               cfg.DistanceMetric,
+				"efConstruction":         float64(cfg.EfConstruction),
+				"maxConnections":         float64(cfg.MaxConnections),
+				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+				"sq": map[string]interface{}{
+					"enabled": true,
+				},
+			}
 		}
 	} else if cfg.IndexType == "flat" {
 		vectorIndexConfig = map[string]interface{}{
@@ -364,24 +381,32 @@ func waitReady(cfg *Config, client *weaviate.Client, indexStart time.Time, maxDu
 }
 
 // Update ef parameter on the Weaviate schema
-func enablePQ(cfg *Config, client *weaviate.Client, dimensions uint) {
+func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, compressionType CompressionType) {
 	classConfig, err := client.Schema().ClassGetter().WithClassName(cfg.ClassName).Do(context.Background())
 	if err != nil {
 		panic(err)
 	}
 
-	if dimensions%cfg.PQRatio != 0 {
-		log.Fatalf("PQ ratio of %d and dimensions of %d incompatible", cfg.PQRatio, dimensions)
-	}
-
-	segments := dimensions / cfg.PQRatio
-
+	var segments uint
 	vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
-	vectorIndexConfig["pq"] = map[string]interface{}{
-		"enabled":       true,
-		"segments":      segments,
-		"rescoreLimit":  cfg.RescoreLimit,
-		"trainingLimit": cfg.TrainingLimit,
+  
+	switch compressionType {
+	case CompressionTypePQ:
+		if dimensions%cfg.PQRatio != 0 {
+			log.Fatalf("PQ ratio of %d and dimensions of %d incompatible", cfg.PQRatio, dimensions)
+		}
+		segments = dimensions / cfg.PQRatio
+		vectorIndexConfig["pq"] = map[string]interface{}{
+			"enabled":       true,
+			"segments":      segments,
+			"trainingLimit": cfg.TrainingLimit,
+      "rescoreLimit":  cfg.RescoreLimit,
+		}
+	case CompressionTypeSQ:
+		vectorIndexConfig["sq"] = map[string]interface{}{
+			"enabled": true,
+      "rescoreLimit":  cfg.RescoreLimit,
+		}
 	}
 
 	classConfig.VectorIndexConfig = vectorIndexConfig
@@ -391,7 +416,12 @@ func enablePQ(cfg *Config, client *weaviate.Client, dimensions uint) {
 	if err != nil {
 		panic(err)
 	}
-	log.WithFields(log.Fields{"segments": segments, "dimensions": dimensions}).Printf("Enabled PQ. Waiting for shard ready.\n")
+	switch compressionType {
+	case CompressionTypePQ:
+		log.WithFields(log.Fields{"segments": segments, "dimensions": dimensions}).Printf("Enabled PQ. Waiting for shard ready.\n")
+	case CompressionTypeSQ:
+		log.Printf("Enabled SQ. Waiting for shard ready.\n")
+	}
 
 	start := time.Now()
 
@@ -422,7 +452,12 @@ func enablePQ(cfg *Config, client *weaviate.Client, dimensions uint) {
 	}
 
 	endTime := time.Now()
-	log.WithFields(log.Fields{"segments": segments, "dimensions": dimensions}).Printf("PQ Completed in %v\n", endTime.Sub(start))
+	switch compressionType {
+	case CompressionTypePQ:
+		log.WithFields(log.Fields{"segments": segments, "dimensions": dimensions}).Printf("PQ Completed in %v\n", endTime.Sub(start))
+	case CompressionTypeSQ:
+		log.Printf("SQ Completed in %v\n", endTime.Sub(start))
+	}
 
 }
 
@@ -741,7 +776,13 @@ func loadANNBenchmarksFile(file *hdf5.File, cfg *Config, client *weaviate.Client
 	if cfg.PQ == "enabled" {
 		dimensions := loadHdf5Train(file, cfg, 0, uint(cfg.TrainingLimit), 0)
 		log.Printf("Pausing to enable PQ.")
-		enablePQ(cfg, client, dimensions)
+		enableCompression(cfg, client, dimensions, CompressionTypePQ)
+		loadHdf5Train(file, cfg, uint(cfg.TrainingLimit), 0, 0)
+
+	} else if cfg.SQ == "enabled" {
+		dimensions := loadHdf5Train(file, cfg, 0, uint(cfg.TrainingLimit), 0)
+		log.Printf("Pausing to enable SQ.")
+		enableCompression(cfg, client, dimensions, CompressionTypeSQ)
 		loadHdf5Train(file, cfg, uint(cfg.TrainingLimit), 0, 0)
 
 	} else {
@@ -991,6 +1032,8 @@ func initAnnBenchmark() {
 		"rescoreLimit", 256, "Rescore limit (default 256) for BQ")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.PQ,
 		"pq", "disabled", "Set PQ (disabled, auto, or enabled) (default disabled)")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.SQ,
+		"sq", "disabled", "Set SQ (disabled, auto, or enabled) (default disabled)")
 	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.PQRatio,
 		"pqRatio", 4, "Set PQ segments = dimensions / ratio (must divide evenly default 4)")
 	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.PQSegments,
