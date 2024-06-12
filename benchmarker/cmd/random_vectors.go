@@ -1,11 +1,14 @@
 package cmd
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -123,13 +126,21 @@ func nearVectorQueryJSONRest(className string, vec []float32, limit int) []byte 
 }`, string(vecJSON), limit))
 }
 
-func nearVectorQueryGrpc(className string, vec []float32, limit int, tenant string) []byte {
+func encodeVector(fs []float32) []byte {
+	buf := make([]byte, len(fs)*4)
+	for i, f := range fs {
+		binary.LittleEndian.PutUint32(buf[i*4:], math.Float32bits(f))
+	}
+	return buf
+}
+
+func nearVectorQueryGrpc(className string, vec []float32, limit int, tenant string, filter int) []byte {
 
 	searchRequest := &weaviategrpc.SearchRequest{
 		Collection: className,
 		Limit:      uint32(limit),
 		NearVector: &weaviategrpc.NearVector{
-			Vector: vec,
+			VectorBytes: encodeVector(vec),
 		},
 		Metadata: &weaviategrpc.MetadataRequest{
 			Certainty: false,
@@ -140,6 +151,17 @@ func nearVectorQueryGrpc(className string, vec []float32, limit int, tenant stri
 
 	if tenant != "" {
 		searchRequest.Tenant = tenant
+	}
+
+	if filter >= 0 {
+		searchRequest.Filters = &weaviategrpc.Filters{
+			TestValue: &weaviategrpc.Filters_ValueText{
+				ValueText: strconv.Itoa(filter),
+			},
+			On:       []string{"category"},
+			Operator: weaviategrpc.Filters_OPERATOR_EQUAL,
+		}
+
 	}
 
 	data, err := proto.Marshal(searchRequest)
@@ -166,7 +188,7 @@ func benchmarkNearVector(cfg Config) Results {
 
 		if cfg.API == "grpc" {
 			return QueryWithNeighbors{
-				Query: nearVectorQueryGrpc(cfg.ClassName, randomVector(cfg.Dimensions), cfg.Limit, cfg.Tenant),
+				Query: nearVectorQueryGrpc(cfg.ClassName, randomVector(cfg.Dimensions), cfg.Limit, cfg.Tenant, 0),
 			}
 		}
 

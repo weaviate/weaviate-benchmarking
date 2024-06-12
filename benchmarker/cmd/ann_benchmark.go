@@ -6,10 +6,8 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"math/rand"
-	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -21,7 +19,6 @@ import (
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
 	"github.com/hashicorp/go-retryablehttp"
-	"github.com/prometheus/common/expfmt"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/exp/constraints"
 
@@ -36,6 +33,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type CompressionType byte
@@ -49,9 +47,11 @@ const (
 type Batch struct {
 	Vectors [][]float32
 	Offset  int
+	Filters []int
 }
 
 // Weaviate https://github.com/weaviate/weaviate-chaos-engineering/tree/main/apps/ann-benchmarks style format
+// mixed camel / snake case for compatibility
 type ResultsJSONBenchmark struct {
 	Api              string  `json:"api"`
 	Ef               int     `json:"ef"`
@@ -67,6 +67,9 @@ type ResultsJSONBenchmark struct {
 	RunID            string  `json:"run_id"`
 	Dataset          string  `json:"dataset_file"`
 	Recall           float64 `json:"recall"`
+	HeapAllocBytes   float64 `json:"heap_alloc_bytes"`
+	HeapInuseBytes   float64 `json:"heap_inuse_bytes"`
+	HeapSysBytes     float64 `json:"heap_sys_bytes"`
 }
 
 // Convert an int to a uuid formatted string
@@ -98,12 +101,23 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 
 	for i, vector := range chunk.Vectors {
 		objects[i] = &weaviategrpc.BatchObject{
-			Uuid:       uuidFromInt(i + chunk.Offset + cfg.Offset),
-			Vector:     vector,
-			Collection: cfg.ClassName,
+			Uuid:        uuidFromInt(i + chunk.Offset + cfg.Offset),
+			VectorBytes: encodeVector(vector),
+			Collection:  cfg.ClassName,
 		}
 		if cfg.Tenant != "" {
 			objects[i].Tenant = cfg.Tenant
+		}
+		if cfg.Filter {
+			nonRefProperties, err := structpb.NewStruct(map[string]interface{}{
+				"category": strconv.Itoa(chunk.Filters[i]),
+			})
+			if err != nil {
+				log.Fatalf("Error creating filtered struct: %v", err)
+			}
+			objects[i].Properties = &weaviategrpc.BatchObject_Properties{
+				NonRefProperties: nonRefProperties,
+			}
 		}
 	}
 
@@ -168,44 +182,37 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		multiTenancyEnabled = true
 	}
 
-	var classObj *models.Class
+	var classObj = &models.Class{
+		Class:           cfg.ClassName,
+		Description:     fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
+		VectorIndexType: cfg.IndexType,
+		MultiTenancyConfig: &models.MultiTenancyConfig{
+			Enabled: multiTenancyEnabled,
+		},
+	}
+
+	var vectorIndexConfig map[string]interface{}
+
 	if cfg.IndexType == "hnsw" {
-		classObj = &models.Class{
-			Class:           cfg.ClassName,
-			Description:     fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
-			VectorIndexType: cfg.IndexType,
-			VectorIndexConfig: map[string]interface{}{
-				"distance":               cfg.DistanceMetric,
-				"efConstruction":         float64(cfg.EfConstruction),
-				"maxConnections":         float64(cfg.MaxConnections),
-				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
-			},
-			MultiTenancyConfig: &models.MultiTenancyConfig{
-				Enabled: multiTenancyEnabled,
-			},
+		vectorIndexConfig = map[string]interface{}{
+			"distance":               cfg.DistanceMetric,
+			"efConstruction":         float64(cfg.EfConstruction),
+			"maxConnections":         float64(cfg.MaxConnections),
+			"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+			"flatSearchCutoff":       cfg.FlatSearchCutoff,
 		}
 		if cfg.PQ == "auto" {
-			classObj.VectorIndexConfig = map[string]interface{}{
-				"distance":               cfg.DistanceMetric,
-				"efConstruction":         float64(cfg.EfConstruction),
-				"maxConnections":         float64(cfg.MaxConnections),
-				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
-				"pq": map[string]interface{}{
-					"enabled":       true,
-					"segments":      cfg.PQSegments,
-					"trainingLimit": cfg.TrainingLimit,
-				},
+			vectorIndexConfig["pq"] = map[string]interface{}{
+				"enabled":       true,
+				"rescoreLimit":  cfg.RescoreLimit,
+				"segments":      cfg.PQSegments,
+				"trainingLimit": cfg.TrainingLimit,
 			}
 		} else if cfg.BQ {
-			classObj.VectorIndexConfig = map[string]interface{}{
-				"distance":               cfg.DistanceMetric,
-				"efConstruction":         float64(cfg.EfConstruction),
-				"maxConnections":         float64(cfg.MaxConnections),
-				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
-				"bq": map[string]interface{}{
-					"enabled": true,
-					"cache":   true,
-				},
+			vectorIndexConfig["bq"] = map[string]interface{}{
+				"enabled":      true,
+				"rescoreLimit": cfg.RescoreLimit,
+				"cache":        true,
 			}
 		} else if cfg.SQ == "auto" {
 			classObj.VectorIndexConfig = map[string]interface{}{
@@ -219,32 +226,47 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 			}
 		}
 	} else if cfg.IndexType == "flat" {
-		classObj = &models.Class{
-			Class:           cfg.ClassName,
-			Description:     fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
-			VectorIndexType: cfg.IndexType,
-			VectorIndexConfig: map[string]interface{}{
-				"distance": cfg.DistanceMetric,
-			},
-			MultiTenancyConfig: &models.MultiTenancyConfig{
-				Enabled: multiTenancyEnabled,
-			},
+		vectorIndexConfig = map[string]interface{}{
+			"distance": cfg.DistanceMetric,
 		}
 		if cfg.BQ {
-			classObj.VectorIndexConfig = map[string]interface{}{
-				"distance": cfg.DistanceMetric,
-				"bq": map[string]interface{}{
-					"enabled":      true,
-					"rescoreLimit": cfg.RescoreLimit,
-					"cache":        cfg.Cache,
-				},
+			vectorIndexConfig["bq"] = map[string]interface{}{
+				"enabled":      true,
+				"rescoreLimit": cfg.RescoreLimit,
+				"cache":        cfg.Cache,
 			}
-
 		}
-
+	} else if cfg.IndexType == "dynamic" {
+		log.WithFields(log.Fields{"threshold": cfg.DynamicThreshold}).Info("Building dynamic vector index")
+		vectorIndexConfig = map[string]interface{}{
+			"distance":  cfg.DistanceMetric,
+			"threshold": cfg.DynamicThreshold,
+			"hnsw": map[string]interface{}{
+				"efConstruction":         float64(cfg.EfConstruction),
+				"maxConnections":         float64(cfg.MaxConnections),
+				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+				"flatSearchCutoff":       cfg.FlatSearchCutoff,
+			},
+		}
+		if cfg.PQ == "auto" {
+			vectorIndexConfig["hnsw"].(map[string]interface{})["pq"] = map[string]interface{}{
+				"enabled":       true,
+				"rescoreLimit":  cfg.RescoreLimit,
+				"segments":      cfg.PQSegments,
+				"trainingLimit": cfg.TrainingLimit,
+			}
+		} else if cfg.BQ {
+			vectorIndexConfig["hnsw"].(map[string]interface{})["bq"] = map[string]interface{}{
+				"enabled":      true,
+				"rescoreLimit": cfg.RescoreLimit,
+				"cache":        true,
+			}
+		}
 	} else {
 		log.Fatalf("Unknown index type %s", cfg.IndexType)
 	}
+
+	classObj.VectorIndexConfig = vectorIndexConfig
 
 	err = client.Schema().ClassCreator().WithClass(classObj).Do(context.Background())
 	if err != nil {
@@ -306,16 +328,18 @@ func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 		panic(err)
 	}
 
-	if cfg.IndexType == "flat" {
-		vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
+	vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
+	switch cfg.IndexType {
+	case "hnsw":
+		vectorIndexConfig["ef"] = ef
+	case "flat":
 		bq := (vectorIndexConfig["bq"].(map[string]interface{}))
 		bq["rescoreLimit"] = ef
-		classConfig.VectorIndexConfig = vectorIndexConfig
-	} else {
-		vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
-		vectorIndexConfig["ef"] = ef
-		classConfig.VectorIndexConfig = vectorIndexConfig
+	case "dynamic":
+		hnswConfig := vectorIndexConfig["hnsw"].(map[string]interface{})
+		hnswConfig["ef"] = ef
 	}
+	classConfig.VectorIndexConfig = vectorIndexConfig
 
 	err = client.Schema().ClassUpdater().WithClass(classConfig).Do(context.Background())
 
@@ -365,6 +389,7 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 
 	var segments uint
 	vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
+  
 	switch compressionType {
 	case CompressionTypePQ:
 		if dimensions%cfg.PQRatio != 0 {
@@ -375,10 +400,12 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 			"enabled":       true,
 			"segments":      segments,
 			"trainingLimit": cfg.TrainingLimit,
+      "rescoreLimit":  cfg.RescoreLimit,
 		}
 	case CompressionTypeSQ:
 		vectorIndexConfig["sq"] = map[string]interface{}{
 			"enabled": true,
+      "rescoreLimit":  cfg.RescoreLimit,
 		}
 	}
 
@@ -462,7 +489,7 @@ func getHDF5ByteSize(dataset *hdf5.Dataset) uint {
 
 // Load a large dataset from an hdf5 file and stream it to Weaviate
 // startOffset and maxRecords are ignored if equal to 0
-func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, cfg *Config, startOffset uint, maxRecords uint) {
+func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, cfg *Config, startOffset uint, maxRecords uint, filters []int) {
 	dataspace := dataset.Space()
 	dims, _, _ := dataspace.SimpleExtentDims()
 
@@ -543,7 +570,12 @@ func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, cfg *Config, 
 			log.Printf("Imported %d/%d rows", i+batchRows, rows)
 		}
 
-		chunks <- Batch{Vectors: chunkData, Offset: int(i)}
+		filter := []int{}
+		if len(filters) > 0 {
+			filter = filters[i : i+batchRows]
+		}
+
+		chunks <- Batch{Vectors: chunkData, Offset: int(i), Filters: filter}
 	}
 }
 
@@ -576,6 +608,37 @@ func loadHdf5Float32(file *hdf5.File, name string) [][]float32 {
 		chunkData1D := make([]float64, rows*dimensions)
 		dataset.Read(&chunkData1D)
 		chunkData = convert1DChunk[float64](chunkData1D, int(dimensions), int(rows))
+	}
+
+	return chunkData
+}
+
+func loadHdf5Categories(file *hdf5.File, name string) []int {
+	dataset, err := file.OpenDataset(name)
+	if err != nil {
+		log.Fatalf("Error opening neighbors dataset: %v", err)
+	}
+	defer dataset.Close()
+
+	dataspace := dataset.Space()
+	dims, _, _ := dataspace.SimpleExtentDims()
+	if len(dims) != 1 {
+		log.Fatal("expected 1 dimension")
+	}
+
+	elements := dims[0]
+	byteSize := getHDF5ByteSize(dataset)
+
+	chunkData := make([]int, elements)
+
+	if byteSize == 4 {
+		chunkData32 := make([]int32, elements)
+		dataset.Read(&chunkData32)
+		for i := range chunkData {
+			chunkData[i] = int(chunkData32[i])
+		}
+	} else if byteSize == 8 {
+		dataset.Read(&chunkData)
 	}
 
 	return chunkData
@@ -645,10 +708,15 @@ func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint, upda
 	extent, _, _ := dataspace.SimpleExtentDims()
 	dimensions := extent[1]
 
+	filters := []int{}
+	if cfg.Filter {
+		filters = loadHdf5Categories(file, "train_categories")
+	}
+
 	chunks := make(chan Batch, 10)
 
 	go func() {
-		loadHdf5Streaming(dataset, chunks, cfg, offset, maxRows)
+		loadHdf5Streaming(dataset, chunks, cfg, offset, maxRows, filters)
 		close(chunks)
 	}()
 
@@ -756,65 +824,20 @@ func parseEfValues(s string) ([]int, error) {
 	return nums, nil
 }
 
-func waitTombstonesEmpty(cfg *Config) error {
-
-	prometheusURL := fmt.Sprintf("http://%s/metrics", strings.Replace(cfg.HttpOrigin, "8080", "2112", -1))
-	metricName := "vector_index_tombstones"
-
-	log.Printf("Waiting to allow for tombstone cleanup\n")
-
-	start := time.Now()
-
-	for {
-		response, err := http.Get(prometheusURL)
-		if err != nil {
-			return err
-		}
-		defer response.Body.Close()
-
-		if response.StatusCode != http.StatusOK {
-			return fmt.Errorf("HTTP request failed with status code %d", response.StatusCode)
-		}
-
-		body, err := ioutil.ReadAll(response.Body)
-		if err != nil {
-			return err
-		}
-		bodyReader := strings.NewReader(string(body))
-
-		parser := expfmt.TextParser{}
-		metrics, err := parser.TextToMetricFamilies(bodyReader)
-		if err != nil {
-			return err
-		}
-
-		var totalSum float64 = 0
-		if vectorMetric, ok := metrics[metricName]; ok {
-			for _, m := range vectorMetric.Metric {
-				value := m.GetGauge().GetValue()
-				totalSum += value
-			}
-		}
-
-		if totalSum == 0 {
-			break
-		}
-
-		time.Sleep(time.Second * 10)
-	}
-
-	log.WithFields(log.Fields{"duration": time.Since(start)}).Infof("Tombstones empty\n")
-
-	return nil
-}
-
-func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, neighbors [][]int) {
+func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, neighbors [][]int, filters []int) {
 
 	runID := strconv.FormatInt(time.Now().Unix(), 10)
 
 	efCandidates, err := parseEfValues(cfg.EfArray)
 	if err != nil {
 		log.Fatalf("Error parsing efArray, expected commas separated format \"16,32,64\" but:%v\n", err)
+	}
+
+	// Read once at this point (after import and compaction delay) to get accurate memory stats
+	memstats, err := readMemoryMetrics(cfg)
+	if err != nil {
+		log.Warnf("Error reading memory stats: %v", err)
+		memstats = &Memstats{}
 	}
 
 	client := createClient(cfg)
@@ -826,9 +849,9 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 		var result Results
 
 		if cfg.QueryDuration > 0 {
-			result = benchmarkANNDuration(*cfg, testData, neighbors)
+			result = benchmarkANNDuration(*cfg, testData, neighbors, filters)
 		} else {
-			result = benchmarkANN(*cfg, testData, neighbors)
+			result = benchmarkANN(*cfg, testData, neighbors, filters)
 		}
 
 		log.WithFields(log.Fields{"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall,
@@ -854,6 +877,9 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 			RunID:            runID,
 			Dataset:          dataset,
 			Recall:           result.Recall,
+			HeapAllocBytes:   memstats.HeapAllocBytes,
+			HeapInuseBytes:   memstats.HeapInuseBytes,
+			HeapSysBytes:     memstats.HeapSysBytes,
 		}
 
 		jsonData, err := json.Marshal(benchResult)
@@ -928,7 +954,7 @@ var annBenchmarkCommand = &cobra.Command{
 				importTime = loadANNBenchmarksFile(file, &cfg, client, 0)
 			}
 
-			sleepDuration := 30 * time.Second
+			sleepDuration := time.Duration(cfg.QueryDelaySeconds) * time.Second
 			log.Printf("Waiting for %s to allow for compaction etc\n", sleepDuration)
 			time.Sleep(sleepDuration)
 		}
@@ -938,8 +964,12 @@ var annBenchmarkCommand = &cobra.Command{
 
 		neighbors := loadHdf5Neighbors(file, "neighbors")
 		testData := loadHdf5Float32(file, "test")
+		testFilters := make([]int, 0)
+		if cfg.Filter {
+			testFilters = loadHdf5Categories(file, "test_categories")
+		}
 
-		runQueries(&cfg, importTime, testData, neighbors)
+		runQueries(&cfg, importTime, testData, neighbors, testFilters)
 
 		if cfg.performUpdates() {
 
@@ -961,12 +991,14 @@ var annBenchmarkCommand = &cobra.Command{
 
 				log.WithFields(log.Fields{"duration": time.Since(startTime)}).Printf("Total delete and update time\n")
 
-				err := waitTombstonesEmpty(&cfg)
-				if err != nil {
-					log.Fatalf("Error waiting for tombstones to be empty: %v", err)
+				if !cfg.SkipTombstonesEmpty {
+					err := waitTombstonesEmpty(&cfg)
+					if err != nil {
+						log.Fatalf("Error waiting for tombstones to be empty: %v", err)
+					}
 				}
 
-				runQueries(&cfg, importTime, testData, neighbors)
+				runQueries(&cfg, importTime, testData, neighbors, testFilters)
 
 			}
 
@@ -997,7 +1029,7 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.Cache,
 		"cache", false, "Set cache")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.RescoreLimit,
-		"rescoreLimit", 100, "Rescore limit (default 250) for BQ")
+		"rescoreLimit", 256, "Rescore limit (default 256) for BQ")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.PQ,
 		"pq", "disabled", "Set PQ (disabled, auto, or enabled) (default disabled)")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.SQ,
@@ -1008,6 +1040,8 @@ func initAnnBenchmark() {
 		"pqSegments", 256, "Set PQ segments")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.SkipAsyncReady,
 		"skipAsyncReady", false, "Skip async ready (default false)")
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.SkipTombstonesEmpty,
+		"skipTombstonesEmpty", false, "Skip waiting for tombstone to be empty after update (default false)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.TrainingLimit,
 		"trainingLimit", 100000, "Set PQ trainingLimit (default 100000)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.EfConstruction,
@@ -1050,13 +1084,21 @@ func initAnnBenchmark() {
 		"updateIterations", 1, "Number of iterations to update the dataset if updatePercentage is set")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.CleanupIntervalSeconds,
 		"cleanupIntervalSeconds", 300, "HNSW cleanup interval seconds (default 300)")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.QueryDelaySeconds,
+		"queryDelaySeconds", 30, "How long to wait before querying (default 30)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.Offset,
 		"offset", 0, "Offset for uuids (useful to load the same dataset multiple times)")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.OutputFile,
 		"output", "o", "", "Filename for an output file. If none provided, output to stdout only")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.DynamicThreshold,
+		"dynamicThreshold", 10_000, "Threshold to trigger the update in the dynamic index (default 10 000)")
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.Filter,
+		"filter", false, "Threshold to trigger the update in the dynamic index (default 10 000)")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.FlatSearchCutoff,
+		"flatSearchCutoff", 40000, "Flat search cut off (default 40 000)")
 }
 
-func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors) Results {
+func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors, filters []int) Results {
 	cfg.Queries = len(queries)
 
 	i := 0
@@ -1067,9 +1109,13 @@ func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors) Results {
 		if cfg.NumTenants > 0 {
 			tenant = fmt.Sprint(rand.Intn(cfg.NumTenants))
 		}
+		filter := -1
+		if cfg.Filter {
+			filter = filters[i]
+		}
 
 		return QueryWithNeighbors{
-			Query:     nearVectorQueryGrpc(cfg.ClassName, queries[i], cfg.Limit, tenant),
+			Query:     nearVectorQueryGrpc(cfg.ClassName, queries[i], cfg.Limit, tenant, filter),
 			Neighbors: neighbors[i],
 		}
 
@@ -1109,7 +1155,7 @@ type sampledResults struct {
 	Results          []Results
 }
 
-func benchmarkANNDuration(cfg Config, queries Queries, neighbors Neighbors) Results {
+func benchmarkANNDuration(cfg Config, queries Queries, neighbors Neighbors, filters []int) Results {
 	cfg.Queries = len(queries)
 
 	var samples sampledResults
@@ -1119,7 +1165,7 @@ func benchmarkANNDuration(cfg Config, queries Queries, neighbors Neighbors) Resu
 	var results Results
 
 	for time.Since(startTime) < time.Duration(cfg.QueryDuration)*time.Second {
-		results = benchmarkANN(cfg, queries, neighbors)
+		results = benchmarkANN(cfg, queries, neighbors, filters)
 		samples.Min = append(samples.Min, results.Min)
 		samples.Max = append(samples.Max, results.Max)
 		samples.Mean = append(samples.Mean, results.Mean)

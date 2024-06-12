@@ -2,23 +2,21 @@ module github.com/semi-technologies/weaviate-benchmarking/benchmarker
 
 go 1.21
 
-toolchain go1.21.0
-
 require (
-	github.com/google/uuid v1.3.1
+	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.0.1
 	github.com/hashicorp/go-retryablehttp v0.7.5
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/common v0.44.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/cobra v1.0.0
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.9.0
 	github.com/weaviate/hdf5 v0.0.0-20230911114900-3cd888ffadcd
-	github.com/weaviate/weaviate v1.23.4
-	github.com/weaviate/weaviate-go-client/v4 v4.12.1
+	github.com/weaviate/weaviate v1.24.10
+	github.com/weaviate/weaviate-go-client/v4 v4.13.1
 	golang.org/x/exp v0.0.0-20230522175609-2e198f4a06a1
-	google.golang.org/grpc v1.59.0
-	google.golang.org/protobuf v1.31.0
+	google.golang.org/grpc v1.61.1
+	google.golang.org/protobuf v1.33.0
 )
 
 require (
@@ -47,11 +45,11 @@ require (
 	github.com/prometheus/client_model v0.4.1-0.20230718164431-9a2bf3000d16 // indirect
 	github.com/spf13/pflag v1.0.3 // indirect
 	go.mongodb.org/mongo-driver v1.11.3 // indirect
-	golang.org/x/net v0.17.0 // indirect
-	golang.org/x/oauth2 v0.11.0 // indirect
-	golang.org/x/sys v0.13.0 // indirect
-	golang.org/x/text v0.13.0 // indirect
-	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20230822172742-b8732ec3820d // indirect
+	golang.org/x/net v0.23.0 // indirect
+	golang.org/x/oauth2 v0.17.0 // indirect
+	golang.org/x/sys v0.18.0 // indirect
+	golang.org/x/text v0.14.0 // indirect
+	google.golang.org/appengine v1.6.8 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240213162025-012b6fc9bca9 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

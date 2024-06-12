@@ -128,7 +128,8 @@ func processQueueGrpc(queue []QueryWithNeighbors, cfg *Config, grpcConn *grpc.Cl
 			ids = append(ids, intFromUUID(result.GetMetadata().Id))
 		}
 
-		recallQuery := float64(len(intersection(ids, query.Neighbors[:cfg.Limit]))) / float64(cfg.Limit)
+		neighborLimit := min(cfg.Limit, len(query.Neighbors))
+		recallQuery := float64(len(intersection(ids, query.Neighbors[:neighborLimit]))) / float64(neighborLimit)
 
 		log.Debugf("Query took %s, recall %f", took, recallQuery)
 
