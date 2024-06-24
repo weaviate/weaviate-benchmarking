@@ -215,13 +215,14 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				"cache":        true,
 			}
 		} else if cfg.SQ == "auto" {
-			classObj.VectorIndexConfig = map[string]interface{}{
+			vectorIndexConfig = map[string]interface{}{
 				"distance":               cfg.DistanceMetric,
 				"efConstruction":         float64(cfg.EfConstruction),
 				"maxConnections":         float64(cfg.MaxConnections),
 				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
 				"sq": map[string]interface{}{
-					"enabled": true,
+					"enabled":       true,
+					"trainingLimit": cfg.TrainingLimit,
 				},
 			}
 		}
@@ -389,7 +390,7 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 
 	var segments uint
 	vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
-  
+
 	switch compressionType {
 	case CompressionTypePQ:
 		if dimensions%cfg.PQRatio != 0 {
@@ -400,12 +401,13 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 			"enabled":       true,
 			"segments":      segments,
 			"trainingLimit": cfg.TrainingLimit,
-      "rescoreLimit":  cfg.RescoreLimit,
+			"rescoreLimit":  cfg.RescoreLimit,
 		}
 	case CompressionTypeSQ:
 		vectorIndexConfig["sq"] = map[string]interface{}{
-			"enabled": true,
-      "rescoreLimit":  cfg.RescoreLimit,
+			"enabled":       true,
+			"trainingLimit": cfg.TrainingLimit,
+			"rescoreLimit":  cfg.RescoreLimit,
 		}
 	}
 
