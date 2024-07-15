@@ -59,6 +59,7 @@ type Config struct {
 	DynamicThreshold       int
 	Filter                 bool
 	FlatSearchCutoff       int
+	FilteredSearch         bool
 }
 
 func (c *Config) Validate() error {

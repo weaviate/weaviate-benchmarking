@@ -267,6 +267,12 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		log.Fatalf("Unknown index type %s", cfg.IndexType)
 	}
 
+	if cfg.FilteredSearch {
+		vectorIndexConfig["filteredSearch"] = map[string]interface{}{
+			"enabled": true,
+		}
+	}
+
 	classObj.VectorIndexConfig = vectorIndexConfig
 
 	err = client.Schema().ClassCreator().WithClass(classObj).Do(context.Background())
@@ -1098,6 +1104,8 @@ func initAnnBenchmark() {
 		"filter", false, "Threshold to trigger the update in the dynamic index (default 10 000)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.FlatSearchCutoff,
 		"flatSearchCutoff", 40000, "Flat search cut off (default 40 000)")
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.FilteredSearch,
+		"filteredSearch", false, "Use an ACORN like search")
 }
 
 func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors, filters []int) Results {
