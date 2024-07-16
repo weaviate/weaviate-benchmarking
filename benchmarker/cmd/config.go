@@ -60,6 +60,7 @@ type Config struct {
 	Filter                 bool
 	FlatSearchCutoff       int
 	FilteredSearch         bool
+	FilteredSearchCache    bool
 }
 
 func (c *Config) Validate() error {
