@@ -125,7 +125,7 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 		Objects: objects,
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*300)
 	defer cancel()
 
 	if cfg.HttpAuth != "" {
@@ -158,6 +158,7 @@ func createClient(cfg *Config) *weaviate.Client {
 		Host:             cfg.HttpOrigin,
 		Scheme:           cfg.HttpScheme,
 		ConnectionClient: retryClient.HTTPClient,
+		StartupTimeout:   60 * time.Second,
 	}
 	if cfg.HttpAuth != "" {
 		wcfg.AuthConfig = auth.ApiKey{Value: cfg.HttpAuth}
@@ -1076,7 +1077,7 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.API,
 		"api", "a", "grpc", "The API to use on benchmarks")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.Origin,
-		"origin", "u", "localhost:50051", "The gRPC origin that Weaviate is running at")
+		"grpcOrigin", "u", "localhost:50051", "The gRPC origin that Weaviate is running at")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.HttpOrigin,
 		"httpOrigin", "localhost:8080", "The http origin for Weaviate (only used if grpc enabled)")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.HttpScheme,

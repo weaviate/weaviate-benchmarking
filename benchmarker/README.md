@@ -32,30 +32,52 @@ Usage:
   benchmarker ann-benchmark [flags]
 
 Flags:
-  -a, --api string           The API to use on benchmarks (default "grpc")
-  -b, --batchSize int        Batch size for insert operations (default 1000)
-  -c, --className string     Class name for testing (default "Vector")
-  -d, --distance string      Set distance metric (mandatory)
-      --efArray string       Array of ef parameters as comma separated list (default "16,24,32,48,64,96,128,256,512")
-      --efConstruction int   Set Weaviate efConstruction parameter (default 256) (default 256)
-      --existingSchema       Leave the schema as-is (default false)
-  -f, --format string        Output format, one of [text, json] (default "text")
-  -h, --help                 help for ann-benchmark
-      --httpOrigin string    The http origin for Weaviate (only used if grpc enabled) (default "localhost:8080")
-      --labels string        Labels of format key1=value1,key2=value2,...
-  -l, --limit int            Set the query limit / k (default 10) (default 10)
-      --maxConnections int   Set Weaviate efConstruction parameter (default 16) (default 16)
-  -u, --origin string        The gRPC origin that Weaviate is running at (default "localhost:50051")
-  -o, --output string        Filename for an output file. If none provided, output to stdout only
-  -p, --parallel int         Set the number of parallel threads which send queries (default 10)
-      --pq                   Enable product quantization (default false)
-      --pqRatio uint         Set PQ segments = dimensions / ratio (must divide evenly default 4) (default 4)
-  -q, --query                Do not import data and only run query tests
-      --queryDuration int    Instead of querying the test dataset once, query for the specified duration in seconds (default 0)
-      --shards int           Set number of Weaviate shards (default 1)
-      --tenant string        Tenant name to use
-      --trainingLimit int    Set PQ trainingLimit (default 100000) (default 100000)
-  -v, --vectors string       Path to the hdf5 file containing the vectors
+  -a, --api string                   The API to use on benchmarks (default "grpc")
+  -b, --batchSize int                Batch size for insert operations (default 1000)
+      --bq                           Set BQ
+      --cache                        Set cache
+  -c, --className string             Class name for testing (default "Vector")
+      --cleanupIntervalSeconds int   HNSW cleanup interval seconds (default 300) (default 300)
+  -d, --distance string              Set distance metric (mandatory)
+      --dynamicThreshold int         Threshold to trigger the update in the dynamic index (default 10 000) (default 10000)
+      --efArray string               Array of ef parameters as comma separated list (default "16,24,32,48,64,96,128,256,512")
+      --efConstruction int           Set Weaviate efConstruction parameter (default 256) (default 256)
+      --existingSchema               Leave the schema as-is (default false)
+      --filter                       Threshold to trigger the update in the dynamic index (default 10 000)
+      --filteredSearch               Use an ACORN like search
+      --filteredSearchCache          Cache two hops expansion for ACORN like search
+      --flatSearchCutoff int         Flat search cut off (default 40 000) (default 40000)
+  -f, --format string                Output format, one of [text, json] (default "text")
+  -h, --help                         help for ann-benchmark
+      --httpOrigin string            The http origin for Weaviate (only used if grpc enabled) (default "localhost:8080")
+      --httpScheme string            The http scheme (http or https) (default "http")
+      --indexType string             Index type (hnsw or flat) (default "hnsw")
+      --labels string                Labels of format key1=value1,key2=value2,...
+  -l, --limit int                    Set the query limit / k (default 10) (default 10)
+      --maxConnections int           Set Weaviate efConstruction parameter (default 16) (default 16)
+      --numTenants int               Number of tenants to use (default 0)
+      --offset int                   Offset for uuids (useful to load the same dataset multiple times)
+  -u, --origin string                The gRPC origin that Weaviate is running at (default "localhost:50051")
+  -o, --output string                Filename for an output file. If none provided, output to stdout only
+  -p, --parallel int                 Set the number of parallel threads which send queries (default 8)
+      --pq string                    Set PQ (disabled, auto, or enabled) (default disabled) (default "disabled")
+      --pqRatio uint                 Set PQ segments = dimensions / ratio (must divide evenly default 4) (default 4)
+      --pqSegments uint              Set PQ segments (default 256)
+  -q, --query                        Do not import data and only run query tests
+      --queryDelaySeconds int        How long to wait before querying (default 30) (default 30)
+      --queryDuration int            Instead of querying the test dataset once, query for the specified duration in seconds (default 0)
+      --rescoreLimit int             Rescore limit (default 256) for BQ (default 256)
+      --shards int                   Set number of Weaviate shards (default 1)
+      --skipAsyncReady               Skip async ready (default false)
+      --skipTombstonesEmpty          Skip waiting for tombstone to be empty after update (default false)
+      --sq string                    Set SQ (disabled, auto, or enabled) (default disabled) (default "disabled")
+      --startTenant int              Tenant # to start at if using multiple tenants (default 0)
+      --trainingLimit int            Set PQ trainingLimit (default 100000) (default 100000)
+      --updateIterations int         Number of iterations to update the dataset if updatePercentage is set (default 1)
+      --updatePercentage float       After loading the dataset, update the specified percentage of vectors
+      --updateRandomized             Whether to randomize which vectors are updated (default false)
+  -v, --vectors string               Path to the hdf5 file containing the vectors
+
 
 ```
 
