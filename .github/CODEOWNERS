@@ -1,2 +1,3 @@
 # Ci related folders
-/.github/ @semi-technologies/core
+/.github/ @weaviate/core
+/ci/ @weaviate/core
