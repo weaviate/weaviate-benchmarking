@@ -24,4 +24,4 @@ jobs:
           username: ${{secrets.DOCKER_USERNAME}}
           password: ${{secrets.DOCKER_PASSWORD}}
       - name: Push container
-        run: ./cicd/push_docker.sh
+        run: ./ci/push_docker.sh
