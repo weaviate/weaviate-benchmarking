@@ -6,19 +6,17 @@ DOCKER_REPO="semitechnologies/weaviate-benchmarker"
 
 function main() {
   init
-  echo "git ref type is $GITHUB_REF_TYPE"
-  echo "git ref name is $GITHUB_REF_NAME"
-
-  push_tag
+  echo "git ref type is \"$GITHUB_REF_TYPE\""
+  echo "git ref name is \"$GITHUB_REF_NAME\""
+  build_and_push_tag
 }
 
 function init() {
   docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
   docker buildx create --use
-  docker build -t "$DOCKER_REPO" .
 }
 
-function push_tag() {
+function build_and_push_tag() {
   if [ ! -z "$GITHUB_REF_NAME" ] && [ "$GITHUB_REF_TYPE" == "tag" ]; then
     tag_git="$DOCKER_REPO:$GITHUB_REF_NAME"
     tag_latest="$DOCKER_REPO:latest"
@@ -28,7 +26,7 @@ function push_tag() {
       --push \
       --tag "$tag_git" \
       --tag "$tag_latest" \
-      .
+      ./benchmarker
   fi
 }
 
