@@ -75,6 +75,7 @@ func initDataset() {
 }
 
 type Queries [][]float32
+type Neighbors [][]int
 
 func parseVectorsFromFile(cfg Config) (Queries, error) {
 	var q Queries
@@ -95,17 +96,34 @@ func benchmarkDataset(cfg Config, queries Queries) Results {
 	cfg.Queries = len(queries)
 
 	i := 0
-	return benchmark(cfg, func(className string) []byte {
+	return benchmark(cfg, func(className string) QueryWithNeighbors {
 		defer func() { i++ }()
 
 		if cfg.API == "graphql" {
-			return nearVectorQueryJSONGraphQL(cfg.ClassName, queries[i], cfg.Limit)
+			return QueryWithNeighbors{
+				Query: nearVectorQueryJSONGraphQL(cfg.ClassName, queries[i], cfg.Limit, cfg.WhereFilter),
+			}
+
+		}
+
+		if cfg.API == "graphql-raw" {
+			return QueryWithNeighbors{
+				Query: nearVectorQueryJSONGraphQL(cfg.ClassName, queries[i], cfg.Limit, cfg.WhereFilter),
+			}
 		}
 
 		if cfg.API == "rest" {
-			return nearVectorQueryJSONRest(cfg.ClassName, queries[i], cfg.Limit)
+			return QueryWithNeighbors{
+				Query: nearVectorQueryJSONRest(cfg.ClassName, queries[i], cfg.Limit),
+			}
 		}
 
-		return nil
+		if cfg.API == "grpc" {
+			return QueryWithNeighbors{
+				Query: nearVectorQueryGrpc(cfg.ClassName, queries[i], cfg.Limit, cfg.Tenant, 0),
+			}
+		}
+
+		return QueryWithNeighbors{}
 	})
 }
