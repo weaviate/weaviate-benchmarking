@@ -264,6 +264,12 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				"cache":        true,
 			}
 		}
+
+	} else if cfg.IndexType == "cuvs" {
+		vectorIndexConfig = map[string]interface{}{
+			// "distance": cfg.DistanceMetric,
+		}
+
 	} else {
 		log.Fatalf("Unknown index type %s", cfg.IndexType)
 	}
@@ -347,6 +353,8 @@ func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 	case "dynamic":
 		hnswConfig := vectorIndexConfig["hnsw"].(map[string]interface{})
 		hnswConfig["ef"] = ef
+	case "cuvs":
+
 	}
 	classConfig.VectorIndexConfig = vectorIndexConfig
 
@@ -1059,7 +1067,7 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.EfArray,
 		"efArray", "16,24,32,48,64,96,128,256,512", "Array of ef parameters as comma separated list")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.IndexType,
-		"indexType", "hnsw", "Index type (hnsw or flat)")
+		"indexType", "hnsw", "Index type (hnsw, flat or cuvs)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MaxConnections,
 		"maxConnections", 16, "Set Weaviate efConstruction parameter (default 16)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.Shards,
