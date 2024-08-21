@@ -1,4 +1,4 @@
-FROM golang:alpine
+FROM golang:1.22-alpine
 RUN apk add --no-cache hdf5-dev gcc libc-dev python3 bash
 WORKDIR /app
 COPY . .
