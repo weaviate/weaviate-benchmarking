@@ -162,6 +162,7 @@ func createClient(cfg *Config) *weaviate.Client {
 	}
 	if cfg.HttpAuth != "" {
 		wcfg.AuthConfig = auth.ApiKey{Value: cfg.HttpAuth}
+		wcfg.ConnectionClient = nil
 	}
 	client, err := weaviate.NewClient(wcfg)
 	if err != nil {
@@ -844,10 +845,13 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 	}
 
 	// Read once at this point (after import and compaction delay) to get accurate memory stats
-	memstats, err := readMemoryMetrics(cfg)
-	if err != nil {
-		log.Warnf("Error reading memory stats: %v", err)
-		memstats = &Memstats{}
+	memstats := &Memstats{}
+	if !cfg.SkipMemoryStats {
+		memstats, err = readMemoryMetrics(cfg)
+		if err != nil {
+			log.Warnf("Error reading memory stats: %v", err)
+			memstats = &Memstats{}
+		}
 	}
 
 	client := createClient(cfg)
@@ -1050,6 +1054,8 @@ func initAnnBenchmark() {
 		"pqSegments", 256, "Set PQ segments")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.SkipAsyncReady,
 		"skipAsyncReady", false, "Skip async ready (default false)")
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.SkipMemoryStats,
+		"skipMemoryStats", false, "Skip memory stats (default false)")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.SkipTombstonesEmpty,
 		"skipTombstonesEmpty", false, "Skip waiting for tombstone to be empty after update (default false)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.TrainingLimit,

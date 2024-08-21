@@ -41,6 +41,7 @@ type Config struct {
 	SQ                     string
 	SkipAsyncReady         bool
 	SkipTombstonesEmpty    bool
+	SkipMemoryStats        bool
 	PQRatio                uint
 	PQSegments             uint
 	TrainingLimit          int
