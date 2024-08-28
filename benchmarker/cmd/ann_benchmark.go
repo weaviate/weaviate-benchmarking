@@ -193,6 +193,18 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		},
 	}
 
+	if cfg.Shards > 1 {
+		classObj.ShardingConfig = map[string]interface{}{
+			"desiredCount": cfg.Shards,
+		}
+	}
+
+	if cfg.ReplicationFactor > 1 {
+		classObj.ReplicationConfig = &models.ReplicationConfig{
+			Factor: int64(cfg.ReplicationFactor),
+		}
+	}
+
 	var vectorIndexConfig map[string]interface{}
 
 	if cfg.IndexType == "hnsw" {
@@ -1116,6 +1128,8 @@ func initAnnBenchmark() {
 		"filteredSearch", false, "Use an ACORN like search")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.FilteredSearchCache,
 		"filteredSearchCache", false, "Cache two hops expansion for ACORN like search")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.ReplicationFactor,
+		"replicationFactor", 1, "Replication factor")
 }
 
 func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors, filters []int) Results {
