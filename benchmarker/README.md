@@ -43,9 +43,8 @@ Flags:
       --efArray string               Array of ef parameters as comma separated list (default "16,24,32,48,64,96,128,256,512")
       --efConstruction int           Set Weaviate efConstruction parameter (default 256) (default 256)
       --existingSchema               Leave the schema as-is (default false)
-      --filter                       Threshold to trigger the update in the dynamic index (default 10 000)
-      --filteredSearch               Use an ACORN like search
-      --filteredSearchCache          Cache two hops expansion for ACORN like search
+      --filter                       Whether to use filtering for the dataset (default false)
+      --filterStrategy               Use a different filter strategy such as "acorn"
       --flatSearchCutoff int         Flat search cut off (default 40 000) (default 40000)
   -f, --format string                Output format, one of [text, json] (default "text")
   -h, --help                         help for ann-benchmark

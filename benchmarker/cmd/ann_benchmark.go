@@ -281,12 +281,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		log.Fatalf("Unknown index type %s", cfg.IndexType)
 	}
 
-	if cfg.FilteredSearch {
-		vectorIndexConfig["filteredSearch"] = map[string]interface{}{
-			"enabled": true,
-			"cache2h": cfg.FilteredSearchCache,
-		}
-	}
+	vectorIndexConfig["filterStrategy"] = cfg.FilterStrategy
 
 	classObj.VectorIndexConfig = vectorIndexConfig
 
@@ -1121,13 +1116,11 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.DynamicThreshold,
 		"dynamicThreshold", 10_000, "Threshold to trigger the update in the dynamic index (default 10 000)")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.Filter,
-		"filter", false, "Threshold to trigger the update in the dynamic index (default 10 000)")
+		"filter", false, "Whether to use filtering for the dataset (default false)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.FlatSearchCutoff,
 		"flatSearchCutoff", 40000, "Flat search cut off (default 40 000)")
-	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.FilteredSearch,
-		"filteredSearch", false, "Use an ACORN like search")
-	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.FilteredSearchCache,
-		"filteredSearchCache", false, "Cache two hops expansion for ACORN like search")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.FilterStrategy,
+		"filterStrategy", "sweeping", "Use a different filter strategy (options are sweeping or acorn)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.ReplicationFactor,
 		"replicationFactor", 1, "Replication factor")
 }
