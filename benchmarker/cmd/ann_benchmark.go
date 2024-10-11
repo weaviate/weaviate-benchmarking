@@ -1116,7 +1116,7 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.DynamicThreshold,
 		"dynamicThreshold", 10_000, "Threshold to trigger the update in the dynamic index (default 10 000)")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.Filter,
-		"filter", false, "Threshold to trigger the update in the dynamic index (default 10 000)")
+		"filter", false, "Whether to use filtering for the dataset (default false)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.FlatSearchCutoff,
 		"flatSearchCutoff", 40000, "Flat search cut off (default 40 000)")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.FilterStrategy,
