@@ -5,3 +5,4 @@ benchmark-data
 results
 output.png
 .venv
+.env
