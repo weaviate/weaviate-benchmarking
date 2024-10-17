@@ -6,3 +6,6 @@ results
 output.png
 .venv
 .env
+.ipynb_checkpoints
+*.mdx
+*.png
