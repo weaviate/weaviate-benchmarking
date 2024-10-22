@@ -31,8 +31,8 @@ def get_datapoints(dataset:str, path: str):
             datapoints += parsed[1:]
     df = pd.DataFrame(datapoints)
     return df[
-        (df["dataset_file"] == dataset)     # filter for a specific dataset
-        & (df['run'] in RUNS)                # remove PQ/BQ/SQ results
+        (df["dataset_file"] == dataset)             # filter for a specific dataset
+        & (df['run'].isin(RUNS))                    # remove PQ/BQ/SQ results
         & (df["maxConnections"] == MAX_CONNECTIONS)
         & (df["efConstruction"] == EF_CONSTRUCTION)
         & (df.apply(custom_filter, axis=1))
