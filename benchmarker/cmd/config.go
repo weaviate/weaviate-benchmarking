@@ -40,6 +40,7 @@ type Config struct {
 	RescoreLimit           int
 	PQ                     string
 	SQ                     string
+	LASQ                   string
 	SkipAsyncReady         bool
 	SkipTombstonesEmpty    bool
 	SkipMemoryStats        bool
