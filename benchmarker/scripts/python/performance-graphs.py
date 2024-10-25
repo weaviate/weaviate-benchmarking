@@ -56,14 +56,16 @@ def create_plot(results_df: pd.DataFrame, mode='light'):
         text_color = 'white'
         grid_color = '#333333'
         spine_color = '#444444'
+        bg_color = '#000000'
     else:  # light mode
         text_color = 'black'
         grid_color = '#CCCCCC'
         spine_color = '#DDDDDD'
+        bg_color = '#ffffff'
     
     # Configure plot background
-    ax.set_facecolor('none')
-    fig.patch.set_facecolor('none')
+    ax.set_facecolor(bg_color)
+    fig.patch.set_facecolor(bg_color)
     
     # Plot lines for each limit value
     for limit in sorted(results_df['limit'].unique()):
@@ -133,7 +135,7 @@ def create_plot(results_df: pd.DataFrame, mode='light'):
         f"{dataset.split('.')[0]}-{mode_suffix}.png",
         dpi=300,
         bbox_inches='tight',
-        transparent=True
+        transparent=False
     )
     plt.close()
 
