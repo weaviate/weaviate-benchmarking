@@ -15,13 +15,10 @@ RUNS = {
     "hnsw",
 }
 
-
 def custom_filter(row):
-    # All ef values that are lowern tha the `limit` are set to the `limit`
     if row['limit'] == 100 and row['ef'] < 90:
         return False
     return True 
-
 
 def get_datapoints(dataset:str, path: str):
     datapoints = []
@@ -31,69 +28,116 @@ def get_datapoints(dataset:str, path: str):
             datapoints += parsed[1:]
     df = pd.DataFrame(datapoints)
     return df[
-        (df["dataset_file"] == dataset)             # filter for a specific dataset
-        & (df['run'].isin(RUNS))                    # remove PQ/BQ/SQ results
+        (df["dataset_file"] == dataset)
+        & (df['run'].isin(RUNS))
         & (df["maxConnections"] == MAX_CONNECTIONS)
         & (df["efConstruction"] == EF_CONSTRUCTION)
         & (df.apply(custom_filter, axis=1))
     ]
 
-
-def create_plot(results_df: pd.DataFrame):
-
+def create_plot(results_df: pd.DataFrame, mode='light'):
     dataset = results_df["dataset_file"].iloc[0]
-
-    sns.set_theme(
-        style='whitegrid',
-        font_scale=1.2,
-        rc={
-            # 'axes.grid': True,
-            # 'savefig.transparent': True,
-            # 'axes.facecolor': color,
-            # 'figure.facecolor': color,
-            # 'axes.edgecolor': color,
-            # 'grid.color': color,
-            # 'ytick.labelcolor': color,
-            # 'xtick.labelcolor': color,
-            }
+    
+    # Set custom colors for limits
+    color_map = {
+        100: '#098f73',
+        10: '#2b17e7'
+    }
+    
+    # Configure plot style based on mode
+    plt.style.use('default')
+    plt.rcParams['font.family'] = ['Arial']
+    
+    # Create new figure
+    fig, ax = plt.subplots(figsize=(10.5, 7))
+    
+    # Set colors based on mode
+    if mode == 'dark':
+        text_color = 'white'
+        grid_color = '#333333'
+        spine_color = '#444444'
+        bg_color = '#000000'
+    else:  # light mode
+        text_color = 'black'
+        grid_color = '#CCCCCC'
+        spine_color = '#DDDDDD'
+        bg_color = '#ffffff'
+    
+    # Configure plot background
+    ax.set_facecolor(bg_color)
+    fig.patch.set_facecolor(bg_color)
+    
+    # Plot lines for each limit value
+    for limit in sorted(results_df['limit'].unique()):
+        data = results_df[results_df['limit'] == limit]
+        ax.plot(data['recall'], data['qps'], 
+                color=color_map[limit],
+                linewidth=1.5,
+                marker='o',
+                markersize=4,
+                label=f'Limit: {limit}')
+        for x, y, ef in zip(data['recall'], data['qps'], data['ef']):
+            ax.annotate(f'ef={ef}',
+                       xy=(x, y),
+                       xytext=(3, 7),  # 5 points vertical offset
+                       textcoords='offset points',
+                       ha='center',  # horizontal alignment
+                       va='bottom',  # vertical alignment
+                       fontsize=9,
+                       color=text_color)
+    
+    # Customize axes
+    ax.set_xlabel('Recall', fontsize=11, fontweight="bold", labelpad=5, color=text_color)
+    ax.set_ylabel('QPS', fontsize=11, fontweight="bold", labelpad=5, color=text_color)
+    
+    # Format axis ticks
+    ax.set_xlim(left=None, right=1)
+    ax.set_ylim(bottom=0, top=None)
+    
+    # Set tick colors
+    ax.tick_params(colors=text_color, labelsize=10)
+    for label in ax.get_xticklabels() + ax.get_yticklabels():
+        label.set_color(text_color)
+    
+    # Customize grid
+    ax.grid(True, linestyle='--', alpha=0.7, color=grid_color)
+    ax.set_axisbelow(True)
+    
+    # Add title
+    plt.title(f"Query Performance {dataset.replace('.hdf5', '')} (efConstruction={EF_CONSTRUCTION}, maxConnections={MAX_CONNECTIONS})", 
+              pad=20, 
+              fontdict={'family': 'Arial', 
+                   'weight': 'bold',
+                   'size': 11},
+              color=text_color)
+    
+    # Customize legend
+    legend = ax.legend(
+        loc='upper right',
+        frameon=True,
+        fancybox=True,
+        framealpha=0,
+        edgecolor=spine_color,
+        fontsize=10
     )
-    plot = sns.relplot(
-        linewidth=3,
-        height=7,
-        aspect=1.5,
-        marker="o",
-        dashes=False,
-        data=results_df,
-        kind="line",
-        x="recall",
-        y="qps",
-        hue="limit",
-        style="limit",
-        palette=["b", "g"],
+    # Set legend text color
+    plt.setp(legend.get_texts(), color=text_color)
+    
+    # Set spines visibility and color
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_color(spine_color)
+    
+    # Adjust layout and save
+    plt.tight_layout()
+    mode_suffix = 'dark' if mode == 'dark' else 'light'
+    plt.savefig(
+        f"{dataset.split('.')[0]}-{mode_suffix}.png",
+        dpi=300,
+        bbox_inches='tight',
+        transparent=False
     )
-    plot.set_axis_labels(
-        x_var="Recall, [%]",
-        y_var="QPS",
-    )
-    plot.figure.subplots_adjust(top=0.85)
-    plot.figure.suptitle(
-        f"Query Performance, {dataset}",
-        weight="bold",
-        
-    )
-    sns.move_legend(
-        plot,
-        "lower center",
-        bbox_to_anchor=(.5, .84),
-        ncol=3,
-        title="Limit: ",
-        frameon=False,
-    )
-
-
-    plot.axes[0][0].get_xaxis().set_major_formatter(tkr.FuncFormatter(lambda x, _: f'{x*100:.0f}'))
-    plot.axes[0][0].get_yaxis().set_major_formatter(tkr.StrMethodFormatter('{x:,.0f}'))
-    plt.savefig(f"{dataset.split('.')[0]}.png", bbox_inches='tight')
+    plt.close()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Collate ann results into markdown tables.")
@@ -101,6 +145,9 @@ if __name__ == "__main__":
     parser.add_argument('-r', '--results', default="./results", help="The directory containing benchmark results")
     args = parser.parse_args()
 
-    create_plot(
-        get_datapoints(args.dataset, os.path.expanduser(args.results)),
-    )
+    # Get the data
+    data = get_datapoints(args.dataset, os.path.expanduser(args.results))
+    
+    # Create both light and dark mode versions
+    create_plot(data, mode='light')
+    create_plot(data, mode='dark')
