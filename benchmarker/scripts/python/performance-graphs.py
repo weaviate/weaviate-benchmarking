@@ -4,8 +4,6 @@ import os
 import glob
 import json
 import argparse
-import seaborn as sns
-import matplotlib.ticker as tkr
 import matplotlib.pyplot as plt
 import pandas as pd
 
@@ -40,8 +38,8 @@ def create_plot(results_df: pd.DataFrame, mode='light'):
     
     # Set custom colors for limits
     color_map = {
-        100: '#098f73',
-        10: '#2b17e7'
+        100: '#61bd73',
+        10: '#fc3988'
     }
     
     # Configure plot style based on mode
