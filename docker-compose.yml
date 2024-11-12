@@ -7,8 +7,8 @@ services:
       dockerfile: Dockerfile
     command: >
       /app/benchmarker ann-benchmark
-      -v ${DATASET:-./datasets/dbpedia-100k-openai-ada002-angular.hdf5 }
-      -d ${DISTANCE:-cosine}
+      --vectors ${DATASET:-./datasets/dbpedia-100k-openai-ada002-angular.hdf5 }
+      --distance ${DISTANCE:-cosine}
       --grpcOrigin ${GRPC_ORIGIN:-weaviate:50051}
       --httpOrigin ${HTTP_ORIGIN:-weaviate:8080}
     volumes:
@@ -22,12 +22,14 @@ services:
     - '8080'
     - --scheme
     - http
-    image: docker.io/semitechnologies/weaviate:1.25.8
+    image: docker.io/semitechnologies/weaviate:1.27.1
     ports:
       - 8080:8080
       - 50051:50051
       - 2112:2112
     restart: on-failure:0
+    volumes:
+    - "$PWD/weaviate-data:/var/lib/weaviate"
     environment:
       QUERY_DEFAULTS_LIMIT: 25
       AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
