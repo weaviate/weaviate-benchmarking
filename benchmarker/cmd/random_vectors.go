@@ -134,19 +134,42 @@ func encodeVector(fs []float32) []byte {
 	return buf
 }
 
-func nearVectorQueryGrpc(className string, vec []float32, limit int, tenant string, filter int) []byte {
+func nearVectorQueryGrpc(cfg Config, vec []float32, limit int, tenant string, filter int) []byte {
 
-	searchRequest := &weaviategrpc.SearchRequest{
-		Collection: className,
-		Limit:      uint32(limit),
-		NearVector: &weaviategrpc.NearVector{
-			VectorBytes: encodeVector(vec),
-		},
-		Metadata: &weaviategrpc.MetadataRequest{
-			Certainty: false,
-			Distance:  false,
-			Uuid:      true,
-		},
+	searchRequest := &weaviategrpc.SearchRequest{}
+
+	if cfg.MultiTargetVector > 0 {
+		nearVector := &weaviategrpc.NearVector{
+			VectorPerTarget: make(map[string][]byte), // Initialize the map
+		}
+		for i := 0; i < cfg.MultiTargetVector; i++ {
+			nearVector.TargetVectors = append(nearVector.TargetVectors, fmt.Sprintf("named_vector_%d", i))
+			nearVector.VectorPerTarget[fmt.Sprintf("named_vector_%d", i)] = encodeVector(vec)
+		}
+
+		searchRequest = &weaviategrpc.SearchRequest{
+			Collection: cfg.ClassName,
+			Limit:      uint32(limit),
+			NearVector: nearVector,
+			Metadata: &weaviategrpc.MetadataRequest{
+				Certainty: false,
+				Distance:  false,
+				Uuid:      true,
+			},
+		}
+	} else {
+		searchRequest = &weaviategrpc.SearchRequest{
+			Collection: cfg.ClassName,
+			Limit:      uint32(limit),
+			NearVector: &weaviategrpc.NearVector{
+				VectorBytes: encodeVector(vec),
+			},
+			Metadata: &weaviategrpc.MetadataRequest{
+				Certainty: false,
+				Distance:  false,
+				Uuid:      true,
+			},
+		}
 	}
 
 	if tenant != "" {
@@ -188,7 +211,7 @@ func benchmarkNearVector(cfg Config) Results {
 
 		if cfg.API == "grpc" {
 			return QueryWithNeighbors{
-				Query: nearVectorQueryGrpc(cfg.ClassName, randomVector(cfg.Dimensions), cfg.Limit, cfg.Tenant, 0),
+				Query: nearVectorQueryGrpc(cfg, randomVector(cfg.Dimensions), cfg.Limit, cfg.Tenant, 0),
 			}
 		}
 
