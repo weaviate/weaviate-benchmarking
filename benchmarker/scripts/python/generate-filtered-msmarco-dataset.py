@@ -10,9 +10,15 @@ import os
 
 datasets = ['msmarco', 'nq']
 
+CORRELATED = False
 DATASET_SIZE = 500000
 PERCENTAGE = 0.2
 QUERY_SIZE = 1000
+
+if CORRELATED:
+    # Makes the query vectors also come from msmarco as test vectors
+    # are pulled from the last dataset
+    datasets = ['nq', 'msmarco']
 
 def process_dataset(dataset_name):
     df_corpus = load_dataset("Cohere/beir-embed-english-v3", f"{dataset_name}-corpus", split="train")
@@ -77,6 +83,9 @@ for i, filter_data in enumerate(filters):
     neighbors_data[i] = I[0]
 
 filename = f"beir-cohere-filtered-dot-{PERCENTAGE}.hdf5"
+
+if CORRELATED:
+    filename = f"beir-cohere-filtered-dot-correlated-{PERCENTAGE}.hdf5"
 
 with h5py.File(filename, 'w') as hf:
     hf.create_dataset("train", data=train_embeddings)
