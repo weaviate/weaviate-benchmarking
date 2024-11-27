@@ -96,16 +96,32 @@ func intFromUUID(uuidStr string) int {
 }
 
 // Writes a single batch of vectors to Weaviate using gRPC
-func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) {
+func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config, namedVector string) {
 
 	objects := make([]*weaviategrpc.BatchObject, len(chunk.Vectors))
 
 	for i, vector := range chunk.Vectors {
-		objects[i] = &weaviategrpc.BatchObject{
-			Uuid:        uuidFromInt(i + chunk.Offset + cfg.Offset),
-			VectorBytes: encodeVector(vector),
-			Collection:  cfg.ClassName,
+
+		if namedVector != "" {
+			vectors := make([]*weaviategrpc.Vectors, 1)
+			vectors[0] = &weaviategrpc.Vectors{
+				VectorBytes: encodeVector(vector),
+				Name:        namedVector,
+			}
+
+			objects[i] = &weaviategrpc.BatchObject{
+				Uuid:       uuidFromInt(i + chunk.Offset + cfg.Offset),
+				Vectors:    vectors,
+				Collection: cfg.ClassName,
+			}
+		} else {
+			objects[i] = &weaviategrpc.BatchObject{
+				Uuid:        uuidFromInt(i + chunk.Offset + cfg.Offset),
+				VectorBytes: encodeVector(vector),
+				Collection:  cfg.ClassName,
+			}
 		}
+
 		if cfg.Tenant != "" {
 			objects[i].Tenant = cfg.Tenant
 		}
@@ -186,9 +202,8 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 	}
 
 	var classObj = &models.Class{
-		Class:           cfg.ClassName,
-		Description:     fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
-		VectorIndexType: cfg.IndexType,
+		Class:       cfg.ClassName,
+		Description: fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
 		MultiTenancyConfig: &models.MultiTenancyConfig{
 			Enabled: multiTenancyEnabled,
 		},
@@ -295,13 +310,28 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 
 	vectorIndexConfig["filterStrategy"] = cfg.FilterStrategy
 
-	classObj.VectorIndexConfig = vectorIndexConfig
+	// Multi target vector is configured by setting the VectorConfig property and it can't be used with VectorIndexConfig at class level
+	if cfg.MultiTargetVector > 0 {
+
+		vectorConfig := make(map[string]models.VectorConfig)
+		for i := 0; i < cfg.MultiTargetVector; i++ {
+			vectorConfig[fmt.Sprintf("named_vector_%d", i)] = models.VectorConfig{
+				Vectorizer:        map[string]interface{}{"none": nil},
+				VectorIndexType:   cfg.IndexType,
+				VectorIndexConfig: vectorIndexConfig,
+			}
+		}
+		classObj.VectorConfig = vectorConfig
+	} else {
+		classObj.VectorIndexConfig = vectorIndexConfig
+	}
 
 	err = client.Schema().ClassCreator().WithClass(classObj).Do(context.Background())
 	if err != nil {
 		panic(err)
 	}
 	log.Printf("Created class %s", cfg.ClassName)
+
 }
 
 func deleteChunk(chunk *Batch, client *weaviate.Client, cfg *Config) {
@@ -357,18 +387,39 @@ func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 		panic(err)
 	}
 
-	vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
-	switch cfg.IndexType {
-	case "hnsw":
-		vectorIndexConfig["ef"] = ef
-	case "flat":
-		bq := (vectorIndexConfig["bq"].(map[string]interface{}))
-		bq["rescoreLimit"] = ef
-	case "dynamic":
-		hnswConfig := vectorIndexConfig["hnsw"].(map[string]interface{})
-		hnswConfig["ef"] = ef
+	if cfg.MultiTargetVector > 0 {
+		for i := 0; i < cfg.MultiTargetVector; i++ {
+			key := fmt.Sprintf("named_vector_%d", i)
+			vectorConfig := classConfig.VectorConfig[key]
+			vectorIndexConfig := vectorConfig.VectorIndexConfig.(map[string]interface{})
+			switch cfg.IndexType {
+			case "hnsw":
+				vectorIndexConfig["ef"] = ef
+			case "flat":
+				bq := (vectorIndexConfig["bq"].(map[string]interface{}))
+				bq["rescoreLimit"] = ef
+			case "dynamic":
+				hnswConfig := vectorIndexConfig["hnsw"].(map[string]interface{})
+				hnswConfig["ef"] = ef
+			}
+			vectorConfig.VectorIndexConfig = vectorIndexConfig
+			classConfig.VectorConfig[key] = vectorConfig
+		}
+	} else {
+		vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
+		switch cfg.IndexType {
+		case "hnsw":
+			vectorIndexConfig["ef"] = ef
+		case "flat":
+			bq := (vectorIndexConfig["bq"].(map[string]interface{}))
+			bq["rescoreLimit"] = ef
+		case "dynamic":
+			hnswConfig := vectorIndexConfig["hnsw"].(map[string]interface{})
+			hnswConfig["ef"] = ef
+		}
+
+		classConfig.VectorIndexConfig = vectorIndexConfig
 	}
-	classConfig.VectorIndexConfig = vectorIndexConfig
 
 	err = client.Schema().ClassUpdater().WithClass(classConfig).Do(context.Background())
 
@@ -788,14 +839,15 @@ func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint, upda
 			grpcClient := weaviategrpc.NewWeaviateClient(grpcConn)
 			weaviateClient := createClient(cfg)
 
-			for chunk := range chunks {
-				if updatePercent > 0 {
-					if rand.Float32() < updatePercent {
-						deleteChunk(&chunk, weaviateClient, cfg)
-						writeChunk(&chunk, &grpcClient, cfg)
+			if cfg.MultiTargetVector > 0 {
+				for chunk := range chunks {
+					for i := 0; i < cfg.MultiTargetVector; i++ {
+						processChunk(chunk, &grpcClient, weaviateClient, cfg, fmt.Sprintf("named_vector_%d", i), updatePercent)
 					}
-				} else {
-					writeChunk(&chunk, &grpcClient, cfg)
+				}
+			} else {
+				for chunk := range chunks {
+					processChunk(chunk, &grpcClient, weaviateClient, cfg, "", updatePercent)
 				}
 			}
 		}()
@@ -1102,6 +1154,8 @@ func initAnnBenchmark() {
 		"efArray", "16,24,32,48,64,96,128,256,512", "Array of ef parameters as comma separated list")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.IndexType,
 		"indexType", "hnsw", "Index type (hnsw or flat)")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MultiTargetVector,
+		"MultiTargetVector", 0, "Number of multiple target vectors (default 0)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MaxConnections,
 		"maxConnections", 16, "Set Weaviate efConstruction parameter (default 16)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.Shards,
@@ -1171,7 +1225,7 @@ func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors, filters []in
 		}
 
 		return QueryWithNeighbors{
-			Query:     nearVectorQueryGrpc(cfg.ClassName, queries[i], cfg.Limit, tenant, filter),
+			Query:     nearVectorQueryGrpc(cfg, queries[i], cfg.Limit, tenant, filter),
 			Neighbors: neighbors[i],
 		}
 
@@ -1247,4 +1301,11 @@ func benchmarkANNDuration(cfg Config, queries Queries, neighbors Neighbors, filt
 	medianResult.Recall = median(samples.Recall)
 
 	return medianResult
+}
+
+func processChunk(chunk Batch, grpcClient *weaviategrpc.WeaviateClient, weaviateClient *weaviate.Client, cfg *Config, namedVector string, updatePercent float32) {
+	if updatePercent > 0 && rand.Float32() < updatePercent {
+		deleteChunk(&chunk, weaviateClient, cfg)
+	}
+	writeChunk(&chunk, grpcClient, cfg, namedVector)
 }

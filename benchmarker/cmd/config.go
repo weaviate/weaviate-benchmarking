@@ -16,6 +16,7 @@ type Config struct {
 	Limit                  int
 	ClassName              string
 	IndexType              string
+	MultiTargetVector      int
 	ReplicationFactor      int
 	API                    string
 	HttpAuth               string
