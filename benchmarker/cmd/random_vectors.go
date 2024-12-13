@@ -134,11 +134,11 @@ func encodeVector(fs []float32) []byte {
 	return buf
 }
 
-func nearVectorQueryGrpc(className string, vec []float32, limit int, tenant string, filter int) []byte {
+func nearVectorQueryGrpc(cfg *Config, vec []float32, tenant string, filter int) []byte {
 
 	searchRequest := &weaviategrpc.SearchRequest{
-		Collection: className,
-		Limit:      uint32(limit),
+		Collection: cfg.ClassName,
+		Limit:      uint32(cfg.Limit),
 		NearVector: &weaviategrpc.NearVector{
 			VectorBytes: encodeVector(vec),
 		},
@@ -151,6 +151,17 @@ func nearVectorQueryGrpc(className string, vec []float32, limit int, tenant stri
 
 	if tenant != "" {
 		searchRequest.Tenant = tenant
+	}
+
+	if cfg.NamedVector != "" {
+		searchRequest.NearVector = &weaviategrpc.NearVector{
+			Targets: &weaviategrpc.Targets{
+				TargetVectors: []string{cfg.NamedVector},
+			},
+			VectorPerTarget: map[string][]byte{
+				cfg.NamedVector: encodeVector(vec),
+			},
+		}
 	}
 
 	if filter >= 0 {
@@ -188,7 +199,7 @@ func benchmarkNearVector(cfg Config) Results {
 
 		if cfg.API == "grpc" {
 			return QueryWithNeighbors{
-				Query: nearVectorQueryGrpc(cfg.ClassName, randomVector(cfg.Dimensions), cfg.Limit, cfg.Tenant, 0),
+				Query: nearVectorQueryGrpc(&cfg, randomVector(cfg.Dimensions), cfg.Tenant, 0),
 			}
 		}
 

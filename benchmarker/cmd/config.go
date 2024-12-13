@@ -15,6 +15,7 @@ type Config struct {
 	Parallel               int
 	Limit                  int
 	ClassName              string
+	NamedVector            string
 	IndexType              string
 	ReplicationFactor      int
 	API                    string
