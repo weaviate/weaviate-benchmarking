@@ -109,6 +109,16 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 		if cfg.Tenant != "" {
 			objects[i].Tenant = cfg.Tenant
 		}
+		if cfg.NamedVector != "" {
+			vectors := make([]*weaviategrpc.Vectors, 1)
+			vectors[0] = &weaviategrpc.Vectors{
+				VectorBytes: encodeVector(vector),
+				Name:        cfg.NamedVector,
+			}
+			objects[i].Vectors = vectors
+		} else {
+			objects[i].VectorBytes = encodeVector(vector)
+		}
 		if cfg.Filter {
 			nonRefProperties, err := structpb.NewStruct(map[string]interface{}{
 				"category": strconv.Itoa(chunk.Filters[i]),
@@ -186,9 +196,8 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 	}
 
 	var classObj = &models.Class{
-		Class:           cfg.ClassName,
-		Description:     fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
-		VectorIndexType: cfg.IndexType,
+		Class:       cfg.ClassName,
+		Description: fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
 		MultiTenancyConfig: &models.MultiTenancyConfig{
 			Enabled: multiTenancyEnabled,
 		},
@@ -295,7 +304,18 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 
 	vectorIndexConfig["filterStrategy"] = cfg.FilterStrategy
 
-	classObj.VectorIndexConfig = vectorIndexConfig
+	if cfg.NamedVector != "" {
+		vectorConfig := make(map[string]models.VectorConfig)
+		vectorConfig[cfg.NamedVector] = models.VectorConfig{
+			Vectorizer:        map[string]interface{}{"none": nil},
+			VectorIndexType:   cfg.IndexType,
+			VectorIndexConfig: vectorIndexConfig,
+		}
+		classObj.VectorConfig = vectorConfig
+	} else {
+		classObj.VectorIndexType = cfg.IndexType
+		classObj.VectorIndexConfig = vectorIndexConfig
+	}
 
 	err = client.Schema().ClassCreator().WithClass(classObj).Do(context.Background())
 	if err != nil {
@@ -357,7 +377,14 @@ func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 		panic(err)
 	}
 
-	vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
+	var vectorIndexConfig map[string]interface{}
+
+	if cfg.NamedVector != "" {
+		vectorIndexConfig = classConfig.VectorConfig[cfg.NamedVector].VectorIndexConfig.(map[string]interface{})
+	} else {
+		vectorIndexConfig = classConfig.VectorIndexConfig.(map[string]interface{})
+	}
+
 	switch cfg.IndexType {
 	case "hnsw":
 		vectorIndexConfig["ef"] = ef
@@ -368,7 +395,14 @@ func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 		hnswConfig := vectorIndexConfig["hnsw"].(map[string]interface{})
 		hnswConfig["ef"] = ef
 	}
-	classConfig.VectorIndexConfig = vectorIndexConfig
+
+	if cfg.NamedVector != "" {
+		vectorConfig := classConfig.VectorConfig[cfg.NamedVector]
+		vectorConfig.VectorIndexConfig = vectorIndexConfig
+		classConfig.VectorConfig[cfg.NamedVector] = vectorConfig
+	} else {
+		classConfig.VectorIndexConfig = vectorIndexConfig
+	}
 
 	err = client.Schema().ClassUpdater().WithClass(classConfig).Do(context.Background())
 
@@ -1066,6 +1100,8 @@ func initAnnBenchmark() {
 		"vectors", "v", "", "Path to the hdf5 file containing the vectors")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.ClassName,
 		"className", "c", "Vector", "Class name for testing")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.NamedVector,
+		"namedVector", "", "Named vector")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.DistanceMetric,
 		"distance", "d", "", "Set distance metric (mandatory)")
 	annBenchmarkCommand.PersistentFlags().BoolVarP(&globalConfig.QueryOnly,
@@ -1171,7 +1207,7 @@ func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors, filters []in
 		}
 
 		return QueryWithNeighbors{
-			Query:     nearVectorQueryGrpc(cfg.ClassName, queries[i], cfg.Limit, tenant, filter),
+			Query:     nearVectorQueryGrpc(&cfg, queries[i], tenant, filter),
 			Neighbors: neighbors[i],
 		}
 
