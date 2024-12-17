@@ -31,7 +31,7 @@ func initRandomVectors() {
 	randomVectorsCmd.PersistentFlags().IntVarP(&globalConfig.Parallel,
 		"parallel", "p", numCPU, "Set the number of parallel threads which send queries")
 	randomVectorsCmd.PersistentFlags().StringVarP(&globalConfig.API,
-		"api", "a", "grpc", "API (graphql | rest | grpc) default and recommended grpc")
+		"api", "a", "grpc", "API (graphql | grpc) default and recommended is grpc")
 	randomVectorsCmd.PersistentFlags().IntVarP(&globalConfig.Limit,
 		"limit", "l", 10, "Set the query limit (top_k)")
 	randomVectorsCmd.PersistentFlags().IntVarP(&globalConfig.Dimensions,
