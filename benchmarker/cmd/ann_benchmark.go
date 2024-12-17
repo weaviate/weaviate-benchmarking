@@ -998,7 +998,7 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 
 var annBenchmarkCommand = &cobra.Command{
 	Use:   "ann-benchmark",
-	Short: "Benchmark ANN Benchmark style hdf5 files",
+	Short: "Benchmark ANN Benchmark style datasets",
 	Long:  `Run a gRPC benchmark on an hdf5 file in the format of ann-benchmarks.com`,
 	Run: func(cmd *cobra.Command, args []string) {
 

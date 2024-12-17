@@ -96,7 +96,7 @@ func (c *Config) validateCommon() error {
 	}
 
 	switch c.API {
-	case "graphql", "nearvector", "grpc":
+	case "graphql", "grpc":
 	default:
 		return errors.Errorf("unsupported API %q", c.API)
 	}
@@ -128,10 +128,6 @@ func (c Config) validateRandomText() error {
 }
 
 func (c Config) validateRandomVectors() error {
-	if c.Dimensions == 0 {
-		return errors.Errorf("dimensions must be set and larger than 0\n")
-	}
-
 	return nil
 }
 

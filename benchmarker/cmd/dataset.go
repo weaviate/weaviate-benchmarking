@@ -9,9 +9,10 @@ import (
 )
 
 var datasetCmd = &cobra.Command{
-	Use:   "dataset",
-	Short: "Benchmark vectors from an existing dataset",
-	Long:  `Specify an existing dataset as a list of query vectors in a .json file to parse the query vectors and then query them with the specified parallelism`,
+	Use:        "dataset",
+	Short:      "Benchmark vectors from an existing dataset",
+	Long:       `Specify an existing dataset as a list of query vectors in a .json file to parse the query vectors and then query them with the specified parallelism`,
+	Deprecated: "This command is deprecated and will be removed in the future",
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := globalConfig
 		cfg.Mode = "dataset"
@@ -112,15 +113,9 @@ func benchmarkDataset(cfg Config, queries Queries) Results {
 			}
 		}
 
-		if cfg.API == "rest" {
-			return QueryWithNeighbors{
-				Query: nearVectorQueryJSONRest(cfg.ClassName, queries[i], cfg.Limit),
-			}
-		}
-
 		if cfg.API == "grpc" {
 			return QueryWithNeighbors{
-				Query: nearVectorQueryGrpc(&cfg, queries[i], cfg.Tenant, 0),
+				Query: nearVectorQueryGrpc(&cfg, queries[i], cfg.Tenant, -1),
 			}
 		}
 

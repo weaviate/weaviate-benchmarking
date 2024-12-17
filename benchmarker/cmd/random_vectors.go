@@ -1,17 +1,21 @@
 package cmd
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
 	"math/rand"
 	"os"
+	"runtime"
 	"strconv"
-	"strings"
+	"time"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/spf13/cobra"
+	"github.com/weaviate/weaviate-go-client/v4/weaviate"
 	weaviategrpc "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
 
 	"google.golang.org/protobuf/proto"
@@ -19,34 +23,33 @@ import (
 
 func initRandomVectors() {
 	rootCmd.AddCommand(randomVectorsCmd)
+	numCPU := runtime.NumCPU()
 	randomVectorsCmd.PersistentFlags().IntVarP(&globalConfig.Queries,
 		"queries", "q", 100, "Set the number of queries the benchmarker should run")
+	randomVectorsCmd.PersistentFlags().IntVar(&globalConfig.QueryDuration,
+		"queryDuration", 0, "Instead of a fixed number of queries, query for the specified duration in seconds (default 0)")
 	randomVectorsCmd.PersistentFlags().IntVarP(&globalConfig.Parallel,
-		"parallel", "p", 8, "Set the number of parallel threads which send queries")
+		"parallel", "p", numCPU, "Set the number of parallel threads which send queries")
+	randomVectorsCmd.PersistentFlags().StringVarP(&globalConfig.API,
+		"api", "a", "grpc", "API (graphql | rest | grpc) default and recommended grpc")
 	randomVectorsCmd.PersistentFlags().IntVarP(&globalConfig.Limit,
 		"limit", "l", 10, "Set the query limit (top_k)")
 	randomVectorsCmd.PersistentFlags().IntVarP(&globalConfig.Dimensions,
-		"dimensions", "d", 768, "Set the vector dimensions (must match your data)")
-	randomVectorsCmd.PersistentFlags().StringVarP(&globalConfig.WhereFilter,
-		"where", "w", "", "An entire where filter as a string")
+		"dimensions", "d", 0, "Set the vector dimensions (will infer from class if not set)")
 	randomVectorsCmd.PersistentFlags().StringVarP(&globalConfig.ClassName,
 		"className", "c", "", "The Weaviate class to run the benchmark against")
-	randomVectorsCmd.PersistentFlags().StringVar(&globalConfig.DB,
-		"db", "weaviate", "The tool you're benchmarking")
-	randomVectorsCmd.PersistentFlags().StringVarP(&globalConfig.API,
-		"api", "a", "graphql", "The API to use on benchmarks")
 	randomVectorsCmd.PersistentFlags().StringVarP(&globalConfig.Origin,
-		"origin", "u", "http://localhost:8080", "The origin that Weaviate is running at")
-	randomVectorsCmd.PersistentFlags().StringVarP(&globalConfig.OutputFormat,
-		"format", "f", "text", "Output format, one of [text, json]")
-	randomVectorsCmd.PersistentFlags().StringVarP(&globalConfig.OutputFile,
-		"output", "o", "", "Filename for an output file. If none provided, output to stdout only")
+		"grpcOrigin", "u", "localhost:50051", "The gRPC origin that Weaviate is running at")
+	randomVectorsCmd.PersistentFlags().StringVar(&globalConfig.HttpOrigin,
+		"httpOrigin", "localhost:8080", "The http origin for Weaviate (without http scheme)")
+	randomVectorsCmd.PersistentFlags().StringVar(&globalConfig.HttpScheme,
+		"httpScheme", "http", "The http scheme (http or https)")
 }
 
 var randomVectorsCmd = &cobra.Command{
 	Use:   "random-vectors",
-	Short: "Benchmark nearVector searches",
-	Long:  `Benchmark random nearVector searches`,
+	Short: "Benchmark random vector queries",
+	Long:  `Benchmark random vector queries`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := globalConfig
 		cfg.Mode = "random-vectors"
@@ -56,43 +59,49 @@ var randomVectorsCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		if len(cfg.WhereFilter) > 0 {
-			filter := fmt.Sprintf(", where: { %s }", cfg.WhereFilter)
-			cfg.WhereFilter = strings.Replace(filter, "\"", "\\\"", -1)
+		log.WithFields(log.Fields{"queries": cfg.Queries,
+			"class": cfg.ClassName}).Info("Beginning random-vectors benchmark")
+
+		client := createClient(&cfg)
+		cfg.Dimensions = getDimensions(cfg, client)
+
+		var result Results
+
+		if cfg.QueryDuration > 0 {
+			result = benchmarkNearVectorDuration(cfg)
+		} else {
+			result = benchmarkNearVector(cfg)
 		}
 
-		if cfg.DB == "weaviate" {
+		log.WithFields(log.Fields{"mean": result.Mean, "qps": result.QueriesPerSecond,
+			"parallel": cfg.Parallel, "limit": cfg.Limit,
+			"api": cfg.API, "count": result.Total, "failed": result.Failed}).Info("Benchmark result")
 
-			var w io.Writer
-			if cfg.OutputFile == "" {
-				w = os.Stdout
-			} else {
-				f, err := os.Create(cfg.OutputFile)
-				if err != nil {
-					fatal(err)
-				}
-
-				defer f.Close()
-				w = f
-
-			}
-
-			result := benchmarkNearVector(cfg)
-			if cfg.OutputFormat == "json" {
-				result.WriteJSONTo(w)
-			} else if cfg.OutputFormat == "text" {
-				result.WriteTextTo(w)
-			}
-
-			if cfg.OutputFile != "" {
-				infof("results succesfully written to %q", cfg.OutputFile)
-			}
-			return
-		}
-
-		fmt.Printf("unrecognized db\n")
-		os.Exit(1)
 	},
+}
+
+func getDimensions(cfg Config, client *weaviate.Client) int {
+	dimensions := cfg.Dimensions
+	if cfg.Dimensions == 0 {
+		// Try to infer dimensions from class
+
+		objects, err := client.Data().ObjectsGetter().WithClassName(cfg.ClassName).WithVector().WithLimit(10).Do(context.Background())
+		if err != nil {
+			log.Infof("Error fetching class %s, %v", cfg.ClassName, err)
+		}
+
+		for _, obj := range objects {
+			if obj.Vector != nil {
+				dimensions = len(obj.Vector)
+				break
+			}
+		}
+
+		if dimensions == 0 {
+			log.Fatalf("Could not fetch dimensions from class %s", cfg.ClassName)
+		}
+	}
+	return dimensions
 }
 
 func randomVector(dims int) []float32 {
@@ -116,14 +125,6 @@ func nearVectorQueryJSONGraphQL(className string, vec []float32, limit int, wher
 	return []byte(fmt.Sprintf(`{
 "query": "{ Get { %s(limit: %d, nearVector: {vector:%s}%s) { _additional { id } } } }"
 }`, className, limit, string(vecJSON), whereFilter))
-}
-
-func nearVectorQueryJSONRest(className string, vec []float32, limit int) []byte {
-	vecJSON, _ := json.Marshal(vec)
-	return []byte(fmt.Sprintf(`{
-		"nearVector":{"vector":%s},
-		"limit":%d
-}`, string(vecJSON), limit))
 }
 
 func encodeVector(fs []float32) []byte {
@@ -190,19 +191,50 @@ func benchmarkNearVector(cfg Config) Results {
 				Query: nearVectorQueryJSONGraphQL(cfg.ClassName, randomVector(cfg.Dimensions), cfg.Limit, cfg.WhereFilter),
 			}
 		}
-
-		if cfg.API == "rest" {
-			return QueryWithNeighbors{
-				Query: nearVectorQueryJSONRest(cfg.ClassName, randomVector(cfg.Dimensions), cfg.Limit),
-			}
-		}
-
 		if cfg.API == "grpc" {
 			return QueryWithNeighbors{
-				Query: nearVectorQueryGrpc(&cfg, randomVector(cfg.Dimensions), cfg.Tenant, 0),
+				Query: nearVectorQueryGrpc(&cfg, randomVector(cfg.Dimensions), cfg.Tenant, -1),
 			}
 		}
 
 		return QueryWithNeighbors{}
 	})
+}
+
+func benchmarkNearVectorDuration(cfg Config) Results {
+
+	var samples sampledResults
+
+	startTime := time.Now()
+
+	var results Results
+	iterations := 0
+	for time.Since(startTime) < time.Duration(cfg.QueryDuration)*time.Second {
+		results = benchmarkNearVector(cfg)
+		samples.Min = append(samples.Min, results.Min)
+		samples.Max = append(samples.Max, results.Max)
+		samples.Mean = append(samples.Mean, results.Mean)
+		samples.Took = append(samples.Took, results.Took)
+		samples.QueriesPerSecond = append(samples.QueriesPerSecond, results.QueriesPerSecond)
+		samples.Results = append(samples.Results, results)
+		iterations += 1
+	}
+
+	var medianResult Results
+
+	medianResult.Min = time.Duration(median(samples.Min))
+	medianResult.Max = time.Duration(median(samples.Max))
+	medianResult.Mean = time.Duration(median(samples.Mean))
+	medianResult.Took = time.Duration(median(samples.Took))
+	medianResult.QueriesPerSecond = median(samples.QueriesPerSecond)
+	medianResult.Percentiles = results.Percentiles
+	medianResult.PercentilesLabels = results.PercentilesLabels
+	medianResult.Total = results.Total
+	medianResult.Successful = results.Successful
+	medianResult.Failed = results.Failed
+	medianResult.Parallelization = cfg.Parallel
+
+	log.WithFields(log.Fields{"iterations": iterations}).Infof("Queried for %d seconds", cfg.QueryDuration)
+
+	return medianResult
 }
