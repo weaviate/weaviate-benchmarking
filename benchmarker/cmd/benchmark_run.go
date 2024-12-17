@@ -36,10 +36,11 @@ func processQueueHttp(queue []QueryWithNeighbors, cfg *Config, c *http.Client, m
 		r := bytes.NewReader(query.Query)
 		before := time.Now()
 		var url string
+		origin := fmt.Sprintf("%s://%s", cfg.HttpScheme, cfg.HttpOrigin)
 		if cfg.API == "graphql" {
-			url = cfg.Origin + "/v1/graphql"
+			url = origin + "/v1/graphql"
 		} else if cfg.API == "rest" {
-			url = fmt.Sprintf("%s/v1/objects/%s/_search", cfg.Origin, cfg.ClassName)
+			url = fmt.Sprintf("%s/v1/objects/%s/_search", origin, cfg.ClassName)
 		}
 		req, err := http.NewRequest("POST", url, r)
 		if err != nil {

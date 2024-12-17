@@ -29,6 +29,7 @@ var randomTextCmd = &cobra.Command{
 	Use:   "random-text",
 	Short: "Benchmark nearText searches",
 	Long:  `Benchmark random nearText searches`,
+	Deprecated: "This command is deprecated and will be removed in the future",
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := globalConfig
 

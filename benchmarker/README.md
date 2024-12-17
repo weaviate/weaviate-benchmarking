@@ -10,11 +10,9 @@ Usage:
   benchmarker [command]
 
 Available Commands:
-  ann-benchmark  Benchmark ANN Benchmark style hdf5 files (this is generally what you want to use)
-  dataset        Benchmark vectors from an existing dataset
+  ann-benchmark  Benchmark ANN Benchmark style datasets
   help           Help about any command
-  random-text    Benchmark nearText searches
-  random-vectors Benchmark nearVector searches
+  random-vectors Benchmark random vector queries
   raw            Benchmark raw GraphQL queries
 
 Flags:
@@ -129,7 +127,7 @@ go run . \
   --dimensions 384 \
   --queries 10000 \
   --parallel 8 \
-  --api graphql \
+  --api grpc \
   --limit 10
 ```
 
@@ -158,7 +156,7 @@ benchmarker \
   --dimensions 384 \
   --queries 10000 \
   --parallel 8 \
-  --api graphql \
+  --api grpc \
   --limit 10
 ```
 
