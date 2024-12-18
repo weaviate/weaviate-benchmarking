@@ -832,6 +832,11 @@ func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint, upda
 					writeChunk(&chunk, &grpcClient, cfg)
 				}
 			}
+			startTime := time.Now()
+			if !cfg.SkipAsyncReady {
+				waitReady(cfg, weaviateClient, startTime, 30*time.Minute, 1000)
+			}
+
 		}()
 	}
 
