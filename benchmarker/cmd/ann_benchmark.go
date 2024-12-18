@@ -1079,6 +1079,10 @@ var annBenchmarkCommand = &cobra.Command{
 						log.Fatalf("Error waiting for tombstones to be empty: %v", err)
 					}
 				}
+				if !cfg.SkipAsyncReady {
+					startTime := time.Now()
+					waitReady(&cfg, client, startTime, 30*time.Minute, 1000)
+				}
 
 				runQueries(&cfg, importTime, testData, neighbors, testFilters)
 
