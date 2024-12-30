@@ -74,6 +74,7 @@ type ResultsJSONBenchmark struct {
 	Timestamp        string  `json:"timestamp"`
 	Branch           string  `json:"branch"`
 	Commit           string  `json:"commit"`
+	TestId           string  `json:"test_id"`
 }
 
 // Convert an int to a uuid formatted string
@@ -968,6 +969,7 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 			Timestamp:        time.Now().Format(time.RFC3339),
 			Branch:           cfg.Branch,
 			Commit:           cfg.Commit,
+			TestId:           cfg.TestId,
 		}
 
 		jsonData, err := json.Marshal(benchResult)
@@ -1198,6 +1200,8 @@ func initAnnBenchmark() {
 		"branch", "main", "Branch name")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.Commit,
 		"commit", "1234567890", "Commit hash")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.TestId,
+		"testId", "sq_1", "Test ID")
 }
 
 func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors, filters []int) Results {

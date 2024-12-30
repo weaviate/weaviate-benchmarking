@@ -66,6 +66,7 @@ type Config struct {
 	FilterStrategy         string
 	Branch                 string
 	Commit                 string
+	TestId                 string
 }
 
 func (c *Config) Validate() error {
