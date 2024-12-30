@@ -64,6 +64,9 @@ type Config struct {
 	Filter                 bool
 	FlatSearchCutoff       int
 	FilterStrategy         string
+	Branch                 string
+	Commit                 string
+	TestId                 string
 }
 
 func (c *Config) Validate() error {

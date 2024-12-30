@@ -71,6 +71,10 @@ type ResultsJSONBenchmark struct {
 	HeapAllocBytes   float64 `json:"heap_alloc_bytes"`
 	HeapInuseBytes   float64 `json:"heap_inuse_bytes"`
 	HeapSysBytes     float64 `json:"heap_sys_bytes"`
+	Timestamp        string  `json:"timestamp"`
+	Branch           string  `json:"branch"`
+	Commit           string  `json:"commit"`
+	TestId           string  `json:"test_id"`
 }
 
 // Convert an int to a uuid formatted string
@@ -962,6 +966,10 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 			HeapAllocBytes:   memstats.HeapAllocBytes,
 			HeapInuseBytes:   memstats.HeapInuseBytes,
 			HeapSysBytes:     memstats.HeapSysBytes,
+			Timestamp:        time.Now().Format(time.RFC3339),
+			Branch:           cfg.Branch,
+			Commit:           cfg.Commit,
+			TestId:           cfg.TestId,
 		}
 
 		jsonData, err := json.Marshal(benchResult)
@@ -1188,6 +1196,12 @@ func initAnnBenchmark() {
 		"filterStrategy", "sweeping", "Use a different filter strategy (options are sweeping or acorn)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.ReplicationFactor,
 		"replicationFactor", 1, "Replication factor")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.Branch,
+		"branch", "main", "Branch name")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.Commit,
+		"commit", "1234567890", "Commit hash")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.TestId,
+		"testId", "sq_1", "Test ID")
 }
 
 func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors, filters []int) Results {
