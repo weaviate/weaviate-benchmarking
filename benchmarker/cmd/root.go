@@ -33,6 +33,7 @@ func init() {
 	initDataset()
 	initRaw()
 	initAnnBenchmark()
+	initColbert()
 }
 
 var rootCmd = &cobra.Command{

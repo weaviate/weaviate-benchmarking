@@ -109,6 +109,10 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 		if cfg.Tenant != "" {
 			objects[i].Tenant = cfg.Tenant
 		}
+		if cfg.MultiVectorDimensions > 0 {
+			// TODO: Properly reshape multi-vectors
+			vector = vector[:cfg.MultiVectorDimensions]
+		}
 		if cfg.NamedVector != "" {
 			vectors := make([]*weaviategrpc.Vectors, 1)
 			vectors[0] = &weaviategrpc.Vectors{
@@ -554,7 +558,7 @@ func getHDF5ByteSize(dataset *hdf5.Dataset) uint {
 
 	// log.WithFields(log.Fields{"size": datatype.Size()}).Printf("Parsing HDF5 byte format\n")
 	byteSize := datatype.Size()
-	if byteSize != 4 && byteSize != 8 {
+	if byteSize != 4 && byteSize != 8 && byteSize != 16 {
 		log.Fatalf("Unable to load dataset with byte size %d\n", byteSize)
 	}
 	return byteSize
@@ -779,7 +783,13 @@ func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint, upda
 	defer dataset.Close()
 	dataspace := dataset.Space()
 	extent, _, _ := dataspace.SimpleExtentDims()
-	dimensions := extent[1]
+	var dimensions uint
+
+	if cfg.MultiVectorDimensions == 0 {
+		dimensions = extent[1]
+	} else {
+		dimensions = uint(cfg.MultiVectorDimensions)
+	}
 
 	filters := []int{}
 	if cfg.Filter {
@@ -789,7 +799,11 @@ func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint, upda
 	chunks := make(chan Batch, 10)
 
 	go func() {
-		loadHdf5Streaming(dataset, chunks, cfg, offset, maxRows, filters)
+		if cfg.MultiVectorDimensions > 0 {
+			loadHdf5StreamingColbert(dataset, chunks, cfg, offset, maxRows, filters)
+		} else {
+			loadHdf5Streaming(dataset, chunks, cfg, offset, maxRows, filters)
+		}
 		close(chunks)
 	}()
 
@@ -1044,6 +1058,10 @@ var annBenchmarkCommand = &cobra.Command{
 		log.WithFields(log.Fields{"index": cfg.IndexType, "efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
 			"distance": cfg.DistanceMetric, "dataset": cfg.BenchmarkFile}).Info("Benchmark configuration")
 
+		if cfg.SkipQuery {
+			return
+		}
+
 		neighbors := loadHdf5Neighbors(file, "neighbors")
 		testData := loadHdf5Float32(file, "test")
 		testFilters := make([]int, 0)
@@ -1124,6 +1142,10 @@ func initAnnBenchmark() {
 		"pqRatio", 4, "Set PQ segments = dimensions / ratio (must divide evenly default 4)")
 	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.PQSegments,
 		"pqSegments", 256, "Set PQ segments")
+	annBenchmarkCommand.PersistentFlags().IntVarP(&globalConfig.MultiVectorDimensions,
+		"multiVector", "m", 0, "Enable multi-dimensional vectors with the specified number of dimensions")
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.SkipQuery,
+		"skipQuery", false, "Only import data and skip query tests")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.SkipAsyncReady,
 		"skipAsyncReady", false, "Skip async ready (default false)")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.SkipMemoryStats,
