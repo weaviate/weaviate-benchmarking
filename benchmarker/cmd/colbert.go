@@ -163,10 +163,6 @@ func loadHdf5Colbert(file *hdf5.File, name string, dimensions int) [][]float32 {
 		src := unsafe.Slice((*float32)(vlen[0].p), length)
 		copy(data, src)
 
-		log.Infof("Vector %d:", i)
-		log.Infof("  Length: %d", length)
-		log.Infof("  First three values: %v, %v, %v", data[0], data[1], data[2])
-
 		// Add check length is a multiple of dimensions
 		if length%dimensions != 0 {
 			log.Fatalf("Length %d is not a multiple of dimensions %d", length, dimensions)
