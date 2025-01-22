@@ -18,7 +18,6 @@ import (
 	"github.com/weaviate/weaviate-go-client/v4/weaviate"
 	weaviategrpc "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
 	"github.com/weaviate/weaviate/usecases/byteops"
-
 	"google.golang.org/protobuf/proto"
 )
 
@@ -140,17 +139,19 @@ func nearVectorQueryGrpc(cfg *Config, vec []float32, tenant string, filter int) 
 
 	var searchRequest *weaviategrpc.SearchRequest
 	if cfg.MultiVectorDimensions > 0 {
-		multiVec := make([]*weaviategrpc.Vectors, len(vec)/cfg.MultiVectorDimensions)
-		for i := 0; i < len(vec)/cfg.MultiVectorDimensions; i++ {
+
+		rows := len(vec) / cfg.MultiVectorDimensions
+		doc := make([][]float32, rows)
+		for i := 0; i < rows; i++ {
 			start := i * cfg.MultiVectorDimensions
 			end := start + cfg.MultiVectorDimensions
-			multiVec[i] = &weaviategrpc.Vectors{
-				Name:        "multivector",
-				VectorBytes: byteops.Float32ToByteVector(vec[start:end]),
-				Index:       uint64(i),
-				Type:        weaviategrpc.VectorType_VECTOR_TYPE_COLBERT_FP32,
-			}
+			doc[i] = vec[start:end]
 		}
+		multiVec := []*weaviategrpc.Vectors{{
+			Name:        "multivector",
+			VectorBytes: byteops.Fp32SliceOfSlicesToBytes(doc),
+			Type:        weaviategrpc.VectorType_VECTOR_TYPE_MULTI_FP32,
+		}}
 
 		searchRequest = &weaviategrpc.SearchRequest{
 			Collection: cfg.ClassName,

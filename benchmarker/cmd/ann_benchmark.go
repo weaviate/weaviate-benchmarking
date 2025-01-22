@@ -116,18 +116,17 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 			}
 			rows := len(vector) / cfg.MultiVectorDimensions
 
-			multiVec := make([]*weaviategrpc.Vectors, rows)
+			multiVec := make([][]float32, rows)
 			for i := 0; i < rows; i++ {
 				start := i * cfg.MultiVectorDimensions
 				end := start + cfg.MultiVectorDimensions
-				multiVec[i] = &weaviategrpc.Vectors{
-					Name:        "multivector",
-					VectorBytes: byteops.Float32ToByteVector(vector[start:end]),
-					Index:       uint64(i),
-					Type:        weaviategrpc.VectorType_VECTOR_TYPE_COLBERT_FP32,
-				}
+				multiVec[i] = vector[start:end]
 			}
-			objects[i].Vectors = multiVec
+			objects[i].Vectors = []*weaviategrpc.Vectors{{
+				Name:        "multivector",
+				VectorBytes: byteops.Fp32SliceOfSlicesToBytes(multiVec),
+				Type:        weaviategrpc.VectorType_VECTOR_TYPE_MULTI_FP32,
+			}}
 		} else {
 			objects[i].VectorBytes = encodeVector(vector)
 		}

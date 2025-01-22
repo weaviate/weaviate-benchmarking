@@ -2,7 +2,7 @@ module github.com/semi-technologies/weaviate-benchmarking/benchmarker
 
 go 1.22.7
 
-replace github.com/weaviate/weaviate v1.28.2 => github.com/weaviate/weaviate v0.0.0-20250114155825-7887f7450000
+replace github.com/weaviate/weaviate v1.28.2 => github.com/weaviate/weaviate v1.28.4-0.20250122140331-9df7356054ce
 
 require (
 	github.com/google/uuid v1.6.0
@@ -15,10 +15,10 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/weaviate/hdf5 v0.0.0-20230911114900-3cd888ffadcd
 	github.com/weaviate/weaviate v1.28.2
-	github.com/weaviate/weaviate-go-client/v4 v4.16.2-0.20250114164249-96aa13255192
+	github.com/weaviate/weaviate-go-client/v4 v4.16.2-0.20250122141651-2c9c3b9492a8
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d
 	google.golang.org/grpc v1.69.4
-	google.golang.org/protobuf v1.36.1
+	google.golang.org/protobuf v1.36.3
 )
 
 require (

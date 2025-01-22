@@ -163,10 +163,10 @@ github.com/tmc/grpc-websocket-proxy v0.0.0-20190109142713-0ad062ec5ee5/go.mod h1
 github.com/ugorji/go v1.1.4/go.mod h1:uQMGLiO92mf5W77hV/PUCpI3pbzQx3CRekS0kk+RGrc=
 github.com/weaviate/hdf5 v0.0.0-20230911114900-3cd888ffadcd h1:I2WJ4TPa4ngF3a0m3XtlV4DdyJBuGJzM+9olvkDZTxM=
 github.com/weaviate/hdf5 v0.0.0-20230911114900-3cd888ffadcd/go.mod h1:7IHygf+QCR1KkP64KC167pb7H4JAjcNrYDjSW7stYQ8=
-github.com/weaviate/weaviate v0.0.0-20250114155825-7887f7450000 h1:UFWnhoboGyI99zmwAZ3sTWy6ai1VT8OoXnKvooyeHuM=
-github.com/weaviate/weaviate v0.0.0-20250114155825-7887f7450000/go.mod h1:TWsJInb85Ibx7yteV9uNVyqaypySnz97yoheOJz0x+s=
-github.com/weaviate/weaviate-go-client/v4 v4.16.2-0.20250114164249-96aa13255192 h1:uz7CJTVy3KHvEW4RGHIYe9c5lD+/q4FgyDZjFtSKIVQ=
-github.com/weaviate/weaviate-go-client/v4 v4.16.2-0.20250114164249-96aa13255192/go.mod h1:CcQM4R9A607hANEtG39571vIiw6XE2TPAE87ZwJa5oI=
+github.com/weaviate/weaviate v1.28.4-0.20250122140331-9df7356054ce h1:+C40rXaKqcGaiXYFcIU+3I4Bp4tFN2r891t0EQhpS7g=
+github.com/weaviate/weaviate v1.28.4-0.20250122140331-9df7356054ce/go.mod h1:btdalE7ciy3ZN5Pbelv9dCSajIbQ3drk4Y3l2JEY60I=
+github.com/weaviate/weaviate-go-client/v4 v4.16.2-0.20250122141651-2c9c3b9492a8 h1:fGDdijhsIXGNbLs4VZ0B/cVHa1lBu7Je2yUUScn3cAw=
+github.com/weaviate/weaviate-go-client/v4 v4.16.2-0.20250122141651-2c9c3b9492a8/go.mod h1:iMzBxgiIf9r7YzbuJ6zJHQmxAGEBeChg9CG5zAuc7Ew=
 github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2/go.mod h1:UETIi67q53MR2AWcXfiuqkDkRtnGDLqkBTpCHuJHxtU=
 github.com/xordataexchange/crypt v0.0.3-0.20170626215501-b2862e3d0a77/go.mod h1:aYKd//L2LvnjZzWKhF00oedf4jCCReLcmhLdhm1A27Q=
 go.etcd.io/bbolt v1.3.2/go.mod h1:IbVyRI1SCnLcuJnV2u8VeU0CEYM7e686BmAb1XKL+uU=
@@ -229,8 +229,8 @@ google.golang.org/grpc v1.19.0/go.mod h1:mqu4LbDTu4XGKhr4mRzUsmM4RtVoemTSY81AxZi
 google.golang.org/grpc v1.21.0/go.mod h1:oYelfM1adQP15Ek0mdvEgi9Df8B9CZIaU1084ijfRaM=
 google.golang.org/grpc v1.69.4 h1:MF5TftSMkd8GLw/m0KM6V8CMOCY6NZ1NQDPGFgbTt4A=
 google.golang.org/grpc v1.69.4/go.mod h1:vyjdE6jLBI76dgpDojsFGNaHlxdjXN9ghpnd2o7JGZ4=
-google.golang.org/protobuf v1.36.1 h1:yBPeRvTftaleIgM3PZ/WBIZ7XM/eEYAaEyCwvyjq/gk=
-google.golang.org/protobuf v1.36.1/go.mod h1:9fA7Ob0pmnwhb644+1+CVWFRbNajQ6iRojtC/QF5bRE=
+google.golang.org/protobuf v1.36.3 h1:82DV7MYdb8anAVi3qge1wSnMDrnKK7ebr+I0hHRN1BU=
+google.golang.org/protobuf v1.36.3/go.mod h1:9fA7Ob0pmnwhb644+1+CVWFRbNajQ6iRojtC/QF5bRE=
 gopkg.in/alecthomas/kingpin.v2 v2.2.6/go.mod h1:FMv+mEhP44yOT+4EoQTLFTRgOQ1FBLkstjWtayDeSgw=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
