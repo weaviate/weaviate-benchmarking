@@ -125,7 +125,7 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 			objects[i].Vectors = []*weaviategrpc.Vectors{{
 				Name:        "multivector",
 				VectorBytes: byteops.Fp32SliceOfSlicesToBytes(multiVec),
-				Type:        weaviategrpc.VectorType_VECTOR_TYPE_MULTI_FP32,
+				Type:        weaviategrpc.Vectors_VECTOR_TYPE_MULTI_FP32,
 			}}
 		} else {
 			objects[i].VectorBytes = encodeVector(vector)
