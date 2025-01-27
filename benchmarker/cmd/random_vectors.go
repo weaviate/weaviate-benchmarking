@@ -150,7 +150,7 @@ func nearVectorQueryGrpc(cfg *Config, vec []float32, tenant string, filter int) 
 		multiVec := []*weaviategrpc.Vectors{{
 			Name:        "multivector",
 			VectorBytes: byteops.Fp32SliceOfSlicesToBytes(doc),
-			Type:        weaviategrpc.VectorType_VECTOR_TYPE_MULTI_FP32,
+			Type:        weaviategrpc.Vectors_VECTOR_TYPE_MULTI_FP32,
 		}}
 
 		searchRequest = &weaviategrpc.SearchRequest{
