@@ -163,10 +163,10 @@ github.com/tmc/grpc-websocket-proxy v0.0.0-20190109142713-0ad062ec5ee5/go.mod h1
 github.com/ugorji/go v1.1.4/go.mod h1:uQMGLiO92mf5W77hV/PUCpI3pbzQx3CRekS0kk+RGrc=
 github.com/weaviate/hdf5 v0.0.0-20230911114900-3cd888ffadcd h1:I2WJ4TPa4ngF3a0m3XtlV4DdyJBuGJzM+9olvkDZTxM=
 github.com/weaviate/hdf5 v0.0.0-20230911114900-3cd888ffadcd/go.mod h1:7IHygf+QCR1KkP64KC167pb7H4JAjcNrYDjSW7stYQ8=
-github.com/weaviate/weaviate v1.28.4-0.20250122140331-9df7356054ce h1:+C40rXaKqcGaiXYFcIU+3I4Bp4tFN2r891t0EQhpS7g=
-github.com/weaviate/weaviate v1.28.4-0.20250122140331-9df7356054ce/go.mod h1:btdalE7ciy3ZN5Pbelv9dCSajIbQ3drk4Y3l2JEY60I=
-github.com/weaviate/weaviate-go-client/v4 v4.16.2-0.20250122141651-2c9c3b9492a8 h1:fGDdijhsIXGNbLs4VZ0B/cVHa1lBu7Je2yUUScn3cAw=
-github.com/weaviate/weaviate-go-client/v4 v4.16.2-0.20250122141651-2c9c3b9492a8/go.mod h1:iMzBxgiIf9r7YzbuJ6zJHQmxAGEBeChg9CG5zAuc7Ew=
+github.com/weaviate/weaviate v1.28.5-0.20250126214405-c3c12e7623bf h1:G01hKHEw1EbY55Ud2QpNNGAfvuMklOYyuviidlIx3yo=
+github.com/weaviate/weaviate v1.28.5-0.20250126214405-c3c12e7623bf/go.mod h1:voAML9r/0PIn+xYN/I2IztwlLTxyqDTa7ev6NQbLwyc=
+github.com/weaviate/weaviate-go-client/v4 v4.16.2-0.20250127073049-5b267cd41195 h1:ZtlFaMpdSm9e7fJwUUxvTpnIJPeIbbPnGwbMm25knOE=
+github.com/weaviate/weaviate-go-client/v4 v4.16.2-0.20250127073049-5b267cd41195/go.mod h1:eoaa/Otlh5Tbo6C1ODFuBdl3bkWYRCWQuBB1od5pgBQ=
 github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2/go.mod h1:UETIi67q53MR2AWcXfiuqkDkRtnGDLqkBTpCHuJHxtU=
 github.com/xordataexchange/crypt v0.0.3-0.20170626215501-b2862e3d0a77/go.mod h1:aYKd//L2LvnjZzWKhF00oedf4jCCReLcmhLdhm1A27Q=
 go.etcd.io/bbolt v1.3.2/go.mod h1:IbVyRI1SCnLcuJnV2u8VeU0CEYM7e686BmAb1XKL+uU=
@@ -189,8 +189,8 @@ go.uber.org/multierr v1.1.0/go.mod h1:wR5kodmAFQ0UK8QlbwjlSNy0Z68gJhDJUG5sjR94q/
 go.uber.org/zap v1.10.0/go.mod h1:vwi/ZaCAaUcBkycHslxD9B2zi4UTXhF60s6SWpuDF0Q=
 golang.org/x/crypto v0.0.0-20180904163835-0709b304e793/go.mod h1:6SG95UA2DQfeDnfUPMdvaQW0Q7yPrPDi9nlGo2tz2b4=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
-golang.org/x/exp v0.0.0-20231006140011-7918f672742d h1:jtJma62tbqLibJ5sFQz8bKtEM8rJBtfilJ2qTU199MI=
-golang.org/x/exp v0.0.0-20231006140011-7918f672742d/go.mod h1:ldy0pHrwJyGW56pPQzzkH36rKxoZW1tw7ZJpeKx+hdo=
+golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa h1:FRnLl4eNAQl8hwxVVC17teOw8kdjVDVAiFMtgUdTSRQ=
+golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa/go.mod h1:zk2irFbV9DP96SEBUUAy67IdHUaZuSnrz1n472HUCLE=
 golang.org/x/lint v0.0.0-20181026193005-c67002cb31c3/go.mod h1:UVdnD1Gm6xHRNCYTkRU2/jEulfH38KcIWyp/GAMgvoE=
 golang.org/x/lint v0.0.0-20190313153728-d0100b6bd8b3/go.mod h1:6SW0HCj/g11FgYtHlgUYUwCkIfeOF89ocIRzGO/8vkc=
 golang.org/x/net v0.0.0-20180826012351-8a410e7b638d/go.mod h1:mL1N/T3taQHkDXs73rZJwtUhF3w3ftmwwsq0BUmARs4=
