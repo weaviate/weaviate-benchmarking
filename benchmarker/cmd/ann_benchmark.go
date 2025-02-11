@@ -71,6 +71,7 @@ type ResultsJSONBenchmark struct {
 	HeapAllocBytes   float64 `json:"heap_alloc_bytes"`
 	HeapInuseBytes   float64 `json:"heap_inuse_bytes"`
 	HeapSysBytes     float64 `json:"heap_sys_bytes"`
+	Timestamp        string  `json:"timestamp"`
 }
 
 // Convert an int to a uuid formatted string
@@ -962,6 +963,7 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 			HeapAllocBytes:   memstats.HeapAllocBytes,
 			HeapInuseBytes:   memstats.HeapInuseBytes,
 			HeapSysBytes:     memstats.HeapSysBytes,
+			Timestamp:        time.Now().Format(time.RFC3339),
 		}
 
 		jsonData, err := json.Marshal(benchResult)
