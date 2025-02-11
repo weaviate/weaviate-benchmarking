@@ -21,6 +21,7 @@ type Config struct {
 	API                    string
 	HttpAuth               string
 	Dimensions             int
+	MultiVectorDimensions  int
 	DB                     string
 	WhereFilter            string
 	OutputFormat           string
@@ -42,6 +43,7 @@ type Config struct {
 	PQ                     string
 	SQ                     string
 	LASQ                   string
+	SkipQuery              bool
 	SkipAsyncReady         bool
 	SkipTombstonesEmpty    bool
 	SkipMemoryStats        bool

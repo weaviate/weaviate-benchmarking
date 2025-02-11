@@ -17,7 +17,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/weaviate/weaviate-go-client/v4/weaviate"
 	weaviategrpc "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
-
+	"github.com/weaviate/weaviate/usecases/byteops"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -137,17 +137,48 @@ func encodeVector(fs []float32) []byte {
 
 func nearVectorQueryGrpc(cfg *Config, vec []float32, tenant string, filter int) []byte {
 
-	searchRequest := &weaviategrpc.SearchRequest{
-		Collection: cfg.ClassName,
-		Limit:      uint32(cfg.Limit),
-		NearVector: &weaviategrpc.NearVector{
-			VectorBytes: encodeVector(vec),
-		},
-		Metadata: &weaviategrpc.MetadataRequest{
-			Certainty: false,
-			Distance:  false,
-			Uuid:      true,
-		},
+	var searchRequest *weaviategrpc.SearchRequest
+	if cfg.MultiVectorDimensions > 0 {
+
+		rows := len(vec) / cfg.MultiVectorDimensions
+		doc := make([][]float32, rows)
+		for i := 0; i < rows; i++ {
+			start := i * cfg.MultiVectorDimensions
+			end := start + cfg.MultiVectorDimensions
+			doc[i] = vec[start:end]
+		}
+		multiVec := []*weaviategrpc.Vectors{{
+			Name:        "multivector",
+			VectorBytes: byteops.Fp32SliceOfSlicesToBytes(doc),
+			Type:        weaviategrpc.Vectors_VECTOR_TYPE_MULTI_FP32,
+		}}
+
+		searchRequest = &weaviategrpc.SearchRequest{
+			Collection: cfg.ClassName,
+			Limit:      uint32(cfg.Limit),
+			NearVector: &weaviategrpc.NearVector{
+				Vectors: multiVec,
+			},
+			Metadata: &weaviategrpc.MetadataRequest{
+				Certainty: false,
+				Distance:  false,
+				Uuid:      true,
+			},
+		}
+
+	} else {
+		searchRequest = &weaviategrpc.SearchRequest{
+			Collection: cfg.ClassName,
+			Limit:      uint32(cfg.Limit),
+			NearVector: &weaviategrpc.NearVector{
+				VectorBytes: encodeVector(vec),
+			},
+			Metadata: &weaviategrpc.MetadataRequest{
+				Certainty: false,
+				Distance:  false,
+				Uuid:      true,
+			},
+		}
 	}
 
 	if tenant != "" {

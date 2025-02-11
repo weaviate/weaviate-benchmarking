@@ -30,6 +30,7 @@ import (
 	"github.com/weaviate/weaviate-go-client/v4/weaviate/fault"
 	"github.com/weaviate/weaviate/entities/models"
 	weaviategrpc "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
+	"github.com/weaviate/weaviate/usecases/byteops"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
@@ -103,12 +104,32 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 
 	for i, vector := range chunk.Vectors {
 		objects[i] = &weaviategrpc.BatchObject{
-			Uuid:        uuidFromInt(i + chunk.Offset + cfg.Offset),
-			VectorBytes: encodeVector(vector),
-			Collection:  cfg.ClassName,
+			Uuid:       uuidFromInt(i + chunk.Offset + cfg.Offset),
+			Collection: cfg.ClassName,
 		}
 		if cfg.Tenant != "" {
 			objects[i].Tenant = cfg.Tenant
+		}
+		if cfg.MultiVectorDimensions > 0 {
+			if len(vector)%cfg.MultiVectorDimensions != 0 {
+				log.Fatalf("Vector length %d is not a multiple of dimensions %d",
+					len(vector), cfg.MultiVectorDimensions)
+			}
+			rows := len(vector) / cfg.MultiVectorDimensions
+
+			multiVec := make([][]float32, rows)
+			for i := 0; i < rows; i++ {
+				start := i * cfg.MultiVectorDimensions
+				end := start + cfg.MultiVectorDimensions
+				multiVec[i] = vector[start:end]
+			}
+			objects[i].Vectors = []*weaviategrpc.Vectors{{
+				Name:        "multivector",
+				VectorBytes: byteops.Fp32SliceOfSlicesToBytes(multiVec),
+				Type:        weaviategrpc.Vectors_VECTOR_TYPE_MULTI_FP32,
+			}}
+		} else {
+			objects[i].VectorBytes = encodeVector(vector)
 		}
 		if cfg.NamedVector != "" {
 			vectors := make([]*weaviategrpc.Vectors, 1)
@@ -117,8 +138,6 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 				Name:        cfg.NamedVector,
 			}
 			objects[i].Vectors = vectors
-		} else {
-			objects[i].VectorBytes = encodeVector(vector)
 		}
 		if cfg.Filter {
 			nonRefProperties, err := structpb.NewStruct(map[string]interface{}{
@@ -314,8 +333,24 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		}
 		classObj.VectorConfig = vectorConfig
 	} else {
-		classObj.VectorIndexType = cfg.IndexType
-		classObj.VectorIndexConfig = vectorIndexConfig
+		if cfg.MultiVectorDimensions > 0 {
+			classObj.VectorConfig = map[string]models.VectorConfig{
+				"multivector": {
+					Vectorizer: map[string]interface{}{
+						"none": map[string]interface{}{},
+					},
+					VectorIndexConfig: map[string]interface{}{
+						"multivector": map[string]interface{}{
+							"enabled": true,
+						},
+					},
+					VectorIndexType: cfg.IndexType,
+				},
+			}
+		} else {
+			classObj.VectorIndexType = cfg.IndexType
+			classObj.VectorIndexConfig = vectorIndexConfig
+		}
 	}
 
 	err = client.Schema().ClassCreator().WithClass(classObj).Do(context.Background())
@@ -382,6 +417,8 @@ func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 
 	if cfg.NamedVector != "" {
 		vectorIndexConfig = classConfig.VectorConfig[cfg.NamedVector].VectorIndexConfig.(map[string]interface{})
+	} else if cfg.MultiVectorDimensions > 0 {
+		vectorIndexConfig = classConfig.VectorConfig["multivector"].VectorIndexConfig.(map[string]interface{})
 	} else {
 		vectorIndexConfig = classConfig.VectorIndexConfig.(map[string]interface{})
 	}
@@ -401,6 +438,10 @@ func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 		vectorConfig := classConfig.VectorConfig[cfg.NamedVector]
 		vectorConfig.VectorIndexConfig = vectorIndexConfig
 		classConfig.VectorConfig[cfg.NamedVector] = vectorConfig
+	} else if cfg.MultiVectorDimensions > 0 {
+		vectorConfig := classConfig.VectorConfig["multivector"]
+		vectorConfig.VectorIndexConfig = vectorIndexConfig
+		classConfig.VectorConfig["multivector"] = vectorConfig
 	} else {
 		classConfig.VectorIndexConfig = vectorIndexConfig
 	}
@@ -555,7 +596,7 @@ func getHDF5ByteSize(dataset *hdf5.Dataset) uint {
 
 	// log.WithFields(log.Fields{"size": datatype.Size()}).Printf("Parsing HDF5 byte format\n")
 	byteSize := datatype.Size()
-	if byteSize != 4 && byteSize != 8 {
+	if byteSize != 4 && byteSize != 8 && byteSize != 16 {
 		log.Fatalf("Unable to load dataset with byte size %d\n", byteSize)
 	}
 	return byteSize
@@ -654,7 +695,7 @@ func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, cfg *Config, 
 }
 
 // Read an entire dataset from an hdf5 file at once
-func loadHdf5Float32(file *hdf5.File, name string) [][]float32 {
+func loadHdf5Float32(file *hdf5.File, name string, cfg *Config) [][]float32 {
 	dataset, err := file.OpenDataset(name)
 	if err != nil {
 		log.Fatalf("Error opening loadHdf5Float32 dataset: %v", err)
@@ -665,12 +706,18 @@ func loadHdf5Float32(file *hdf5.File, name string) [][]float32 {
 
 	byteSize := getHDF5ByteSize(dataset)
 
-	if len(dims) != 2 {
-		log.Fatal("expected 2 dimensions")
+	var rows uint
+	var dimensions uint
+	if cfg.MultiVectorDimensions != 0 {
+		rows = dims[0]
+		dimensions = uint(cfg.MultiVectorDimensions)
+	} else {
+		if len(dims) != 2 {
+			log.Fatal("expected 2 dimensions")
+		}
+		rows = dims[0]
+		dimensions = dims[1]
 	}
-
-	rows := dims[0]
-	dimensions := dims[1]
 
 	var chunkData [][]float32
 
@@ -780,7 +827,13 @@ func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint, upda
 	defer dataset.Close()
 	dataspace := dataset.Space()
 	extent, _, _ := dataspace.SimpleExtentDims()
-	dimensions := extent[1]
+	var dimensions uint
+
+	if cfg.MultiVectorDimensions == 0 {
+		dimensions = extent[1]
+	} else {
+		dimensions = uint(cfg.MultiVectorDimensions)
+	}
 
 	filters := []int{}
 	if cfg.Filter {
@@ -790,7 +843,11 @@ func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint, upda
 	chunks := make(chan Batch, 10)
 
 	go func() {
-		loadHdf5Streaming(dataset, chunks, cfg, offset, maxRows, filters)
+		if cfg.MultiVectorDimensions > 0 {
+			loadHdf5StreamingColbert(dataset, chunks, cfg, offset, maxRows, filters)
+		} else {
+			loadHdf5Streaming(dataset, chunks, cfg, offset, maxRows, filters)
+		}
 		close(chunks)
 	}()
 
@@ -1046,8 +1103,18 @@ var annBenchmarkCommand = &cobra.Command{
 		log.WithFields(log.Fields{"index": cfg.IndexType, "efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
 			"distance": cfg.DistanceMetric, "dataset": cfg.BenchmarkFile}).Info("Benchmark configuration")
 
+		if cfg.SkipQuery {
+			return
+		}
+
 		neighbors := loadHdf5Neighbors(file, "neighbors")
-		testData := loadHdf5Float32(file, "test")
+		var testData [][]float32
+		if cfg.MultiVectorDimensions > 0 {
+			testData = loadHdf5Colbert(file, "test", cfg.MultiVectorDimensions)
+		} else {
+			testData = loadHdf5Float32(file, "test", &cfg)
+		}
+
 		testFilters := make([]int, 0)
 		if cfg.Filter {
 			testFilters = loadHdf5Categories(file, "test_categories")
@@ -1130,6 +1197,10 @@ func initAnnBenchmark() {
 		"pqRatio", 4, "Set PQ segments = dimensions / ratio (must divide evenly default 4)")
 	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.PQSegments,
 		"pqSegments", 256, "Set PQ segments")
+	annBenchmarkCommand.PersistentFlags().IntVarP(&globalConfig.MultiVectorDimensions,
+		"multiVector", "m", 0, "Enable multi-dimensional vectors with the specified number of dimensions")
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.SkipQuery,
+		"skipQuery", false, "Only import data and skip query tests")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.SkipAsyncReady,
 		"skipAsyncReady", false, "Skip async ready (default false)")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.SkipMemoryStats,
