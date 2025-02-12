@@ -213,9 +213,8 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 	}
 
 	var classObj = &models.Class{
-		Class:           cfg.ClassName,
-		Description:     fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
-		VectorIndexType: cfg.IndexType,
+		Class:       cfg.ClassName,
+		Description: fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
 		MultiTenancyConfig: &models.MultiTenancyConfig{
 			Enabled: multiTenancyEnabled,
 		},
