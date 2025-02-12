@@ -6,5 +6,7 @@ RUN CGO_ENABLED=1 go build -o benchmarker .
 
 FROM alpine:latest
 RUN apk add --no-cache hdf5-dev python3 bash
+WORKDIR /app
 COPY --from=builder /app/benchmarker /app/benchmarker
+COPY --from=builder /app/scripts/ /app/scripts/
 CMD ["/app/benchmarker"]
