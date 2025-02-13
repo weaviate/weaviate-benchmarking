@@ -1,5 +1,5 @@
 FROM golang:1.23-alpine AS builder
-RUN apk add --no-cache hdf5-dev gcc libc-dev python3 bash g++ musl-dev
+RUN apk add --no-cache build-base hdf5-dev gcc libc-dev python3 bash g++ musl-dev
 WORKDIR /app
 COPY . .
 RUN CGO_ENABLED=1 go build -o benchmarker .
