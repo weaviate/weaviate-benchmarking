@@ -2,12 +2,12 @@ FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS builder
 WORKDIR /app
 
 # Install necessary dependencies
-RUN apk add --no-cache musl-dev gcc g++ make glibc-dev gcc-aarch64-linux-gnu
+RUN apk add --no-cache musl-dev gcc g++ make glibc-dev
 
 # Conditional installation based on TARGETARCH
-RUN if [ "$TARGETARCH" = "arm64" ]; then \
-        export CC=aarch64-linux-gnu-gcc;\
-    fi
+# RUN if [ "$TARGETARCH" = "arm64" ]; then \
+#         apk gcc-aarch64-linux-gnu add --no-cache export CC=aarch64-linux-gnu-gcc;\
+#     fi
 
 # Set environment variables for CGO
 ARG TARGETOS TARGETARCH
