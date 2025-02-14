@@ -12,7 +12,7 @@ function main() {
 }
 
 function init() {
-  docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+  docker run --rm --privileged tonistiigi/binfmt --install all
   docker buildx create --use
   docker buildx inspect --bootstrap
 }
