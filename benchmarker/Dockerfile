@@ -6,12 +6,10 @@ RUN apk add --no-cache hdf5-dev musl-dev gcc g++ make
 # RUN apk add --no-cache build-base libc-dev python3 bash
 
 # Set environment variables for CGO
-ARG TARGETARCH
-ENV CGO_ENABLED=1
-ENV CC=gcc
+ARG TARGETOS TARGETARCH
 
 COPY . .
-RUN GOOS=linux GOARCH=$TARGETARCH go build -o benchmarker .
+RUN GO_ENABLED=1 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -o benchmarker .
 
 FROM --platform=$TARGETPLATFORM golang:1.23-alpine
 RUN apk add --no-cache hdf5-dev python3 bash
