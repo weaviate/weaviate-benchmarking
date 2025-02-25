@@ -1037,6 +1037,13 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 			}
 		}
 
+		// Push metrics to InfluxDB if enabled
+		if cfg.InfluxDBConfig.Enabled {
+			if err := PushMetricsToInfluxDB(cfg, &benchResult); err != nil {
+				log.WithError(err).Warn("Failed to push metrics to InfluxDB")
+			}
+		}
+
 	}
 
 	data, err := json.MarshalIndent(benchmarkResultsMap, "", "    ")
@@ -1274,6 +1281,18 @@ func initAnnBenchmark() {
 		"prometheusPushURL", "", "URL of the Prometheus pushgateway (e.g., http://localhost:9091)")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.PrometheusConfig.JobName,
 		"prometheusJobName", "weaviate_benchmark", "Job name for Prometheus metrics (default weaviate_benchmark)")
+
+	// Add InfluxDB flags
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.InfluxDBConfig.Enabled,
+		"influxdbEnabled", false, "Enable pushing metrics to InfluxDB (default false)")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.InfluxDBConfig.URL,
+		"influxdbURL", "", "URL of the InfluxDB instance (e.g., http://localhost:8086)")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.InfluxDBConfig.Token,
+		"influxdbToken", "", "Token for authenticating with InfluxDB")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.InfluxDBConfig.Org,
+		"influxdbOrg", "", "Organization name in InfluxDB")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.InfluxDBConfig.Bucket,
+		"influxdbBucket", "", "Bucket name in InfluxDB")
 }
 
 func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors, filters []int) Results {

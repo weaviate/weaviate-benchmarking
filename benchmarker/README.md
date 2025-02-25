@@ -222,7 +222,7 @@ Additionally, any custom labels specified with the `--labels` flag will be inclu
    docker run -d -p 9091:9091 prom/pushgateway
    ```
 
-2. Configure Prometheus to scrape the Pushgateway by adding this to your `prometheus.yml`:
+2. Configure Prometheus to scrape the Pushgateway by adding this to `prometheus.yml`:
    ```yaml
    scrape_configs:
      - job_name: 'pushgateway'
@@ -232,4 +232,41 @@ Additionally, any custom labels specified with the `--labels` flag will be inclu
    ```
 
 3. Install and run Grafana, then create dashboards to visualize the benchmark metrics.
+
+### InfluxDB Integration
+
+The benchmarker can also push metrics to an InfluxDB instance, allowing you to store and analyze benchmark results over time.
+
+#### Configuration
+
+To enable InfluxDB integration, use the following flags:
+
+```
+--influxdbEnabled            Enable pushing metrics to InfluxDB (default false)
+--influxdbURL string         URL of the InfluxDB instance (e.g., http://localhost:8086)
+--influxdbToken string       Token for authenticating with InfluxDB
+--influxdbOrg string         Organization name in InfluxDB
+--influxdbBucket string      Bucket name in InfluxDB
+```
+
+#### Example
+
+```
+benchmarker ann-benchmark \
+  -v ~/datasets/dbpedia-100k-openai-ada002.hdf5 \
+  -d l2-squared \
+  --influxdbEnabled \
+  --influxdbURL http://localhost:8086 \
+  --influxdbToken my-token \
+  --influxdbOrg my-org \
+  --influxdbBucket my-bucket
+```
+
+#### Available Metrics
+
+The same metrics as listed in the Prometheus section are pushed to InfluxDB.
+
+#### Labels
+
+All metrics include the same labels as listed in the Prometheus section.
 

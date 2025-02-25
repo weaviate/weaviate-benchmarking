@@ -68,6 +68,7 @@ type Config struct {
 	FilterStrategy          string
 	AsyncReplicationEnabled bool
 	PrometheusConfig        PrometheusConfig
+	InfluxDBConfig          InfluxDBConfig
 }
 
 func (c *Config) Validate() error {
