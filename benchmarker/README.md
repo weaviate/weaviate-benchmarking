@@ -160,3 +160,76 @@ benchmarker \
   --limit 10
 ```
 
+### Prometheus Integration
+
+The benchmarker can push metrics to a Prometheus Pushgateway, which allows you to monitor and visualize benchmark results in real-time.
+
+#### Configuration
+
+To enable Prometheus integration, use the following flags:
+
+```
+--prometheusEnabled            Enable pushing metrics to Prometheus (default false)
+--prometheusPushURL string     URL of the Prometheus pushgateway (e.g., http://localhost:9091)
+--prometheusJobName string     Job name for Prometheus metrics (default "weaviate_benchmark")
+```
+
+#### Example
+
+```
+benchmarker ann-benchmark \
+  -v ~/datasets/dbpedia-100k-openai-ada002.hdf5 \
+  -d l2-squared \
+  --prometheusEnabled \
+  --prometheusPushURL http://localhost:9091 \
+  --prometheusJobName weaviate_benchmark_dbpedia
+```
+
+#### Available Metrics
+
+The following metrics are pushed to Prometheus:
+
+- `weaviate_benchmark_mean_latency_seconds`: Mean latency of benchmark queries in seconds
+- `weaviate_benchmark_p99_latency_seconds`: P99 latency of benchmark queries in seconds
+- `weaviate_benchmark_queries_per_second`: Queries per second during benchmark
+- `weaviate_benchmark_recall`: Recall of benchmark queries
+- `weaviate_benchmark_import_time_seconds`: Import time in seconds
+- `weaviate_benchmark_heap_alloc_bytes`: Heap allocation in bytes
+- `weaviate_benchmark_heap_inuse_bytes`: Heap in use in bytes
+- `weaviate_benchmark_heap_sys_bytes`: Heap system in bytes
+- `weaviate_benchmark_ef_construction`: EF construction parameter
+- `weaviate_benchmark_max_connections`: Max connections parameter
+- `weaviate_benchmark_shards`: Number of shards
+- `weaviate_benchmark_parallelization`: Parallelization level
+- `weaviate_benchmark_limit`: Query limit
+
+#### Labels
+
+All metrics include the following labels:
+
+- `api`: The API used (grpc)
+- `ef`: The ef parameter value
+- `dataset`: The dataset file name
+- `run_id`: A unique ID for the benchmark run
+- `timestamp`: The timestamp of the benchmark run
+
+Additionally, any custom labels specified with the `--labels` flag will be included.
+
+#### Setting up Prometheus and Grafana
+
+1. Install and run Prometheus Pushgateway:
+   ```
+   docker run -d -p 9091:9091 prom/pushgateway
+   ```
+
+2. Configure Prometheus to scrape the Pushgateway by adding this to your `prometheus.yml`:
+   ```yaml
+   scrape_configs:
+     - job_name: 'pushgateway'
+       honor_labels: true
+       static_configs:
+         - targets: ['localhost:9091']
+   ```
+
+3. Install and run Grafana, then create dashboards to visualize the benchmark metrics.
+

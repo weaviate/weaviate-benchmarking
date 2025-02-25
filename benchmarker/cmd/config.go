@@ -67,6 +67,7 @@ type Config struct {
 	FlatSearchCutoff        int
 	FilterStrategy          string
 	AsyncReplicationEnabled bool
+	PrometheusConfig        PrometheusConfig
 }
 
 func (c *Config) Validate() error {

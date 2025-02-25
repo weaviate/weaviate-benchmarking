@@ -1030,6 +1030,13 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 
 		benchmarkResultsMap = append(benchmarkResultsMap, resultMap)
 
+		// Push metrics to Prometheus if enabled
+		if cfg.PrometheusConfig.Enabled {
+			if err := PushMetricsToPrometheus(cfg, &benchResult); err != nil {
+				log.WithError(err).Warn("Failed to push metrics to Prometheus")
+			}
+		}
+
 	}
 
 	data, err := json.MarshalIndent(benchmarkResultsMap, "", "    ")
@@ -1259,6 +1266,14 @@ func initAnnBenchmark() {
 		"replicationFactor", 1, "Replication factor (default 1)")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.AsyncReplicationEnabled,
 		"asyncReplicationEnabled", false, "Enable asynchronous replication (default false)")
+
+	// Add Prometheus flags
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.PrometheusConfig.Enabled,
+		"prometheusEnabled", false, "Enable pushing metrics to Prometheus (default false)")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.PrometheusConfig.PushURL,
+		"prometheusPushURL", "", "URL of the Prometheus pushgateway (e.g., http://localhost:9091)")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.PrometheusConfig.JobName,
+		"prometheusJobName", "weaviate_benchmark", "Job name for Prometheus metrics (default weaviate_benchmark)")
 }
 
 func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors, filters []int) Results {
