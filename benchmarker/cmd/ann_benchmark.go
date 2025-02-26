@@ -96,7 +96,6 @@ func intFromUUID(uuidStr string) int {
 
 // Writes a single batch of vectors to Weaviate using gRPC
 func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) {
-
 	objects := make([]*weaviategrpc.BatchObject, len(chunk.Vectors))
 
 	for i, vector := range chunk.Vectors {
@@ -147,7 +146,6 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 			log.Printf("Successfully processed object at index %d", result.Index)
 		}
 	}
-
 }
 
 func createClient(cfg *Config) *weaviate.Client {
@@ -172,7 +170,6 @@ func createClient(cfg *Config) *weaviate.Client {
 
 // Re/create Weaviate schema
 func createSchema(cfg *Config, client *weaviate.Client) {
-
 	err := client.Schema().ClassDeleter().WithClassName(cfg.ClassName).Do(context.Background())
 	if err != nil {
 		log.Fatalf("Error deleting class: %v", err)
@@ -183,7 +180,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		multiTenancyEnabled = true
 	}
 
-	var classObj = &models.Class{
+	classObj := &models.Class{
 		Class:           cfg.ClassName,
 		Description:     fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
 		VectorIndexType: cfg.IndexType,
@@ -267,9 +264,14 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 
 	} else if cfg.IndexType == "cuvs" {
 		vectorIndexConfig = map[string]interface{}{
-			// "distance": cfg.DistanceMetric,
+			"distance":                cfg.DistanceMetric,
+			"graphDegree":             cfg.CuvsGraphDegree,
+			"intermediateGraphDegree": cfg.CuvsIntermediateGraphDegree,
+			"buildAlgo":               cfg.CuvsBuildAlgo,
+			"searchAlgo":              cfg.CuvsSearchAlgo,
+			"itopKSize":               cfg.CuvsItopKSize,
+			"searchWidth":             cfg.CuvsSearchWidth,
 		}
-
 	} else {
 		log.Fatalf("Unknown index type %s", cfg.IndexType)
 	}
@@ -337,7 +339,6 @@ func addTenantIfNeeded(cfg *Config, client *weaviate.Client) {
 
 // Update ef parameter on the Weaviate schema
 func updateEf(ef int, cfg *Config, client *weaviate.Client) {
-
 	classConfig, err := client.Schema().ClassGetter().WithClassName(cfg.ClassName).Do(context.Background())
 	if err != nil {
 		panic(err)
@@ -359,15 +360,12 @@ func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 	classConfig.VectorIndexConfig = vectorIndexConfig
 
 	err = client.Schema().ClassUpdater().WithClass(classConfig).Do(context.Background())
-
 	if err != nil {
 		panic(err)
 	}
-
 }
 
 func waitReady(cfg *Config, client *weaviate.Client, indexStart time.Time, maxDuration time.Duration, minQueueSize int64) time.Time {
-
 	start := time.Now()
 	current := time.Now()
 
@@ -430,7 +428,6 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 	classConfig.VectorIndexConfig = vectorIndexConfig
 
 	err = client.Schema().ClassUpdater().WithClass(classConfig).Do(context.Background())
-
 	if err != nil {
 		panic(err)
 	}
@@ -476,7 +473,6 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 	case CompressionTypeSQ:
 		log.Printf("SQ Completed in %v\n", endTime.Sub(start))
 	}
-
 }
 
 func convert1DChunk[D float32 | float64](input []D, dimensions int, batchRows int) [][]float32 {
@@ -491,7 +487,6 @@ func convert1DChunk[D float32 | float64](input []D, dimensions int, batchRows in
 }
 
 func getHDF5ByteSize(dataset *hdf5.Dataset) uint {
-
 	datatype, err := dataset.Datatype()
 	if err != nil {
 		log.Fatalf("Unabled to read datatype\n")
@@ -787,7 +782,6 @@ func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint, upda
 // Load an hdf5 file in the format of ann-benchmarks.com
 // returns total time duration for load
 func loadANNBenchmarksFile(file *hdf5.File, cfg *Config, client *weaviate.Client, maxRows uint) time.Duration {
-
 	addTenantIfNeeded(cfg, client)
 	startTime := time.Now()
 
@@ -816,7 +810,6 @@ func loadANNBenchmarksFile(file *hdf5.File, cfg *Config, client *weaviate.Client
 
 // Load a dataset multiple time with different tenants
 func loadHdf5MultiTenant(file *hdf5.File, cfg *Config, client *weaviate.Client) time.Duration {
-
 	startTime := time.Now()
 
 	for i := 0; i < cfg.NumTenants; i++ {
@@ -843,7 +836,6 @@ func parseEfValues(s string) ([]int, error) {
 }
 
 func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, neighbors [][]int, filters []int) {
-
 	runID := strconv.FormatInt(time.Now().Unix(), 10)
 
 	efCandidates, err := parseEfValues(cfg.EfArray)
@@ -872,9 +864,11 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 			result = benchmarkANN(*cfg, testData, neighbors, filters)
 		}
 
-		log.WithFields(log.Fields{"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall,
+		log.WithFields(log.Fields{
+			"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall,
 			"parallel": cfg.Parallel, "limit": cfg.Limit,
-			"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed}).Info("Benchmark result")
+			"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed,
+		}).Info("Benchmark result")
 
 		dataset := filepath.Base(cfg.BenchmarkFile)
 
@@ -924,9 +918,9 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 		log.Fatalf("Error marshaling benchmark results: %v", err)
 	}
 
-	os.Mkdir("./results", 0755)
+	os.Mkdir("./results", 0o755)
 
-	err = os.WriteFile(fmt.Sprintf("./results/%s.json", runID), data, 0644)
+	err = os.WriteFile(fmt.Sprintf("./results/%s.json", runID), data, 0o644)
 	if err != nil {
 		log.Fatalf("Error writing benchmark results to file: %v", err)
 	}
@@ -937,7 +931,6 @@ var annBenchmarkCommand = &cobra.Command{
 	Short: "Benchmark ANN Benchmark style hdf5 files",
 	Long:  `Run a gRPC benchmark on an hdf5 file in the format of ann-benchmarks.com`,
 	Run: func(cmd *cobra.Command, args []string) {
-
 		cfg := globalConfig
 		cfg.Mode = "ann-benchmark"
 
@@ -963,8 +956,10 @@ var annBenchmarkCommand = &cobra.Command{
 				createSchema(&cfg, client)
 			}
 
-			log.WithFields(log.Fields{"index": cfg.IndexType, "efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
-				"distance": cfg.DistanceMetric, "dataset": cfg.BenchmarkFile}).Info("Starting import")
+			log.WithFields(log.Fields{
+				"index": cfg.IndexType, "efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
+				"distance": cfg.DistanceMetric, "dataset": cfg.BenchmarkFile,
+			}).Info("Starting import")
 
 			if cfg.NumTenants > 0 {
 				importTime = loadHdf5MultiTenant(file, &cfg, client)
@@ -977,8 +972,10 @@ var annBenchmarkCommand = &cobra.Command{
 			time.Sleep(sleepDuration)
 		}
 
-		log.WithFields(log.Fields{"index": cfg.IndexType, "efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
-			"distance": cfg.DistanceMetric, "dataset": cfg.BenchmarkFile}).Info("Benchmark configuration")
+		log.WithFields(log.Fields{
+			"index": cfg.IndexType, "efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
+			"distance": cfg.DistanceMetric, "dataset": cfg.BenchmarkFile,
+		}).Info("Benchmark configuration")
 
 		neighbors := loadHdf5Neighbors(file, "neighbors")
 		testData := loadHdf5Float32(file, "test")
@@ -1021,7 +1018,6 @@ var annBenchmarkCommand = &cobra.Command{
 			}
 
 		}
-
 	},
 }
 
@@ -1118,6 +1114,18 @@ func initAnnBenchmark() {
 		"filteredSearch", false, "Use an ACORN like search")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.FilteredSearchCache,
 		"filteredSearchCache", false, "Cache two hops expansion for ACORN like search")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.CuvsGraphDegree,
+		"cuvsGraphDegree", 32, "CUVS graph degree (default 64)")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.CuvsIntermediateGraphDegree,
+		"cuvsIntermediateGraphDegree", 32, "CUVS intermediate graph degree (default 32)")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.CuvsBuildAlgo,
+		"cuvsBuildAlgo", "nn_descent", "CUVS build algorithm (default IVF_PQ)")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.CuvsSearchAlgo,
+		"cuvsSearchAlgo", "multi_cta", "CUVS search algorithm (default HNSW)")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.CuvsItopKSize,
+		"cuvsItopKSize", 256, "CUVS itopK size (default 64)")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.CuvsSearchWidth,
+		"cuvsSearchWidth", 1, "CUVS search width (default 32)")
 }
 
 func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors, filters []int) Results {
@@ -1140,7 +1148,6 @@ func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors, filters []in
 			Query:     nearVectorQueryGrpc(cfg.ClassName, queries[i], cfg.Limit, tenant, filter),
 			Neighbors: neighbors[i],
 		}
-
 	})
 }
 
