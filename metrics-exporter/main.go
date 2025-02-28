@@ -160,7 +160,7 @@ func findLatestJSONFile(dirPath string) (string, error) {
 	}
 
 	if latestFile == "" {
-		return "", fmt.Errorf("no JSON files found in directory")
+		return "", fmt.Errorf("awaiting results")
 	}
 
 	return latestFile, nil
@@ -175,7 +175,7 @@ func pollDirectory(dirPath string, exporter *Exporter) {
 	for range ticker.C {
 		latestFile, err := findLatestJSONFile(dirPath)
 		if err != nil {
-			log.Printf("Error finding latest JSON file: %v", err)
+			log.Printf("Unable to public metrics: %v", err)
 			continue
 		}
 
