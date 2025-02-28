@@ -14,6 +14,17 @@ services:
     volumes:
       - $PWD/datasets:/app/datasets
       - $PWD/results:/app/results
+  metrics-exporter:
+    build:
+      context: ./metrics-exporter
+      dockerfile: Dockerfile
+    ports:
+      - 2120:2120
+    volumes:
+      - $PWD/results:/data
+    depends_on:
+      - benchmarker
+    restart: on-failure
   weaviate:
     command:
     - --host
@@ -22,7 +33,7 @@ services:
     - '8080'
     - --scheme
     - http
-    image: docker.io/semitechnologies/weaviate:1.27.1
+    image: docker.io/semitechnologies/weaviate:1.29.0
     ports:
       - 8080:8080
       - 50051:50051
