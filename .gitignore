@@ -9,3 +9,4 @@ output.png
 .ipynb_checkpoints
 *.mdx
 *.png
+config.alloy

@@ -1,0 +1,24 @@
+logging {
+	level  = "debug"
+	format = "logfmt"
+}
+
+prometheus.scrape "default" {
+  targets    = [
+    {
+      __address__ = "weaviate-metrics-exporter:2120",
+    },
+  ]
+  forward_to = [prometheus.remote_write.grafanacloud.receiver]
+}
+
+prometheus.remote_write "grafanacloud" {
+  endpoint {
+    url = "https://prometheus-us-central1.grafana.net/api/prom/push"
+
+    basic_auth {
+      username = "<USERNAME>"
+      password = "<TOKEN>"
+    }
+  }
+}
