@@ -325,17 +325,42 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		classObj.VectorConfig = vectorConfig
 	} else {
 		if cfg.MultiVectorDimensions > 0 {
+			vectorIndexConfig = map[string]interface{}{}
+			if cfg.PQ == "auto" {
+				vectorIndexConfig["pq"] = map[string]interface{}{
+					"enabled":       true,
+					"rescoreLimit":  cfg.RescoreLimit,
+					"segments":      cfg.PQSegments,
+					"trainingLimit": cfg.TrainingLimit,
+				}
+			} else if cfg.BQ {
+				vectorIndexConfig["bq"] = map[string]interface{}{
+					"enabled":      true,
+					"rescoreLimit": cfg.RescoreLimit,
+					"cache":        true,
+				}
+			} else if cfg.SQ == "auto" {
+				vectorIndexConfig = map[string]interface{}{
+					"distance":               cfg.DistanceMetric,
+					"efConstruction":         float64(cfg.EfConstruction),
+					"maxConnections":         float64(cfg.MaxConnections),
+					"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+					"sq": map[string]interface{}{
+						"enabled":       true,
+						"trainingLimit": cfg.TrainingLimit,
+					},
+				}
+			}
+			vectorIndexConfig["multivector"] = map[string]interface{}{
+				"enabled": true,
+			}
 			classObj.VectorConfig = map[string]models.VectorConfig{
 				"multivector": {
 					Vectorizer: map[string]interface{}{
 						"none": map[string]interface{}{},
 					},
-					VectorIndexConfig: map[string]interface{}{
-						"multivector": map[string]interface{}{
-							"enabled": true,
-						},
-					},
-					VectorIndexType: cfg.IndexType,
+					VectorIndexConfig: vectorIndexConfig,
+					VectorIndexType:   cfg.IndexType,
 				},
 			}
 		} else {
