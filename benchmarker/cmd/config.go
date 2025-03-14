@@ -67,6 +67,7 @@ type Config struct {
 	CuvsSearchAlgo              string
 	CuvsItopKSize               int
 	CuvsSearchWidth             int
+	CuvsQueryLocation           string
 }
 
 func (c *Config) Validate() error {

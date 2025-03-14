@@ -271,6 +271,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 			"searchAlgo":              cfg.CuvsSearchAlgo,
 			"itopKSize":               cfg.CuvsItopKSize,
 			"searchWidth":             cfg.CuvsSearchWidth,
+			"indexLocation":           "gpu",
 		}
 	} else {
 		log.Fatalf("Unknown index type %s", cfg.IndexType)
@@ -355,7 +356,8 @@ func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 		hnswConfig := vectorIndexConfig["hnsw"].(map[string]interface{})
 		hnswConfig["ef"] = ef
 	case "cuvs":
-
+		cuvsConfig := vectorIndexConfig["cuvs"].(map[string]interface{})
+		cuvsConfig["indexLocation"] = cfg.CuvsQueryLocation
 	}
 	classConfig.VectorIndexConfig = vectorIndexConfig
 
@@ -1126,6 +1128,8 @@ func initAnnBenchmark() {
 		"cuvsItopKSize", 256, "CUVS itopK size (default 64)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.CuvsSearchWidth,
 		"cuvsSearchWidth", 1, "CUVS search width (default 32)")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.CuvsQueryLocation,
+		"cuvsQueryLocation", "gpu", "CUVS query location (default gpu)")
 }
 
 func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors, filters []int) Results {
