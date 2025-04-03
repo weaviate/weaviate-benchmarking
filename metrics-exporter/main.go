@@ -36,6 +36,7 @@ type MetricData struct {
 	HeapAllocBytes float64 `json:"heap_alloc_bytes"`
 	HeapInuseBytes float64 `json:"heap_inuse_bytes"`
 	HeapSysBytes   float64 `json:"heap_sys_bytes"`
+	TestID         string  `json:"test_id"`
 }
 
 type Exporter struct {
@@ -49,7 +50,7 @@ func NewExporter() *Exporter {
 }
 
 func (e *Exporter) initializeMetrics() {
-	labels := []string{"branch", "dataset", "ef_construction", "max_connections", "limit", "ef", "shards"}
+	labels := []string{"branch", "dataset", "ef_construction", "max_connections", "limit", "ef", "shards", "test_id"}
 
 	metricNames := []struct {
 		name string
@@ -63,6 +64,7 @@ func (e *Exporter) initializeMetrics() {
 		{"heap_sys_bytes", "Heap sys bytes"},
 		{"heap_inuse_bytes", "Heap inuse bytes"},
 		{"import_time", "Import time"},
+		{"test_id", "Test ID"},
 	}
 
 	for _, metric := range metricNames {
@@ -98,6 +100,10 @@ func (e *Exporter) processJSONFile(filepath string) error {
 			data.Branch = "main"
 		}
 
+		if data.TestID == "" {
+			data.TestID = "NA"
+		}
+
 		labels := prometheus.Labels{
 			"branch":          data.Branch,
 			"dataset":         data.DatasetFile,
@@ -106,6 +112,7 @@ func (e *Exporter) processJSONFile(filepath string) error {
 			"limit":           fmt.Sprintf("%d", data.Limit),
 			"ef":              fmt.Sprintf("%d", data.EF),
 			"shards":          fmt.Sprintf("%d", data.Shards),
+			"test_id":         data.TestID,
 		}
 
 		if metric := e.metrics["latency_mean"]; metric != nil {
