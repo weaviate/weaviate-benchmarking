@@ -351,21 +351,14 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 					},
 				}
 			}
-			vectorIndexConfig["multivector"] = map[string]interface{}{
-				"enabled": true,
-			}
 			cfg.MuveraEnabled = true
 			cfg.MuveraKSim = 8
 			cfg.MuveraDProjections = 8
 			cfg.MuveraRepetition = 20
-			if cfg.MuveraEnabled {
-				vectorIndexConfig["multivector"].(map[string]interface{})["muveraConfig"] = map[string]interface{}{
-					"enabled":      true,
-					"ksim":         cfg.MuveraKSim,
-					"dprojections": cfg.MuveraDProjections,
-					"repetition":   cfg.MuveraRepetition,
-				}
+			vectorIndexConfig["multivector"] = map[string]interface{}{
+				"enabled": true,
 			}
+
 			classObj.VectorConfig = map[string]models.VectorConfig{
 				"multivector": {
 					Vectorizer: map[string]interface{}{
@@ -374,6 +367,12 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 					VectorIndexConfig: map[string]interface{}{
 						"multivector": map[string]interface{}{
 							"enabled": true,
+							"muveraConfig": map[string]interface{}{
+								"enabled":      cfg.MuveraEnabled,
+								"ksim":         cfg.MuveraKSim,
+								"dprojections": cfg.MuveraDProjections,
+								"repetition":   cfg.MuveraRepetition,
+							},
 						},
 					},
 					VectorIndexType: cfg.IndexType,
