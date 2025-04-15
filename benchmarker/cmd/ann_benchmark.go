@@ -325,6 +325,47 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		classObj.VectorConfig = vectorConfig
 	} else {
 		if cfg.MultiVectorDimensions > 0 {
+			vectorIndexConfig = map[string]interface{}{}
+			if cfg.PQ == "auto" {
+				vectorIndexConfig["pq"] = map[string]interface{}{
+					"enabled":       true,
+					"rescoreLimit":  cfg.RescoreLimit,
+					"segments":      cfg.PQSegments,
+					"trainingLimit": cfg.TrainingLimit,
+				}
+			} else if cfg.BQ {
+				vectorIndexConfig["bq"] = map[string]interface{}{
+					"enabled":      true,
+					"rescoreLimit": cfg.RescoreLimit,
+					"cache":        true,
+				}
+			} else if cfg.SQ == "auto" {
+				vectorIndexConfig = map[string]interface{}{
+					"distance":               cfg.DistanceMetric,
+					"efConstruction":         float64(cfg.EfConstruction),
+					"maxConnections":         float64(cfg.MaxConnections),
+					"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+					"sq": map[string]interface{}{
+						"enabled":       true,
+						"trainingLimit": cfg.TrainingLimit,
+					},
+				}
+			}
+			vectorIndexConfig["multivector"] = map[string]interface{}{
+				"enabled": true,
+			}
+			cfg.MuveraEnabled = true
+			cfg.MuveraKSim = 8
+			cfg.MuveraDProjections = 8
+			cfg.MuveraRepetition = 20
+			if cfg.MuveraEnabled {
+				vectorIndexConfig["multivector"].(map[string]interface{})["muveraConfig"] = map[string]interface{}{
+					"enabled":      true,
+					"ksim":         cfg.MuveraKSim,
+					"dprojections": cfg.MuveraDProjections,
+					"repetition":   cfg.MuveraRepetition,
+				}
+			}
 			classObj.VectorConfig = map[string]models.VectorConfig{
 				"multivector": {
 					Vectorizer: map[string]interface{}{
