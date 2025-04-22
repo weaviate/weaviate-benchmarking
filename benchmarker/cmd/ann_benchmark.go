@@ -351,10 +351,6 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 					},
 				}
 			}
-			cfg.MuveraEnabled = true
-			cfg.MuveraKSim = 8
-			cfg.MuveraDProjections = 8
-			cfg.MuveraRepetition = 20
 			vectorIndexConfig["multivector"] = map[string]interface{}{
 				"enabled": true,
 			}
@@ -1231,6 +1227,14 @@ func initAnnBenchmark() {
 		"pqSegments", 256, "Set PQ segments")
 	annBenchmarkCommand.PersistentFlags().IntVarP(&globalConfig.MultiVectorDimensions,
 		"multiVector", "m", 0, "Enable multi-dimensional vectors with the specified number of dimensions")
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.MuveraEnabled,
+		"muveraEnabled", false, "Enable muvera")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MuveraKSim,
+		"muveraKSim", 3, "Set muvera ksim parameter")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MuveraDProjections,
+		"muveraDProjections", 8, "Set muvera dprojections parameter")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MuveraRepetition,
+		"muveraRepetition", 20, "Set muvera repetition parameter")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.SkipQuery,
 		"skipQuery", false, "Only import data and skip query tests")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.SkipAsyncReady,
