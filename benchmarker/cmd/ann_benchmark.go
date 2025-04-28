@@ -519,14 +519,26 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 	}
 
 	var segments uint
-	vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
+	var vectorIndexConfig map[string]interface{}
+
+	if cfg.MultiVectorDimensions > 0 {
+		vectorIndexConfig = classConfig.VectorConfig["multivector"].VectorIndexConfig.(map[string]interface{})
+	} else {
+		fmt.Println("Using default")
+		vectorIndexConfig = classConfig.VectorIndexConfig.(map[string]interface{})
+	}
 
 	switch compressionType {
 	case CompressionTypePQ:
 		if dimensions%cfg.PQRatio != 0 {
 			log.Fatalf("PQ ratio of %d and dimensions of %d incompatible", cfg.PQRatio, dimensions)
 		}
-		segments = dimensions / cfg.PQRatio
+		if !cfg.MuveraEnabled {
+			segments = dimensions / cfg.PQRatio
+		} else {
+			segments = uint(math.Pow(2, float64(cfg.MuveraKSim))*float64(cfg.MuveraDProjections)*float64(cfg.MuveraRepetition)) / cfg.PQRatio
+		}
+
 		vectorIndexConfig["pq"] = map[string]interface{}{
 			"enabled":       true,
 			"segments":      segments,
@@ -546,7 +558,13 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 		}
 	}
 
-	classConfig.VectorIndexConfig = vectorIndexConfig
+	if cfg.MultiVectorDimensions > 0 {
+		vectorConfig := classConfig.VectorConfig["multivector"]
+		vectorConfig.VectorIndexConfig = vectorIndexConfig
+		classConfig.VectorConfig["multivector"] = vectorConfig
+	} else {
+		classConfig.VectorIndexConfig = vectorIndexConfig
+	}
 
 	err = client.Schema().ClassUpdater().WithClass(classConfig).Do(context.Background())
 	if err != nil {
