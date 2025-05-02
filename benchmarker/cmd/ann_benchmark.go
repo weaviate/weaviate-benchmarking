@@ -353,7 +353,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 			}
 			vectorIndexConfig["multivector"] = map[string]interface{}{
 				"enabled": true,
-				"muveraConfig": map[string]interface{}{
+				"muvera": map[string]interface{}{
 					"enabled":      cfg.MuveraEnabled,
 					"ksim":         cfg.MuveraKSim,
 					"dprojections": cfg.MuveraDProjections,
