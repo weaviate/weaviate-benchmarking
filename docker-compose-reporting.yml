@@ -1,0 +1,26 @@
+---
+version: '3.4'
+services:
+  metrics-exporter:
+    build:
+      context: ./metrics-exporter
+      dockerfile: Dockerfile
+    container_name: weaviate-metrics-exporter
+    ports:
+      - 2120:2120
+    volumes:
+      - $PWD/results:/data
+    restart: on-failure
+  grafana-alloy:
+    image: grafana/alloy:latest
+    container_name: grafana-alloy
+    restart: unless-stopped
+    volumes:
+      - $PWD/grafana-alloy/config.alloy:/etc/alloy/config.alloy
+    ports:
+      - 12345:12345
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
