@@ -10,6 +10,8 @@ on:
       - README.md
       - LICENSE
   pull_request:
+  workflow_dispatch:
+
 
 jobs:
   Push-Docker:
