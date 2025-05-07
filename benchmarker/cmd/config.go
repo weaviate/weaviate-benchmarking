@@ -22,6 +22,10 @@ type Config struct {
 	HttpAuth                string
 	Dimensions              int
 	MultiVectorDimensions   int
+	MuveraEnabled           bool
+	MuveraKSim              int
+	MuveraDProjections      int
+	MuveraRepetition        int
 	DB                      string
 	WhereFilter             string
 	OutputFormat            string

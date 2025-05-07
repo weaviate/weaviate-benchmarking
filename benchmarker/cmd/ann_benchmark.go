@@ -325,17 +325,49 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		classObj.VectorConfig = vectorConfig
 	} else {
 		if cfg.MultiVectorDimensions > 0 {
+			vectorIndexConfig = map[string]interface{}{}
+			if cfg.PQ == "auto" {
+				vectorIndexConfig["pq"] = map[string]interface{}{
+					"enabled":       true,
+					"rescoreLimit":  cfg.RescoreLimit,
+					"segments":      cfg.PQSegments,
+					"trainingLimit": cfg.TrainingLimit,
+				}
+			} else if cfg.BQ {
+				vectorIndexConfig["bq"] = map[string]interface{}{
+					"enabled":      true,
+					"rescoreLimit": cfg.RescoreLimit,
+					"cache":        true,
+				}
+			} else if cfg.SQ == "auto" {
+				vectorIndexConfig = map[string]interface{}{
+					"distance":               cfg.DistanceMetric,
+					"efConstruction":         float64(cfg.EfConstruction),
+					"maxConnections":         float64(cfg.MaxConnections),
+					"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+					"sq": map[string]interface{}{
+						"enabled":       true,
+						"trainingLimit": cfg.TrainingLimit,
+					},
+				}
+			}
+			vectorIndexConfig["multivector"] = map[string]interface{}{
+				"enabled": true,
+				"muvera": map[string]interface{}{
+					"enabled":      cfg.MuveraEnabled,
+					"ksim":         cfg.MuveraKSim,
+					"dprojections": cfg.MuveraDProjections,
+					"repetition":   cfg.MuveraRepetition,
+				},
+			}
+
 			classObj.VectorConfig = map[string]models.VectorConfig{
 				"multivector": {
 					Vectorizer: map[string]interface{}{
 						"none": map[string]interface{}{},
 					},
-					VectorIndexConfig: map[string]interface{}{
-						"multivector": map[string]interface{}{
-							"enabled": true,
-						},
-					},
-					VectorIndexType: cfg.IndexType,
+					VectorIndexConfig: vectorIndexConfig,
+					VectorIndexType:   cfg.IndexType,
 				},
 			}
 		} else {
@@ -487,14 +519,26 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 	}
 
 	var segments uint
-	vectorIndexConfig := classConfig.VectorIndexConfig.(map[string]interface{})
+	var vectorIndexConfig map[string]interface{}
+
+	if cfg.MultiVectorDimensions > 0 {
+		vectorIndexConfig = classConfig.VectorConfig["multivector"].VectorIndexConfig.(map[string]interface{})
+	} else {
+		fmt.Println("Using default")
+		vectorIndexConfig = classConfig.VectorIndexConfig.(map[string]interface{})
+	}
 
 	switch compressionType {
 	case CompressionTypePQ:
 		if dimensions%cfg.PQRatio != 0 {
 			log.Fatalf("PQ ratio of %d and dimensions of %d incompatible", cfg.PQRatio, dimensions)
 		}
-		segments = dimensions / cfg.PQRatio
+		if !cfg.MuveraEnabled {
+			segments = dimensions / cfg.PQRatio
+		} else {
+			segments = uint(math.Pow(2, float64(cfg.MuveraKSim))*float64(cfg.MuveraDProjections)*float64(cfg.MuveraRepetition)) / cfg.PQRatio
+		}
+
 		vectorIndexConfig["pq"] = map[string]interface{}{
 			"enabled":       true,
 			"segments":      segments,
@@ -514,7 +558,13 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 		}
 	}
 
-	classConfig.VectorIndexConfig = vectorIndexConfig
+	if cfg.MultiVectorDimensions > 0 {
+		vectorConfig := classConfig.VectorConfig["multivector"]
+		vectorConfig.VectorIndexConfig = vectorIndexConfig
+		classConfig.VectorConfig["multivector"] = vectorConfig
+	} else {
+		classConfig.VectorIndexConfig = vectorIndexConfig
+	}
 
 	err = client.Schema().ClassUpdater().WithClass(classConfig).Do(context.Background())
 	if err != nil {
@@ -1191,6 +1241,14 @@ func initAnnBenchmark() {
 		"pqSegments", 256, "Set PQ segments")
 	annBenchmarkCommand.PersistentFlags().IntVarP(&globalConfig.MultiVectorDimensions,
 		"multiVector", "m", 0, "Enable multi-dimensional vectors with the specified number of dimensions")
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.MuveraEnabled,
+		"muveraEnabled", false, "Enable muvera")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MuveraKSim,
+		"muveraKSim", 3, "Set muvera ksim parameter")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MuveraDProjections,
+		"muveraDProjections", 8, "Set muvera dprojections parameter")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MuveraRepetition,
+		"muveraRepetition", 20, "Set muvera repetition parameter")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.SkipQuery,
 		"skipQuery", false, "Only import data and skip query tests")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.SkipAsyncReady,
