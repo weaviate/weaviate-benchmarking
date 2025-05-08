@@ -1244,9 +1244,9 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.MuveraEnabled,
 		"muveraEnabled", false, "Enable muvera")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MuveraKSim,
-		"muveraKSim", 3, "Set muvera ksim parameter")
+		"muveraKSim", 4, "Set muvera ksim parameter")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MuveraDProjections,
-		"muveraDProjections", 8, "Set muvera dprojections parameter")
+		"muveraDProjections", 16, "Set muvera dprojections parameter")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MuveraRepetition,
 		"muveraRepetition", 20, "Set muvera repetition parameter")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.SkipQuery,
