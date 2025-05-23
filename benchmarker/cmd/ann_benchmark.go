@@ -1156,6 +1156,10 @@ var annBenchmarkCommand = &cobra.Command{
 			testData = loadHdf5Colbert(file, "test", cfg.MultiVectorDimensions)
 		} else {
 			testData = loadHdf5Float32(file, "test", &cfg)
+			// Keep only the first item
+			if cfg.NumQueries > 0 {
+				testData = testData[:cfg.NumQueries]
+			}
 		}
 
 		testFilters := make([]int, 0)
@@ -1223,6 +1227,8 @@ func initAnnBenchmark() {
 		"query", "q", false, "Do not import data and only run query tests")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.QueryDuration,
 		"queryDuration", 0, "Instead of querying the test dataset once, query for the specified duration in seconds (default 0)")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.NumQueries,
+		"numQueries", 0, "Number of queries to run (default 0). If 0, run all queries.")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.BQ,
 		"bq", false, "Set BQ")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.Cache,

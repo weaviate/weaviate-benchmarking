@@ -41,6 +41,7 @@ type Config struct {
 	EfArray                 string
 	QueryOnly               bool
 	QueryDuration           int
+	NumQueries              int
 	BQ                      bool
 	Cache                   bool
 	RescoreLimit            int
