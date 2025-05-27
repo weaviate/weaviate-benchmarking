@@ -538,7 +538,6 @@ func waitReady(cfg *Config, client *weaviate.Client, indexStart time.Time, maxDu
 
 // Update ef parameter on the Weaviate schema
 func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, compressionType CompressionType) {
-	fmt.Println("enabling compression", compressionType)
 	classConfig, err := client.Schema().ClassGetter().WithClassName(cfg.ClassName).Do(context.Background())
 	if err != nil {
 		panic(err)
@@ -550,7 +549,6 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 	if cfg.MultiVectorDimensions > 0 {
 		vectorIndexConfig = classConfig.VectorConfig["multivector"].VectorIndexConfig.(map[string]interface{})
 	} else {
-		fmt.Println("Using default")
 		vectorIndexConfig = classConfig.VectorIndexConfig.(map[string]interface{})
 	}
 
@@ -583,8 +581,6 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 			"trainingLimit": cfg.TrainingLimit,
 		}
 	case CompressionTypeRQ:
-		fmt.Println("cfg.RQDataBits", cfg.RQDataBits)
-		fmt.Println("cfg.RQQueryBits", cfg.RQQueryBits)
 		vectorIndexConfig["rq"] = map[string]interface{}{
 			"enabled":   true,
 			"dataBits":  cfg.RQDataBits,
