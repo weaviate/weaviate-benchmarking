@@ -43,6 +43,7 @@ const (
 	CompressionTypePQ   CompressionType = 0
 	CompressionTypeSQ   CompressionType = 1
 	CompressionTypeLASQ CompressionType = 2
+	CompressionTypeRQ   CompressionType = 3
 )
 
 // Batch of vectors and offset for writing to Weaviate
@@ -271,6 +272,18 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 					"trainingLimit": cfg.TrainingLimit,
 				},
 			}
+		} else if cfg.RQ == "auto" {
+			vectorIndexConfig = map[string]interface{}{
+				"distance":               cfg.DistanceMetric,
+				"efConstruction":         float64(cfg.EfConstruction),
+				"maxConnections":         float64(cfg.MaxConnections),
+				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+				"rq": map[string]interface{}{
+					"enabled":   true,
+					"dataBits":  cfg.RQDataBits,
+					"queryBits": cfg.RQQueryBits,
+				},
+			}
 		}
 	} else if cfg.IndexType == "flat" {
 		vectorIndexConfig = map[string]interface{}{
@@ -348,6 +361,18 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 					"sq": map[string]interface{}{
 						"enabled":       true,
 						"trainingLimit": cfg.TrainingLimit,
+					},
+				}
+			} else if cfg.RQ == "auto" {
+				vectorIndexConfig = map[string]interface{}{
+					"distance":               cfg.DistanceMetric,
+					"efConstruction":         float64(cfg.EfConstruction),
+					"maxConnections":         float64(cfg.MaxConnections),
+					"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+					"rq": map[string]interface{}{
+						"enabled":     true,
+						"rqDataBits":  cfg.RQDataBits,
+						"rqQueryBits": cfg.RQQueryBits,
 					},
 				}
 			}
@@ -513,6 +538,7 @@ func waitReady(cfg *Config, client *weaviate.Client, indexStart time.Time, maxDu
 
 // Update ef parameter on the Weaviate schema
 func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, compressionType CompressionType) {
+	fmt.Println("enabling compression", compressionType)
 	classConfig, err := client.Schema().ClassGetter().WithClassName(cfg.ClassName).Do(context.Background())
 	if err != nil {
 		panic(err)
@@ -555,6 +581,14 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 		vectorIndexConfig["lasq"] = map[string]interface{}{
 			"enabled":       true,
 			"trainingLimit": cfg.TrainingLimit,
+		}
+	case CompressionTypeRQ:
+		fmt.Println("cfg.RQDataBits", cfg.RQDataBits)
+		fmt.Println("cfg.RQQueryBits", cfg.RQQueryBits)
+		vectorIndexConfig["rq"] = map[string]interface{}{
+			"enabled":   true,
+			"dataBits":  cfg.RQDataBits,
+			"queryBits": cfg.RQQueryBits,
 		}
 	}
 
@@ -961,7 +995,11 @@ func loadANNBenchmarksFile(file *hdf5.File, cfg *Config, client *weaviate.Client
 		log.Printf("Pausing to enable LASQ.")
 		enableCompression(cfg, client, dimensions, CompressionTypeLASQ)
 		loadHdf5Train(file, cfg, uint(cfg.TrainingLimit), 0, 0)
-
+	} else if cfg.RQ == "enabled" {
+		dimensions := loadHdf5Train(file, cfg, 0, uint(cfg.TrainingLimit), 0)
+		log.Printf("Pausing to enable RQ.")
+		enableCompression(cfg, client, dimensions, CompressionTypeRQ)
+		loadHdf5Train(file, cfg, uint(cfg.TrainingLimit), 0, 0)
 	} else {
 		loadHdf5Train(file, cfg, 0, maxRows, 0)
 	}
@@ -1243,6 +1281,12 @@ func initAnnBenchmark() {
 		"pqRatio", 4, "Set PQ segments = dimensions / ratio (must divide evenly default 4)")
 	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.PQSegments,
 		"pqSegments", 256, "Set PQ segments")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.RQ,
+		"rq", "disabled", "Set RQ (disabled, auto, or enabled) (default disabled)")
+	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.RQDataBits,
+		"rqDataBits", 1, "Set RQ data bits")
+	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.RQQueryBits,
+		"rqQueryBits", 1, "Set RQ query bits")
 	annBenchmarkCommand.PersistentFlags().IntVarP(&globalConfig.MultiVectorDimensions,
 		"multiVector", "m", 0, "Enable multi-dimensional vectors with the specified number of dimensions")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.MuveraEnabled,

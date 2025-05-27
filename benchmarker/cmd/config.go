@@ -26,6 +26,9 @@ type Config struct {
 	MuveraKSim               int
 	MuveraDProjections       int
 	MuveraRepetition         int
+	RQ                       string
+	RQDataBits               uint
+	RQQueryBits              uint
 	DB                       string
 	WhereFilter              string
 	OutputFormat             string
