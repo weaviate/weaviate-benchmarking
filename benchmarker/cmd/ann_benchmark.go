@@ -1276,9 +1276,9 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.RQ,
 		"rq", "disabled", "Set RQ (disabled, auto, or enabled) (default disabled)")
 	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.RQDataBits,
-		"rqDataBits", 1, "Set RQ data bits")
+		"rqDataBits", 8, "Set RQ data bits (default 8)")
 	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.RQQueryBits,
-		"rqQueryBits", 1, "Set RQ query bits")
+		"rqQueryBits", 8, "Set RQ query bit (default 8)")
 	annBenchmarkCommand.PersistentFlags().IntVarP(&globalConfig.MultiVectorDimensions,
 		"multiVector", "m", 0, "Enable multi-dimensional vectors with the specified number of dimensions")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.MuveraEnabled,
