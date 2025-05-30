@@ -50,7 +50,7 @@ type Config struct {
 	RQ                       string
 	RQDataBits               uint
 	RQQueryBits              uint
-	RQDoNotRescore           bool
+	RQRescore                bool
 	SkipQuery                bool
 	SkipAsyncReady           bool
 	SkipTombstonesEmpty      bool
