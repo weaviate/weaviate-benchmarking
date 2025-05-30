@@ -1143,6 +1143,10 @@ var annBenchmarkCommand = &cobra.Command{
 
 		cfg.parseLabels()
 
+		memoryMonitor := NewMemoryMonitor(&cfg)
+		memoryMonitor.Start()
+		defer memoryMonitor.Stop()
+
 		file, err := hdf5.OpenFile(cfg.BenchmarkFile, hdf5.F_ACC_RDONLY)
 		if err != nil {
 			log.Fatalf("Error opening file: %v\n", err)
@@ -1357,6 +1361,12 @@ func initAnnBenchmark() {
 		"replicationFactor", 1, "Replication factor (default 1)")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.AsyncReplicationEnabled,
 		"asyncReplicationEnabled", false, "Enable asynchronous replication (default false)")
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.MemoryMonitoringEnabled,
+		"memoryMonitoringEnabled", false, "Enable continuous memory monitoring (default false)")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MemoryMonitoringInterval,
+		"memoryMonitoringInterval", 5, "Memory monitoring interval in seconds (default 5)")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.MemoryMonitoringFile,
+		"memoryMonitoringFile", "", "Memory monitoring output file name (default: memory_metrics_<timestamp>.json)")
 }
 
 func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors, filters []int) Results {
