@@ -78,6 +78,49 @@ Flags:
 
 ```
 
+## Memory Monitoring Feature 🆕
+
+The benchmarker now includes comprehensive memory monitoring capabilities that track memory usage throughout benchmark execution.
+
+### Quick Start
+
+Enable memory monitoring with any benchmark:
+
+```bash
+./weaviate-benchmarker ann-benchmark \
+  --memoryMonitoringEnabled \
+  --memoryMonitoringInterval 5 \
+  --vectors dataset.hdf5 \
+  --distance cosine
+```
+
+### Memory Monitoring Flags
+
+- `--memoryMonitoringEnabled`: Enable continuous memory monitoring (default: false)
+- `--memoryMonitoringInterval`: Memory monitoring interval in seconds (default: 5)
+- `--memoryMonitoringFile`: Custom output filename (default: auto-generated)
+
+### Analysis
+
+Analyze the generated memory metrics:
+
+```bash
+# Analysis with simplified plots (memory over time + distribution)
+python scripts/python/memory_analysis.py results/memory_metrics_*.json
+
+# Statistics only
+python scripts/python/memory_analysis.py results/memory_metrics_*.json --no-plot
+```
+
+### Use Cases
+
+- **Performance Analysis**: Monitor memory during different benchmark phases
+- **Memory Leak Detection**: Track memory growth over time
+- **Resource Planning**: Understand memory requirements for different configurations
+- **Optimization**: Compare memory usage between different settings
+
+For detailed documentation, see [MEMORY_MONITORING.md](MEMORY_MONITORING.md).
+
 ### Installation / Running the CLI
 
 #### HDF5 Dependency
