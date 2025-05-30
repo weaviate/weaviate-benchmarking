@@ -17,7 +17,7 @@ function init() {
 }
 
 function build_and_push_tag() {
-  if [ ! -z "$GITHUB_REF_NAME" ] && [ "$GITHUB_REF_TYPE" == "tag"; then
+  if [ ! -z "$GITHUB_REF_NAME" ] && [ "$GITHUB_REF_TYPE" == "tag"]; then
     branch_name="$(echo -n $GITHUB_REF_NAME | sed 's/\//-/g')"
     tag_git="$DOCKER_REPO:$branch_name"
     tag_latest="$DOCKER_REPO:latest"
