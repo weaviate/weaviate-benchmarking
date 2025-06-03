@@ -279,10 +279,11 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				"maxConnections":         float64(cfg.MaxConnections),
 				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
 				"rq": map[string]interface{}{
-					"enabled":   true,
-					"dataBits":  cfg.RQDataBits,
-					"queryBits": cfg.RQQueryBits,
-					"rescore":   cfg.RQRescore,
+					"enabled":      true,
+					"dataBits":     cfg.RQDataBits,
+					"queryBits":    cfg.RQQueryBits,
+					"rescore":      cfg.RQRescore,
+					"rescoreLimit": cfg.RQRescoreLimit,
 				},
 			}
 		}
@@ -371,10 +372,11 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 					"maxConnections":         float64(cfg.MaxConnections),
 					"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
 					"rq": map[string]interface{}{
-						"enabled":     true,
-						"rqDataBits":  cfg.RQDataBits,
-						"rqQueryBits": cfg.RQQueryBits,
-						"rescore":     cfg.RQRescore,
+						"enabled":      true,
+						"rqDataBits":   cfg.RQDataBits,
+						"rqQueryBits":  cfg.RQQueryBits,
+						"rescore":      cfg.RQRescore,
+						"rescoreLimit": cfg.RQRescoreLimit,
 					},
 				}
 			}
@@ -584,10 +586,11 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 		}
 	case CompressionTypeRQ:
 		vectorIndexConfig["rq"] = map[string]interface{}{
-			"enabled":   true,
-			"dataBits":  cfg.RQDataBits,
-			"queryBits": cfg.RQQueryBits,
-			"rescore":   cfg.RQRescore,
+			"enabled":      true,
+			"dataBits":     cfg.RQDataBits,
+			"queryBits":    cfg.RQQueryBits,
+			"rescore":      cfg.RQRescore,
+			"rescoreLimit": cfg.RQRescoreLimit,
 		}
 	}
 
@@ -1288,6 +1291,8 @@ func initAnnBenchmark() {
 		"rqQueryBits", 8, "Set RQ query bit (default 8)")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.RQRescore,
 		"rqRescore", false, "Skip rescoring for RQ (default true)")
+	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.RQRescoreLimit,
+		"rqRescoreLimit", 20, "Set RQ rescore limit (default 20)")
 	annBenchmarkCommand.PersistentFlags().IntVarP(&globalConfig.MultiVectorDimensions,
 		"multiVector", "m", 0, "Enable multi-dimensional vectors with the specified number of dimensions")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.MuveraEnabled,
