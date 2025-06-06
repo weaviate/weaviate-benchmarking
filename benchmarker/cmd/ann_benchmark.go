@@ -43,6 +43,7 @@ const (
 	CompressionTypePQ   CompressionType = 0
 	CompressionTypeSQ   CompressionType = 1
 	CompressionTypeLASQ CompressionType = 2
+	CompressionTypeRQ   CompressionType = 3
 )
 
 // Batch of vectors and offset for writing to Weaviate
@@ -69,6 +70,7 @@ type ResultsJSONBenchmark struct {
 	RunID            string  `json:"run_id"`
 	Dataset          string  `json:"dataset_file"`
 	Recall           float64 `json:"recall"`
+	NDCG             float64 `json:"ndcg"`
 	HeapAllocBytes   float64 `json:"heap_alloc_bytes"`
 	HeapInuseBytes   float64 `json:"heap_inuse_bytes"`
 	HeapSysBytes     float64 `json:"heap_sys_bytes"`
@@ -271,6 +273,20 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 					"trainingLimit": cfg.TrainingLimit,
 				},
 			}
+		} else if cfg.RQ == "auto" {
+			vectorIndexConfig = map[string]interface{}{
+				"distance":               cfg.DistanceMetric,
+				"efConstruction":         float64(cfg.EfConstruction),
+				"maxConnections":         float64(cfg.MaxConnections),
+				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+				"rq": map[string]interface{}{
+					"enabled":      true,
+					"dataBits":     cfg.RQDataBits,
+					"queryBits":    cfg.RQQueryBits,
+					"rescore":      cfg.RQRescore,
+					"rescoreLimit": cfg.RQRescoreLimit,
+				},
+			}
 		}
 	} else if cfg.IndexType == "flat" {
 		vectorIndexConfig = map[string]interface{}{
@@ -348,6 +364,20 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 					"sq": map[string]interface{}{
 						"enabled":       true,
 						"trainingLimit": cfg.TrainingLimit,
+					},
+				}
+			} else if cfg.RQ == "auto" {
+				vectorIndexConfig = map[string]interface{}{
+					"distance":               cfg.DistanceMetric,
+					"efConstruction":         float64(cfg.EfConstruction),
+					"maxConnections":         float64(cfg.MaxConnections),
+					"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+					"rq": map[string]interface{}{
+						"enabled":      true,
+						"rqDataBits":   cfg.RQDataBits,
+						"rqQueryBits":  cfg.RQQueryBits,
+						"rescore":      cfg.RQRescore,
+						"rescoreLimit": cfg.RQRescoreLimit,
 					},
 				}
 			}
@@ -524,7 +554,6 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 	if cfg.MultiVectorDimensions > 0 {
 		vectorIndexConfig = classConfig.VectorConfig["multivector"].VectorIndexConfig.(map[string]interface{})
 	} else {
-		fmt.Println("Using default")
 		vectorIndexConfig = classConfig.VectorIndexConfig.(map[string]interface{})
 	}
 
@@ -555,6 +584,14 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 		vectorIndexConfig["lasq"] = map[string]interface{}{
 			"enabled":       true,
 			"trainingLimit": cfg.TrainingLimit,
+		}
+	case CompressionTypeRQ:
+		vectorIndexConfig["rq"] = map[string]interface{}{
+			"enabled":      true,
+			"dataBits":     cfg.RQDataBits,
+			"queryBits":    cfg.RQQueryBits,
+			"rescore":      cfg.RQRescore,
+			"rescoreLimit": cfg.RQRescoreLimit,
 		}
 	}
 
@@ -613,6 +650,8 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 		log.WithFields(log.Fields{"segments": segments, "dimensions": dimensions}).Printf("PQ Completed in %v\n", endTime.Sub(start))
 	case CompressionTypeSQ:
 		log.Printf("SQ Completed in %v\n", endTime.Sub(start))
+	case CompressionTypeRQ:
+		log.Printf("RQ Completed in %v\n", endTime.Sub(start))
 	case CompressionTypeLASQ:
 		log.Printf("LASQ Completed in %v\n", endTime.Sub(start))
 	}
@@ -961,7 +1000,11 @@ func loadANNBenchmarksFile(file *hdf5.File, cfg *Config, client *weaviate.Client
 		log.Printf("Pausing to enable LASQ.")
 		enableCompression(cfg, client, dimensions, CompressionTypeLASQ)
 		loadHdf5Train(file, cfg, uint(cfg.TrainingLimit), 0, 0)
-
+	} else if cfg.RQ == "enabled" {
+		dimensions := loadHdf5Train(file, cfg, 0, uint(cfg.TrainingLimit), 0)
+		log.Printf("Pausing to enable RQ.")
+		enableCompression(cfg, client, dimensions, CompressionTypeRQ)
+		loadHdf5Train(file, cfg, uint(cfg.TrainingLimit), 0, 0)
 	} else {
 		loadHdf5Train(file, cfg, 0, maxRows, 0)
 	}
@@ -1033,7 +1076,7 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 		}
 
 		log.WithFields(log.Fields{
-			"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall,
+			"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall, "ndcg": result.NDCG,
 			"parallel": cfg.Parallel, "limit": cfg.Limit,
 			"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed,
 		}).Info("Benchmark result")
@@ -1056,6 +1099,7 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 			ImportTime:       importTime.Seconds(),
 			RunID:            runID,
 			Dataset:          dataset,
+			NDCG:             result.NDCG,
 			Recall:           result.Recall,
 			HeapAllocBytes:   memstats.HeapAllocBytes,
 			HeapInuseBytes:   memstats.HeapInuseBytes,
@@ -1243,6 +1287,16 @@ func initAnnBenchmark() {
 		"pqRatio", 4, "Set PQ segments = dimensions / ratio (must divide evenly default 4)")
 	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.PQSegments,
 		"pqSegments", 256, "Set PQ segments")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.RQ,
+		"rq", "disabled", "Set RQ (disabled, auto, or enabled) (default disabled)")
+	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.RQDataBits,
+		"rqDataBits", 8, "Set RQ data bits (default 8)")
+	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.RQQueryBits,
+		"rqQueryBits", 8, "Set RQ query bit (default 8)")
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.RQRescore,
+		"rqRescore", false, "Skip rescoring for RQ (default true)")
+	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.RQRescoreLimit,
+		"rqRescoreLimit", 20, "Set RQ rescore limit (default 20)")
 	annBenchmarkCommand.PersistentFlags().IntVarP(&globalConfig.MultiVectorDimensions,
 		"multiVector", "m", 0, "Enable multi-dimensional vectors with the specified number of dimensions")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.MuveraEnabled,
@@ -1382,6 +1436,7 @@ type sampledResults struct {
 	Took             []time.Duration
 	QueriesPerSecond []float64
 	Recall           []float64
+	NDCG             []float64
 	Results          []Results
 }
 
@@ -1401,6 +1456,7 @@ func benchmarkANNDuration(cfg Config, queries Queries, neighbors Neighbors, filt
 		samples.Mean = append(samples.Mean, results.Mean)
 		samples.Took = append(samples.Took, results.Took)
 		samples.QueriesPerSecond = append(samples.QueriesPerSecond, results.QueriesPerSecond)
+		samples.NDCG = append(samples.NDCG, results.NDCG)
 		samples.Recall = append(samples.Recall, results.Recall)
 		samples.Results = append(samples.Results, results)
 	}
@@ -1419,6 +1475,7 @@ func benchmarkANNDuration(cfg Config, queries Queries, neighbors Neighbors, filt
 	medianResult.Failed = results.Failed
 	medianResult.Parallelization = cfg.Parallel
 	medianResult.Recall = median(samples.Recall)
+	medianResult.NDCG = median(samples.NDCG)
 
 	return medianResult
 }

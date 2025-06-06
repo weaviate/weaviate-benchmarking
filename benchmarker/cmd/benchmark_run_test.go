@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -83,8 +84,10 @@ func TestAnalyzer(t *testing.T) {
 
 	recall := []float64{0.7, 0.8, 0.9, 0.7, 0.8, 0.9, 0.2}
 
+	ndcg := []float64{}
+
 	t.Run("check analyze accuracy", func(t *testing.T) {
-		results := analyze(c, durations, totalTime, recall)
+		results := analyze(c, durations, totalTime, recall, ndcg)
 
 		require.Equal(t, 10, results.Total)
 		require.Equal(t, 3, results.Failed)
@@ -97,4 +100,97 @@ func TestAnalyzer(t *testing.T) {
 
 	})
 
+}
+
+func TestCalculateLinearNDCG(t *testing.T) {
+	tests := []struct {
+		name      string
+		ids       []int
+		neighbors []int
+		k         int
+		expected  float64
+		tolerance float64
+	}{
+		{
+			name:      "Perfect ranking - all neighbors at top",
+			ids:       []int{1, 2, 3, 4, 5},
+			neighbors: []int{1, 2, 3, 4, 5},
+			k:         5,
+			expected:  1.0,
+			tolerance: 1e-10,
+		},
+		{
+			name:      "Perfect ranking - partial k",
+			ids:       []int{1, 2, 3, 6, 7},
+			neighbors: []int{1, 2, 3, 4, 5},
+			k:         3,
+			expected:  1.0,
+			tolerance: 1e-10,
+		},
+		{
+			name:      "No relevant items in top-k",
+			ids:       []int{6, 7, 8, 9, 10},
+			neighbors: []int{1, 2, 3, 4, 5},
+			k:         5,
+			expected:  0.0,
+			tolerance: 1e-10,
+		},
+		{
+			name:      "Single relevant item at position 1",
+			ids:       []int{1, 6, 7, 8, 9},
+			neighbors: []int{1, 2, 3, 4, 5},
+			k:         5,
+			expected:  1.0 / (1.0 + 1.0/2.0 + 1.0/3.0 + 1.0/4.0 + 1.0/5.0),
+			tolerance: 1e-10,
+		},
+		{
+			name:      "Single relevant item at position 5",
+			ids:       []int{6, 7, 8, 9, 1},
+			neighbors: []int{1, 2, 3, 4, 5},
+			k:         5,
+			expected:  (1.0 / 5.0) / (1.0 + 1.0/2.0 + 1.0/3.0 + 1.0/4.0 + 1.0/5.0),
+			tolerance: 1e-10,
+		},
+		{
+			name:      "Missing most important neighbor (position 1)",
+			ids:       []int{6, 1, 2, 3, 4},
+			neighbors: []int{1, 2, 3, 4, 5},
+			k:         5,
+			expected:  (1.0/2.0 + 1.0/3.0 + 1.0/4.0 + 1.0/5.0) / (1.0 + 1.0/2.0 + 1.0/3.0 + 1.0/4.0 + 1.0/5.0),
+			tolerance: 1e-10,
+		},
+		{
+			name:      "High recall but poor ranking",
+			ids:       []int{5, 4, 3, 2, 6},
+			neighbors: []int{1, 2, 3, 4, 5},
+			k:         5,
+			expected:  (1.0/1.0 + 1.0/2.0 + 1.0/3.0 + 1.0/4.0) / (1.0 + 1.0/2.0 + 1.0/3.0 + 1.0/4.0 + 1.0/5.0),
+			tolerance: 1e-10,
+		},
+		{
+			name:      "Empty ids",
+			ids:       []int{},
+			neighbors: []int{1, 2, 3},
+			k:         3,
+			expected:  0.0,
+			tolerance: 1e-10,
+		},
+		{
+			name:      "k = 1",
+			ids:       []int{1, 2, 3},
+			neighbors: []int{1, 2, 3},
+			k:         1,
+			expected:  1.0,
+			tolerance: 1e-10,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := calculateLinearNDCG(tt.ids, tt.neighbors, tt.k)
+			if math.Abs(result-tt.expected) > tt.tolerance {
+				t.Errorf("calculateLinearNDCG() = %v, expected %v (diff: %v)", result, tt.expected, math.Abs(result-tt.expected))
+			}
+		})
+	}
 }
