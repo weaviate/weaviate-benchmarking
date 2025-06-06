@@ -142,32 +142,34 @@ func processQueueGrpc(queue []QueryWithNeighbors, cfg *Config, grpcConn *grpc.Cl
 	}
 }
 
-func computeDCG(relevances []int, k int) float64 {
-	dcg := 0.0
-	for i := 0; i < k && i < len(relevances); i++ {
-		rel := relevances[i]
-		denom := math.Log2(float64(i) + 2) // log2(i+1), i is 0-indexed
-		dcg += float64(rel) / denom
+func computeDCG(ranking []int, relevance map[int]int, k int) float64 {
+	var score float64
+	for i := 0; i < k && i < len(ranking); i++ {
+		docID := ranking[i]
+		rel := float64(relevance[docID])
+		score += rel / math.Log2(float64(i+2))
 	}
-	return dcg
+	return score
 }
 
-func computeNDCG(predicted, ideal []int, k int) float64 {
-	dcg := computeDCG(predicted, k)
-
-	sortedIdeal := make([]int, len(ideal))
-	copy(sortedIdeal, ideal)
-
-	sort.Slice(sortedIdeal, func(i, j int) bool {
-		return sortedIdeal[i] > sortedIdeal[j]
-	})
-
-	idcg := computeDCG(sortedIdeal, k)
-
-	if idcg == 0 {
-		return 0
+func computeNDCG(trueRanking, predictedRanking []int, k int) float64 {
+	// Assign relevance scores based on true ranking
+	relevance := make(map[int]int)
+	for i, docID := range trueRanking {
+		relevance[docID] = len(trueRanking) - i
 	}
-	return dcg / idcg
+
+	ideal := trueRanking
+	if len(ideal) > k {
+		ideal = ideal[:k]
+	}
+
+	idcg := computeDCG(ideal, relevance, k)
+	if idcg == 0 {
+		return 0.0
+	}
+	actualDCG := computeDCG(predictedRanking, relevance, k)
+	return actualDCG / idcg
 }
 
 func benchmark(cfg Config, getQueryFn func(className string) QueryWithNeighbors) Results {
