@@ -1294,7 +1294,7 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.RQQueryBits,
 		"rqQueryBits", 8, "Set RQ query bit (default 8)")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.RQRescore,
-		"rqRescore", false, "Skip rescoring for RQ (default true)")
+		"rqRescore", false, "Skip rescoring for RQ (default true). When enabled, configure it with rescoreLimit")
 	annBenchmarkCommand.PersistentFlags().IntVarP(&globalConfig.MultiVectorDimensions,
 		"multiVector", "m", 0, "Enable multi-dimensional vectors with the specified number of dimensions")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.MuveraEnabled,
