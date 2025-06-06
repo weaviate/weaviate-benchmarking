@@ -69,6 +69,7 @@ type ResultsJSONBenchmark struct {
 	RunID            string  `json:"run_id"`
 	Dataset          string  `json:"dataset_file"`
 	Recall           float64 `json:"recall"`
+	NDCG             float64 `json:"ndcg"`
 	HeapAllocBytes   float64 `json:"heap_alloc_bytes"`
 	HeapInuseBytes   float64 `json:"heap_inuse_bytes"`
 	HeapSysBytes     float64 `json:"heap_sys_bytes"`
@@ -1033,7 +1034,7 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 		}
 
 		log.WithFields(log.Fields{
-			"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall,
+			"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall, "ndcg": result.NDCG,
 			"parallel": cfg.Parallel, "limit": cfg.Limit,
 			"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed,
 		}).Info("Benchmark result")
@@ -1057,6 +1058,7 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 			RunID:            runID,
 			Dataset:          dataset,
 			Recall:           result.Recall,
+			NDCG:             result.NDCG,
 			HeapAllocBytes:   memstats.HeapAllocBytes,
 			HeapInuseBytes:   memstats.HeapInuseBytes,
 			HeapSysBytes:     memstats.HeapSysBytes,
@@ -1382,6 +1384,7 @@ type sampledResults struct {
 	Took             []time.Duration
 	QueriesPerSecond []float64
 	Recall           []float64
+	NDCG             []float64
 	Results          []Results
 }
 
@@ -1402,6 +1405,7 @@ func benchmarkANNDuration(cfg Config, queries Queries, neighbors Neighbors, filt
 		samples.Took = append(samples.Took, results.Took)
 		samples.QueriesPerSecond = append(samples.QueriesPerSecond, results.QueriesPerSecond)
 		samples.Recall = append(samples.Recall, results.Recall)
+		samples.NDCG = append(samples.NDCG, results.NDCG)
 		samples.Results = append(samples.Results, results)
 	}
 
@@ -1419,6 +1423,6 @@ func benchmarkANNDuration(cfg Config, queries Queries, neighbors Neighbors, filt
 	medianResult.Failed = results.Failed
 	medianResult.Parallelization = cfg.Parallel
 	medianResult.Recall = median(samples.Recall)
-
+	medianResult.NDCG = median(samples.NDCG)
 	return medianResult
 }

@@ -90,7 +90,7 @@ func processQueueHttp(queue []QueryWithNeighbors, cfg *Config, c *http.Client, m
 	}
 }
 
-func processQueueGrpc(queue []QueryWithNeighbors, cfg *Config, grpcConn *grpc.ClientConn, m *sync.Mutex, times *[]time.Duration, recall *[]float64) {
+func processQueueGrpc(queue []QueryWithNeighbors, cfg *Config, grpcConn *grpc.ClientConn, m *sync.Mutex, times *[]time.Duration, recall *[]float64, ndcg *[]float64) {
 
 	grpcClient := wv1.NewWeaviateClient(grpcConn)
 
@@ -131,19 +131,49 @@ func processQueueGrpc(queue []QueryWithNeighbors, cfg *Config, grpcConn *grpc.Cl
 
 		neighborLimit := min(cfg.Limit, len(query.Neighbors))
 		recallQuery := float64(len(intersection(ids, query.Neighbors[:neighborLimit]))) / float64(neighborLimit)
-
-		log.Debugf("Query took %s, recall %f", took, recallQuery)
+		ndcgQuery := computeNDCG(ids, query.Neighbors[:neighborLimit], neighborLimit)
+		log.Debugf("Query took %s, recall %f, ndcg %f", took, recallQuery, ndcgQuery)
 
 		m.Lock()
 		*times = append(*times, took)
 		*recall = append(*recall, recallQuery)
+		*ndcg = append(*ndcg, ndcgQuery)
 		m.Unlock()
 	}
+}
+
+func computeDCG(relevances []int, k int) float64 {
+	dcg := 0.0
+	for i := 0; i < k && i < len(relevances); i++ {
+		rel := relevances[i]
+		denom := math.Log2(float64(i) + 2) // log2(i+1), i is 0-indexed
+		dcg += float64(rel) / denom
+	}
+	return dcg
+}
+
+func computeNDCG(predicted, ideal []int, k int) float64 {
+	dcg := computeDCG(predicted, k)
+
+	sortedIdeal := make([]int, len(ideal))
+	copy(sortedIdeal, ideal)
+
+	sort.Slice(sortedIdeal, func(i, j int) bool {
+		return sortedIdeal[i] > sortedIdeal[j]
+	})
+
+	idcg := computeDCG(sortedIdeal, k)
+
+	if idcg == 0 {
+		return 0
+	}
+	return dcg / idcg
 }
 
 func benchmark(cfg Config, getQueryFn func(className string) QueryWithNeighbors) Results {
 	var times []time.Duration
 	var recall []float64
+	var ndcg []float64
 	m := &sync.Mutex{}
 
 	t := &http.Transport{
@@ -194,7 +224,7 @@ func benchmark(cfg Config, getQueryFn func(className string) QueryWithNeighbors)
 		go func(queue []QueryWithNeighbors) {
 			defer wg.Done()
 			if cfg.API == "grpc" {
-				processQueueGrpc(queue, &cfg, grpcConn, m, &times, &recall)
+				processQueueGrpc(queue, &cfg, grpcConn, m, &times, &recall, &ndcg)
 			} else {
 				processQueueHttp(queue, &cfg, httpClient, m, &times)
 			}
@@ -202,7 +232,7 @@ func benchmark(cfg Config, getQueryFn func(className string) QueryWithNeighbors)
 	}
 	wg.Wait()
 
-	return analyze(cfg, times, time.Since(before), recall)
+	return analyze(cfg, times, time.Since(before), recall, ndcg)
 }
 
 var targetPercentiles = []int{50, 90, 95, 98, 99}
@@ -220,9 +250,10 @@ type Results struct {
 	Failed            int
 	Parallelization   int
 	Recall            float64
+	NDCG              float64
 }
 
-func analyze(cfg Config, times []time.Duration, total time.Duration, recall []float64) Results {
+func analyze(cfg Config, times []time.Duration, total time.Duration, recall []float64, ndcg []float64) Results {
 	out := Results{Min: math.MaxInt64, PercentilesLabels: targetPercentiles}
 	var sum time.Duration
 
@@ -244,6 +275,11 @@ func analyze(cfg Config, times []time.Duration, total time.Duration, recall []fl
 		sumRecall += r
 	}
 
+	var sumNDCG float64
+	for _, n := range ndcg {
+		sumNDCG += n
+	}
+
 	out.Total = cfg.Queries
 	out.Failed = cfg.Queries - out.Successful
 	out.Parallelization = cfg.Parallel
@@ -251,6 +287,7 @@ func analyze(cfg Config, times []time.Duration, total time.Duration, recall []fl
 	out.Took = total
 	out.QueriesPerSecond = float64(len(times)) / float64(float64(total)/float64(time.Second))
 	out.Recall = sumRecall / float64(len(recall))
+	out.NDCG = sumNDCG / float64(len(ndcg))
 
 	sort.Slice(times, func(a, b int) bool {
 		return times[a] < times[b]
