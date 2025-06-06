@@ -43,6 +43,7 @@ const (
 	CompressionTypePQ   CompressionType = 0
 	CompressionTypeSQ   CompressionType = 1
 	CompressionTypeLASQ CompressionType = 2
+	CompressionTypeRQ   CompressionType = 3
 )
 
 // Batch of vectors and offset for writing to Weaviate
@@ -272,6 +273,20 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 					"trainingLimit": cfg.TrainingLimit,
 				},
 			}
+		} else if cfg.RQ == "auto" {
+			vectorIndexConfig = map[string]interface{}{
+				"distance":               cfg.DistanceMetric,
+				"efConstruction":         float64(cfg.EfConstruction),
+				"maxConnections":         float64(cfg.MaxConnections),
+				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+				"rq": map[string]interface{}{
+					"enabled":      true,
+					"dataBits":     cfg.RQDataBits,
+					"queryBits":    cfg.RQQueryBits,
+					"rescore":      cfg.RQRescore,
+					"rescoreLimit": cfg.RQRescoreLimit,
+				},
+			}
 		}
 	} else if cfg.IndexType == "flat" {
 		vectorIndexConfig = map[string]interface{}{
@@ -349,6 +364,20 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 					"sq": map[string]interface{}{
 						"enabled":       true,
 						"trainingLimit": cfg.TrainingLimit,
+					},
+				}
+			} else if cfg.RQ == "auto" {
+				vectorIndexConfig = map[string]interface{}{
+					"distance":               cfg.DistanceMetric,
+					"efConstruction":         float64(cfg.EfConstruction),
+					"maxConnections":         float64(cfg.MaxConnections),
+					"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+					"rq": map[string]interface{}{
+						"enabled":      true,
+						"rqDataBits":   cfg.RQDataBits,
+						"rqQueryBits":  cfg.RQQueryBits,
+						"rescore":      cfg.RQRescore,
+						"rescoreLimit": cfg.RQRescoreLimit,
 					},
 				}
 			}
@@ -525,7 +554,6 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 	if cfg.MultiVectorDimensions > 0 {
 		vectorIndexConfig = classConfig.VectorConfig["multivector"].VectorIndexConfig.(map[string]interface{})
 	} else {
-		fmt.Println("Using default")
 		vectorIndexConfig = classConfig.VectorIndexConfig.(map[string]interface{})
 	}
 
@@ -556,6 +584,14 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 		vectorIndexConfig["lasq"] = map[string]interface{}{
 			"enabled":       true,
 			"trainingLimit": cfg.TrainingLimit,
+		}
+	case CompressionTypeRQ:
+		vectorIndexConfig["rq"] = map[string]interface{}{
+			"enabled":      true,
+			"dataBits":     cfg.RQDataBits,
+			"queryBits":    cfg.RQQueryBits,
+			"rescore":      cfg.RQRescore,
+			"rescoreLimit": cfg.RQRescoreLimit,
 		}
 	}
 
@@ -962,7 +998,11 @@ func loadANNBenchmarksFile(file *hdf5.File, cfg *Config, client *weaviate.Client
 		log.Printf("Pausing to enable LASQ.")
 		enableCompression(cfg, client, dimensions, CompressionTypeLASQ)
 		loadHdf5Train(file, cfg, uint(cfg.TrainingLimit), 0, 0)
-
+	} else if cfg.RQ == "enabled" {
+		dimensions := loadHdf5Train(file, cfg, 0, uint(cfg.TrainingLimit), 0)
+		log.Printf("Pausing to enable RQ.")
+		enableCompression(cfg, client, dimensions, CompressionTypeRQ)
+		loadHdf5Train(file, cfg, uint(cfg.TrainingLimit), 0, 0)
 	} else {
 		loadHdf5Train(file, cfg, 0, maxRows, 0)
 	}
@@ -1245,6 +1285,16 @@ func initAnnBenchmark() {
 		"pqRatio", 4, "Set PQ segments = dimensions / ratio (must divide evenly default 4)")
 	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.PQSegments,
 		"pqSegments", 256, "Set PQ segments")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.RQ,
+		"rq", "disabled", "Set RQ (disabled, auto, or enabled) (default disabled)")
+	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.RQDataBits,
+		"rqDataBits", 8, "Set RQ data bits (default 8)")
+	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.RQQueryBits,
+		"rqQueryBits", 8, "Set RQ query bit (default 8)")
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.RQRescore,
+		"rqRescore", false, "Skip rescoring for RQ (default true)")
+	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.RQRescoreLimit,
+		"rqRescoreLimit", 20, "Set RQ rescore limit (default 20)")
 	annBenchmarkCommand.PersistentFlags().IntVarP(&globalConfig.MultiVectorDimensions,
 		"multiVector", "m", 0, "Enable multi-dimensional vectors with the specified number of dimensions")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.MuveraEnabled,
