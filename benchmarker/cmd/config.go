@@ -51,7 +51,6 @@ type Config struct {
 	RQDataBits               uint
 	RQQueryBits              uint
 	RQRescore                bool
-	RQRescoreLimit           uint
 	SkipQuery                bool
 	SkipAsyncReady           bool
 	SkipTombstonesEmpty      bool
