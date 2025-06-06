@@ -284,7 +284,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 					"dataBits":     cfg.RQDataBits,
 					"queryBits":    cfg.RQQueryBits,
 					"rescore":      cfg.RQRescore,
-					"rescoreLimit": cfg.RQRescoreLimit,
+					"rescoreLimit": cfg.RescoreLimit,
 				},
 			}
 		}
@@ -377,7 +377,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 						"rqDataBits":   cfg.RQDataBits,
 						"rqQueryBits":  cfg.RQQueryBits,
 						"rescore":      cfg.RQRescore,
-						"rescoreLimit": cfg.RQRescoreLimit,
+						"rescoreLimit": cfg.RescoreLimit,
 					},
 				}
 			}
@@ -591,7 +591,7 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 			"dataBits":     cfg.RQDataBits,
 			"queryBits":    cfg.RQQueryBits,
 			"rescore":      cfg.RQRescore,
-			"rescoreLimit": cfg.RQRescoreLimit,
+			"rescoreLimit": cfg.RescoreLimit,
 		}
 	}
 
@@ -1276,7 +1276,7 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.Cache,
 		"cache", false, "Set cache")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.RescoreLimit,
-		"rescoreLimit", 256, "Rescore limit (default 256) for BQ")
+		"rescoreLimit", 256, "Rescore limit (default 256) for BQ. If using RQ, it's recommended to set it to 20")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.PQ,
 		"pq", "disabled", "Set PQ (disabled, auto, or enabled) (default disabled)")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.SQ,
@@ -1295,8 +1295,6 @@ func initAnnBenchmark() {
 		"rqQueryBits", 8, "Set RQ query bit (default 8)")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.RQRescore,
 		"rqRescore", false, "Skip rescoring for RQ (default true)")
-	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.RQRescoreLimit,
-		"rqRescoreLimit", 20, "Set RQ rescore limit (default 20)")
 	annBenchmarkCommand.PersistentFlags().IntVarP(&globalConfig.MultiVectorDimensions,
 		"multiVector", "m", 0, "Enable multi-dimensional vectors with the specified number of dimensions")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.MuveraEnabled,
