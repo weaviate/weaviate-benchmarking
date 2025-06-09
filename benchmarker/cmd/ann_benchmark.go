@@ -244,7 +244,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				"segments":      cfg.PQSegments,
 				"trainingLimit": cfg.TrainingLimit,
 			}
-			if cfg.RescoreLimit > 0 {
+			if cfg.RescoreLimit > -1 {
 				pqConfig["rescoreLimit"] = cfg.RescoreLimit
 			}
 			vectorIndexConfig["pq"] = pqConfig
@@ -280,9 +280,8 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				"enabled":   true,
 				"dataBits":  cfg.RQDataBits,
 				"queryBits": cfg.RQQueryBits,
-				"rescore":   cfg.RQRescore,
 			}
-			if cfg.RescoreLimit > 0 {
+			if cfg.RescoreLimit > -1 {
 				rqConfig["rescoreLimit"] = cfg.RescoreLimit
 			}
 			vectorIndexConfig = map[string]interface{}{
@@ -302,7 +301,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				"enabled": true,
 				"cache":   cfg.Cache,
 			}
-			if cfg.RescoreLimit > 0 {
+			if cfg.RescoreLimit > -1 {
 				bqConfig["rescoreLimit"] = cfg.RescoreLimit
 			}
 			vectorIndexConfig["bq"] = bqConfig
@@ -325,7 +324,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				"segments":      cfg.PQSegments,
 				"trainingLimit": cfg.TrainingLimit,
 			}
-			if cfg.RescoreLimit > 0 {
+			if cfg.RescoreLimit > -1 {
 				pqConfig["rescoreLimit"] = cfg.RescoreLimit
 			}
 			vectorIndexConfig["hnsw"].(map[string]interface{})["pq"] = pqConfig
@@ -334,7 +333,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				"enabled": true,
 				"cache":   true,
 			}
-			if cfg.RescoreLimit > 0 {
+			if cfg.RescoreLimit > -1 {
 				bqConfig["rescoreLimit"] = cfg.RescoreLimit
 			}
 			vectorIndexConfig["hnsw"].(map[string]interface{})["bq"] = bqConfig
@@ -362,7 +361,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 					"segments":      cfg.PQSegments,
 					"trainingLimit": cfg.TrainingLimit,
 				}
-				if cfg.RescoreLimit > 0 {
+				if cfg.RescoreLimit > -1 {
 					pqConfig["rescoreLimit"] = cfg.RescoreLimit
 				}
 				vectorIndexConfig["pq"] = pqConfig
@@ -371,7 +370,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 					"enabled": true,
 					"cache":   true,
 				}
-				if cfg.RescoreLimit > 0 {
+				if cfg.RescoreLimit > -1 {
 					bqConfig["rescoreLimit"] = cfg.RescoreLimit
 				}
 				vectorIndexConfig["bq"] = bqConfig
@@ -391,9 +390,8 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 					"enabled":     true,
 					"rqDataBits":  cfg.RQDataBits,
 					"rqQueryBits": cfg.RQQueryBits,
-					"rescore":     cfg.RQRescore,
 				}
-				if cfg.RescoreLimit > 0 {
+				if cfg.RescoreLimit > -1 {
 					rqConfig["rescoreLimit"] = cfg.RescoreLimit
 				}
 				vectorIndexConfig = map[string]interface{}{
@@ -596,7 +594,7 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 			"segments":      segments,
 			"trainingLimit": cfg.TrainingLimit,
 		}
-		if cfg.RescoreLimit > 0 {
+		if cfg.RescoreLimit > -1 {
 			pqConfig["rescoreLimit"] = cfg.RescoreLimit
 		}
 		vectorIndexConfig["pq"] = pqConfig
@@ -605,7 +603,7 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 			"enabled":       true,
 			"trainingLimit": cfg.TrainingLimit,
 		}
-		if cfg.RescoreLimit > 0 {
+		if cfg.RescoreLimit > -1 {
 			sqConfig["rescoreLimit"] = cfg.RescoreLimit
 		}
 		vectorIndexConfig["sq"] = sqConfig
@@ -619,9 +617,8 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 			"enabled":   true,
 			"dataBits":  cfg.RQDataBits,
 			"queryBits": cfg.RQQueryBits,
-			"rescore":   cfg.RQRescore,
 		}
-		if cfg.RescoreLimit > 0 {
+		if cfg.RescoreLimit > -1 {
 			rqConfig["rescoreLimit"] = cfg.RescoreLimit
 		}
 		vectorIndexConfig["rq"] = rqConfig
@@ -1308,7 +1305,7 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.Cache,
 		"cache", false, "Set cache")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.RescoreLimit,
-		"rescoreLimit", 0, "Rescore limit. If not set, it will be set by Weaviate automatically when rescoring is enabled")
+		"rescoreLimit", -1, "Rescore limit. If not set, it will be set by Weaviate automatically when rescoring is enabled")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.PQ,
 		"pq", "disabled", "Set PQ (disabled, auto, or enabled) (default disabled)")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.SQ,
@@ -1325,8 +1322,6 @@ func initAnnBenchmark() {
 		"rqDataBits", 8, "Set RQ data bits (default 8)")
 	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.RQQueryBits,
 		"rqQueryBits", 8, "Set RQ query bit (default 8)")
-	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.RQRescore,
-		"rqRescore", false, "Skip rescoring for RQ (default true). When enabled, configure it with rescoreLimit")
 	annBenchmarkCommand.PersistentFlags().IntVarP(&globalConfig.MultiVectorDimensions,
 		"multiVector", "m", 0, "Enable multi-dimensional vectors with the specified number of dimensions")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.MuveraEnabled,
