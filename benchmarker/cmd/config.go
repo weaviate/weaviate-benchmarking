@@ -48,8 +48,7 @@ type Config struct {
 	SQ                       string
 	LASQ                     string
 	RQ                       string
-	RQDataBits               uint
-	RQQueryBits              uint
+	RQBits                   uint
 	SkipQuery                bool
 	SkipAsyncReady           bool
 	SkipTombstonesEmpty      bool

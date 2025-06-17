@@ -277,9 +277,8 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 			}
 		} else if cfg.RQ == "auto" {
 			rqConfig := map[string]interface{}{
-				"enabled":   true,
-				"dataBits":  cfg.RQDataBits,
-				"queryBits": cfg.RQQueryBits,
+				"enabled": true,
+				"bits":    cfg.RQBits,
 			}
 			if cfg.RescoreLimit > -1 {
 				rqConfig["rescoreLimit"] = cfg.RescoreLimit
@@ -387,9 +386,8 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				}
 			} else if cfg.RQ == "auto" {
 				rqConfig := map[string]interface{}{
-					"enabled":     true,
-					"rqDataBits":  cfg.RQDataBits,
-					"rqQueryBits": cfg.RQQueryBits,
+					"enabled": true,
+					"bits":    cfg.RQBits,
 				}
 				if cfg.RescoreLimit > -1 {
 					rqConfig["rescoreLimit"] = cfg.RescoreLimit
@@ -614,9 +612,8 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 		}
 	case CompressionTypeRQ:
 		rqConfig := map[string]interface{}{
-			"enabled":   true,
-			"dataBits":  cfg.RQDataBits,
-			"queryBits": cfg.RQQueryBits,
+			"enabled": true,
+			"bits":    cfg.RQBits,
 		}
 		if cfg.RescoreLimit > -1 {
 			rqConfig["rescoreLimit"] = cfg.RescoreLimit
@@ -1318,10 +1315,8 @@ func initAnnBenchmark() {
 		"pqSegments", 256, "Set PQ segments")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.RQ,
 		"rq", "disabled", "Set RQ (disabled, auto, or enabled) (default disabled)")
-	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.RQDataBits,
-		"rqDataBits", 8, "Set RQ data bits (default 8)")
-	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.RQQueryBits,
-		"rqQueryBits", 8, "Set RQ query bit (default 8)")
+	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.RQBits,
+		"rqBits", 8, "Set RQ bits (default 8)")
 	annBenchmarkCommand.PersistentFlags().IntVarP(&globalConfig.MultiVectorDimensions,
 		"multiVector", "m", 0, "Enable multi-dimensional vectors with the specified number of dimensions")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.MuveraEnabled,
