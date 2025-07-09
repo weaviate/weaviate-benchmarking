@@ -274,6 +274,11 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
 				"flatSearchCutoff":       cfg.FlatSearchCutoff,
 			},
+			"flat": map[string]interface{}{
+				"bq": map[string]interface{}{
+					"enabled": true,
+				},
+			},
 		}
 		if cfg.PQ == "auto" {
 			vectorIndexConfig["hnsw"].(map[string]interface{})["pq"] = map[string]interface{}{
@@ -301,6 +306,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 	vectorIndexConfig["filterStrategy"] = cfg.FilterStrategy
 
 	classObj.VectorIndexConfig = vectorIndexConfig
+	log.WithFields(log.Fields{"flat": vectorIndexConfig["flat"], "hnsw": vectorIndexConfig["hnsw"]}).Info("Starting import")
 
 	err = client.Schema().ClassCreator().WithClass(classObj).Do(context.Background())
 	if err != nil {
