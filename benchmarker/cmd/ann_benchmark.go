@@ -40,10 +40,9 @@ import (
 type CompressionType byte
 
 const (
-	CompressionTypePQ   CompressionType = 0
-	CompressionTypeSQ   CompressionType = 1
-	CompressionTypeLASQ CompressionType = 2
-	CompressionTypeRQ   CompressionType = 3
+	CompressionTypePQ CompressionType = 0
+	CompressionTypeSQ CompressionType = 1
+	CompressionTypeRQ CompressionType = 2
 )
 
 // Batch of vectors and offset for writing to Weaviate
@@ -252,6 +251,9 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 			bqConfig := map[string]interface{}{
 				"enabled": true,
 			}
+			if cfg.RescoreLimit > -1 {
+				bqConfig["rescoreLimit"] = cfg.RescoreLimit
+			}
 			vectorIndexConfig["bq"] = bqConfig
 		} else if cfg.SQ == "auto" {
 			vectorIndexConfig = map[string]interface{}{
@@ -260,17 +262,6 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				"maxConnections":         float64(cfg.MaxConnections),
 				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
 				"sq": map[string]interface{}{
-					"enabled":       true,
-					"trainingLimit": cfg.TrainingLimit,
-				},
-			}
-		} else if cfg.LASQ == "auto" {
-			vectorIndexConfig = map[string]interface{}{
-				"distance":               cfg.DistanceMetric,
-				"efConstruction":         float64(cfg.EfConstruction),
-				"maxConnections":         float64(cfg.MaxConnections),
-				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
-				"lasq": map[string]interface{}{
 					"enabled":       true,
 					"trainingLimit": cfg.TrainingLimit,
 				},
@@ -605,11 +596,6 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 			sqConfig["rescoreLimit"] = cfg.RescoreLimit
 		}
 		vectorIndexConfig["sq"] = sqConfig
-	case CompressionTypeLASQ:
-		vectorIndexConfig["lasq"] = map[string]interface{}{
-			"enabled":       true,
-			"trainingLimit": cfg.TrainingLimit,
-		}
 	case CompressionTypeRQ:
 		rqConfig := map[string]interface{}{
 			"enabled": true,
@@ -638,8 +624,6 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 		log.WithFields(log.Fields{"segments": segments, "dimensions": dimensions}).Printf("Enabled PQ. Waiting for shard ready.\n")
 	case CompressionTypeSQ:
 		log.Printf("Enabled SQ. Waiting for shard ready.\n")
-	case CompressionTypeLASQ:
-		log.Printf("Enabled LASQ. Waiting for shard ready.\n")
 	}
 
 	start := time.Now()
@@ -678,8 +662,6 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 		log.Printf("SQ Completed in %v\n", endTime.Sub(start))
 	case CompressionTypeRQ:
 		log.Printf("RQ Completed in %v\n", endTime.Sub(start))
-	case CompressionTypeLASQ:
-		log.Printf("LASQ Completed in %v\n", endTime.Sub(start))
 	}
 }
 
@@ -1021,11 +1003,6 @@ func loadANNBenchmarksFile(file *hdf5.File, cfg *Config, client *weaviate.Client
 		enableCompression(cfg, client, dimensions, CompressionTypeSQ)
 		loadHdf5Train(file, cfg, uint(cfg.TrainingLimit), 0, 0)
 
-	} else if cfg.LASQ == "enabled" {
-		dimensions := loadHdf5Train(file, cfg, 0, uint(cfg.TrainingLimit), 0)
-		log.Printf("Pausing to enable LASQ.")
-		enableCompression(cfg, client, dimensions, CompressionTypeLASQ)
-		loadHdf5Train(file, cfg, uint(cfg.TrainingLimit), 0, 0)
 	} else if cfg.RQ == "enabled" {
 		dimensions := loadHdf5Train(file, cfg, 0, uint(cfg.TrainingLimit), 0)
 		log.Printf("Pausing to enable RQ.")
@@ -1307,8 +1284,6 @@ func initAnnBenchmark() {
 		"pq", "disabled", "Set PQ (disabled, auto, or enabled) (default disabled)")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.SQ,
 		"sq", "disabled", "Set SQ (disabled, auto, or enabled) (default disabled)")
-	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.LASQ,
-		"lasq", "disabled", "Set LASQ (disabled, auto, or enabled) (default disabled)")
 	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.PQRatio,
 		"pqRatio", 4, "Set PQ segments = dimensions / ratio (must divide evenly default 4)")
 	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.PQSegments,

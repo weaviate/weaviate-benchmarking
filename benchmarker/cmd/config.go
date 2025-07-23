@@ -46,7 +46,6 @@ type Config struct {
 	RescoreLimit             int
 	PQ                       string
 	SQ                       string
-	LASQ                     string
 	RQ                       string
 	RQBits                   uint
 	SkipQuery                bool
