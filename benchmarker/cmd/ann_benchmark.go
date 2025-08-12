@@ -283,6 +283,11 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 			}
 		}
 	} else if cfg.IndexType == "flat" {
+		// Validate that BQ and RQ are not both enabled
+		if cfg.BQ && cfg.RQ == "auto" {
+			log.Fatalf("Cannot enable both BQ and RQ on flat index type")
+		}
+
 		vectorIndexConfig = map[string]interface{}{
 			"distance": cfg.DistanceMetric,
 		}
@@ -295,6 +300,16 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				bqConfig["rescoreLimit"] = cfg.RescoreLimit
 			}
 			vectorIndexConfig["bq"] = bqConfig
+		} else if cfg.RQ == "auto" {
+			rqConfig := map[string]interface{}{
+				"enabled": true,
+				"bits":    cfg.RQBits,
+			}
+			if cfg.RescoreLimit > -1 {
+				rqConfig["rescoreLimit"] = cfg.RescoreLimit
+			}
+			vectorIndexConfig["rq"] = rqConfig
+			log.WithFields(log.Fields{"bits": cfg.RQBits, "indexType": "flat"}).Printf("Enabled RQ on flat index type")
 		}
 	} else if cfg.IndexType == "dynamic" {
 		log.WithFields(log.Fields{"threshold": cfg.DynamicThreshold}).Info("Building dynamic vector index")
@@ -383,6 +398,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				if cfg.RescoreLimit > -1 {
 					rqConfig["rescoreLimit"] = cfg.RescoreLimit
 				}
+
 				vectorIndexConfig = map[string]interface{}{
 					"distance":               cfg.DistanceMetric,
 					"efConstruction":         float64(cfg.EfConstruction),
@@ -496,8 +512,13 @@ func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 	case "hnsw":
 		vectorIndexConfig["ef"] = ef
 	case "flat":
-		bq := (vectorIndexConfig["bq"].(map[string]interface{}))
-		bq["rescoreLimit"] = ef
+		if bq, exists := vectorIndexConfig["bq"]; exists {
+			bqConfig := bq.(map[string]interface{})
+			bqConfig["rescoreLimit"] = ef
+		} else if rq, exists := vectorIndexConfig["rq"]; exists {
+			rqConfig := rq.(map[string]interface{})
+			rqConfig["rescoreLimit"] = ef
+		}
 	case "dynamic":
 		hnswConfig := vectorIndexConfig["hnsw"].(map[string]interface{})
 		hnswConfig["ef"] = ef
