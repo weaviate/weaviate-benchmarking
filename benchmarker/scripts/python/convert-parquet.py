@@ -5,7 +5,7 @@ import json
 import argparse
 from pathlib import Path
 from typing import Optional
-from datasets import Dataset
+from datasets import Dataset, Features, Value, Array2D, Sequence
 
 
 def convert_hdf5_to_parquet(hdf5_file: str, output_dir: str, dataset_name: str, distance: str) -> None:
@@ -33,14 +33,29 @@ def convert_hdf5_to_parquet(hdf5_file: str, output_dir: str, dataset_name: str, 
             train_data = hf["train"][:]
             print(f"Train dimensions: {train_data.shape}")
             
+            # Convert embeddings to variable-length byte arrays
+            embedding_bytes = []
+            for row in train_data:
+                # Store all embeddings as float32
+                float32_array = row.astype(np.float32)
+                embedding_bytes.append(float32_array.tobytes())
+
+            print(f"Length of embeddings {len(embedding_bytes)}")
+            
             # Convert to DataFrame with embedding and id columns
             train_df = pd.DataFrame({
                 "id": range(len(train_data)),
-                "embedding": train_data.tolist()
+                "embedding": embedding_bytes
             })
             
-            # Create train dataset and save as parquet
-            train_dataset = Dataset.from_pandas(train_df)
+            # Define schema with variable-length byte array for embeddings
+            train_features = Features({
+                "id": Value("uint64"),
+                "embedding": Value("binary")  # Variable-length binary data (BYTE_ARRAY)
+            })
+            
+            # Create train dataset with explicit schema and save as parquet
+            train_dataset = Dataset.from_pandas(train_df, features=train_features)
             train_path = dataset_path / "train"
             train_path.mkdir(exist_ok=True)
             train_dataset.to_parquet(str(train_path / "train.parquet"))
@@ -51,22 +66,38 @@ def convert_hdf5_to_parquet(hdf5_file: str, output_dir: str, dataset_name: str, 
             test_data = hf["test"][:]
             print(f"Test dimensions: {test_data.shape}")
             
+            # Convert embeddings to variable-length byte arrays
+            test_embedding_bytes = []
+            for row in test_data:
+                # Store all embeddings as float32
+                float32_array = row.astype(np.float32)
+                test_embedding_bytes.append(float32_array.tobytes())
+            
             # Convert to DataFrame with embedding and id columns
             test_df = pd.DataFrame({
                 "id": range(len(test_data)),
-                "embedding": test_data.tolist()
+                "embedding": test_embedding_bytes
             })
             
             # Add neighbors data if available
             if "neighbors" in hf:
                 neighbors_data = hf["neighbors"][:]
                 print(f"Neighbors dimensions: {neighbors_data.shape}")
-                
-                # Add neighbors column to test dataframe
                 test_df["neighbors"] = neighbors_data.tolist()
             
-            # Create test dataset and save as parquet
-            test_dataset = Dataset.from_pandas(test_df)
+            # Define schema with variable-length byte array for embeddings
+            test_features = Features({
+                "id": Value("uint64"),
+                "embedding": Value("binary")  # Variable-length binary data (BYTE_ARRAY)
+            })
+            
+            # Add neighbors to schema if available
+            if "neighbors" in hf:
+                # Use Sequence feature for variable-length lists of integers
+                test_features["neighbors"] = Sequence(Value("uint64"))
+            
+            # Create test dataset with explicit schema and save as parquet
+            test_dataset = Dataset.from_pandas(test_df, features=test_features)
             test_path = dataset_path / "test"
             test_path.mkdir(exist_ok=True)
             test_dataset.to_parquet(str(test_path / "test.parquet"))
@@ -78,6 +109,10 @@ def convert_hdf5_to_parquet(hdf5_file: str, output_dir: str, dataset_name: str, 
             "dataset_name": dataset_name,
             "distance": distance,
             "dimensions": train_data.shape[1] if "train" in hf else None,
+            "embedding_format": "variable_length_byte_array",
+            "embedding_dtype": "float32",
+            "embedding_byte_order": "little_endian",
+            "embedding_size_bytes": len(embedding_bytes[0]) if "train" in hf and embedding_bytes else None,
             "splits": {
                 "train": len(train_data) if "train" in hf else 0,
                 "test": len(test_data) if "test" in hf else 0
