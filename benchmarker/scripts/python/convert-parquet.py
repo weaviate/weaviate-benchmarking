@@ -50,7 +50,7 @@ def convert_hdf5_to_parquet(hdf5_file: str, output_dir: str, dataset_name: str, 
             
             # Define schema with variable-length byte array for embeddings
             train_features = Features({
-                "id": Value("uint64"),
+                "id": Value("int64"),
                 "embedding": Value("binary")  # Variable-length binary data (BYTE_ARRAY)
             })
             
@@ -87,14 +87,14 @@ def convert_hdf5_to_parquet(hdf5_file: str, output_dir: str, dataset_name: str, 
             
             # Define schema with variable-length byte array for embeddings
             test_features = Features({
-                "id": Value("uint64"),
+                "id": Value("int64"),
                 "embedding": Value("binary")  # Variable-length binary data (BYTE_ARRAY)
             })
             
             # Add neighbors to schema if available
             if "neighbors" in hf:
                 # Use Sequence feature for variable-length lists of integers
-                test_features["neighbors"] = Sequence(Value("uint64"))
+                test_features["neighbors"] = Sequence(Value("int64"))
             
             # Create test dataset with explicit schema and save as parquet
             test_dataset = Dataset.from_pandas(test_df, features=test_features)
