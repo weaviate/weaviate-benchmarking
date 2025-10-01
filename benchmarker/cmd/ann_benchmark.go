@@ -343,6 +343,12 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 			}
 			vectorIndexConfig["hnsw"].(map[string]interface{})["bq"] = bqConfig
 		}
+	} else if cfg.IndexType == "spfresh" {
+		log.Warn("Currently no vector index configs are set")
+		// TODO: add user config
+		vectorIndexConfig = map[string]interface{}{
+			"random": true,
+		}
 	} else {
 		log.Fatalf("Unknown index type %s", cfg.IndexType)
 	}
@@ -439,6 +445,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		}
 	}
 
+	fmt.Println("classObj is ", classObj.VectorIndexType)
 	err = client.Schema().ClassCreator().WithClass(classObj).Do(context.Background())
 	if err != nil {
 		panic(err)
@@ -1338,7 +1345,7 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.EfArray,
 		"efArray", "16,24,32,48,64,96,128,256,512", "Array of ef parameters as comma separated list")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.IndexType,
-		"indexType", "hnsw", "Index type (hnsw or flat)")
+		"indexType", "hnsw", "Index type (hnsw, flat or spfresh)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MaxConnections,
 		"maxConnections", 16, "Set Weaviate efConstruction parameter (default 16)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.Shards,
