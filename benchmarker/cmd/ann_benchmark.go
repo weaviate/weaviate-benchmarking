@@ -304,6 +304,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 			rqConfig := map[string]interface{}{
 				"enabled": true,
 				"bits":    cfg.RQBits,
+				"cache":   cfg.Cache,
 			}
 			if cfg.RescoreLimit > -1 {
 				rqConfig["rescoreLimit"] = cfg.RescoreLimit
@@ -512,7 +513,7 @@ func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 	case "hnsw":
 		vectorIndexConfig["ef"] = ef
 	case "flat":
-		if bq, exists := vectorIndexConfig["bq"]; exists {
+		if bq, exists := vectorIndexConfig["bq"]; exists && cfg.BQ {
 			bqConfig := bq.(map[string]interface{})
 			bqConfig["rescoreLimit"] = ef
 		} else if rq, exists := vectorIndexConfig["rq"]; exists {
