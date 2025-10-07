@@ -1100,11 +1100,19 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 			result = benchmarkANN(*cfg, testData, neighbors, filters)
 		}
 
-		log.WithFields(log.Fields{
-			"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall, "ndcg": result.NDCG,
-			"parallel": cfg.Parallel, "limit": cfg.Limit,
-			"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed,
-		}).Info("Benchmark result")
+		if cfg.IndexType == "hnsw" || cfg.IndexType == "dynamic" {
+			log.WithFields(log.Fields{
+				"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall, "ndcg": result.NDCG,
+				"parallel": cfg.Parallel, "limit": cfg.Limit,
+				"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed,
+			}).Info("Benchmark result")
+		} else {
+			log.WithFields(log.Fields{
+				"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall, "ndcg": result.NDCG,
+				"parallel": cfg.Parallel, "limit": cfg.Limit,
+				"api": cfg.API, "rescoreLimit": ef, "count": result.Total, "failed": result.Failed,
+			}).Info("Benchmark result")
+		}
 
 		dataset := filepath.Base(cfg.BenchmarkFile)
 
