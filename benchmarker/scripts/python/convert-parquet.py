@@ -128,64 +128,65 @@ def convert_hdf5_to_parquet(hdf5_file: str, output_dir: str, dataset_name: str, 
     print(f"Successfully converted {hdf5_file} to my-ann-benchmarks format in {output_dir}")
 
 
-def upload_to_hub(dataset_dir: str, repo_id: str, token: Optional[str] = None) -> None:
+def upload_to_hub(dataset_dir: str, repo_id: str, dataset_name: str, token: Optional[str] = None) -> None:
     """
-    Upload converted datasets to Hugging Face Hub.
+    Upload a specific converted dataset to Hugging Face Hub.
     
     Args:
         dataset_dir: Directory containing the converted datasets
         repo_id: Repository ID for the Hugging Face Hub (e.g., "username/dataset_name")
+        dataset_name: Name of the specific dataset to upload
         token: Hugging Face token (optional, will use cached token if not provided)
     """
     from huggingface_hub import HfApi
     from pathlib import Path
     
     dataset_path = Path(dataset_dir)
+    subset_dir = dataset_path / dataset_name
     api = HfApi(token=token)
     
-    print(f"Uploading datasets to {repo_id}...")
+    if not subset_dir.exists():
+        print(f"Error: Dataset directory {subset_dir} does not exist")
+        return
     
-    # Upload each dataset subset
-    for subset_dir in dataset_path.iterdir():
-        if subset_dir.is_dir() and subset_dir.name != "__pycache__":
-            print(f"Uploading subset: {subset_dir.name}")
-            
-            # Upload dataset_info.json
-            info_file = subset_dir / "dataset_info.json"
-            if info_file.exists():
-                print(f"Uploading dataset info for {subset_dir.name}...")
-                api.upload_file(
-                    path_or_fileobj=str(info_file),
-                    repo_id=repo_id,
-                    repo_type="dataset",
-                    path_in_repo=f"{subset_dir.name}/dataset_info.json"
-                )
-            
-            # Upload train folder
-            train_folder = subset_dir / "train"
-            if train_folder.exists():
-                print(f"Uploading train folder for {subset_dir.name}...")
-                api.upload_folder(
-                    folder_path=str(train_folder),
-                    repo_id=repo_id,
-                    repo_type="dataset",
-                    path_in_repo=f"{subset_dir.name}/train",
-                    allow_patterns="*.parquet"
-                )
-            
-            # Upload test folder
-            test_folder = subset_dir / "test"
-            if test_folder.exists():
-                print(f"Uploading test folder for {subset_dir.name}...")
-                api.upload_folder(
-                    folder_path=str(test_folder),
-                    repo_id=repo_id,
-                    repo_type="dataset",
-                    path_in_repo=f"{subset_dir.name}/test",
-                    allow_patterns="*.parquet"
-                )
+    print(f"Uploading dataset '{dataset_name}' to {repo_id}...")
     
-    print(f"Successfully uploaded dataset to https://huggingface.co/datasets/{repo_id}")
+    # Upload dataset_info.json
+    info_file = subset_dir / "dataset_info.json"
+    if info_file.exists():
+        print(f"Uploading dataset info for {dataset_name}...")
+        api.upload_file(
+            path_or_fileobj=str(info_file),
+            repo_id=repo_id,
+            repo_type="dataset",
+            path_in_repo=f"{dataset_name}/dataset_info.json"
+        )
+    
+    # Upload train folder
+    train_folder = subset_dir / "train"
+    if train_folder.exists():
+        print(f"Uploading train folder for {dataset_name}...")
+        api.upload_folder(
+            folder_path=str(train_folder),
+            repo_id=repo_id,
+            repo_type="dataset",
+            path_in_repo=f"{dataset_name}/train",
+            allow_patterns="*.parquet"
+        )
+    
+    # Upload test folder
+    test_folder = subset_dir / "test"
+    if test_folder.exists():
+        print(f"Uploading test folder for {dataset_name}...")
+        api.upload_folder(
+            folder_path=str(test_folder),
+            repo_id=repo_id,
+            repo_type="dataset",
+            path_in_repo=f"{dataset_name}/test",
+            allow_patterns="*.parquet"
+        )
+    
+    print(f"Successfully uploaded dataset '{dataset_name}' to https://huggingface.co/datasets/{repo_id}")
 
 
 def main():
@@ -214,7 +215,7 @@ def main():
             if not args.repo_id:
                 print("Error: --repo-id is required when using --upload")
                 return 1
-            upload_to_hub(args.output_dir, args.repo_id, args.token)
+            upload_to_hub(args.output_dir, args.repo_id, args.name, args.token)
         
         return 0
     except Exception as e:
