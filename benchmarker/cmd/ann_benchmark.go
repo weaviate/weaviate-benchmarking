@@ -56,7 +56,8 @@ type Batch struct {
 // mixed camel / snake case for compatibility
 type ResultsJSONBenchmark struct {
 	Api              string  `json:"api"`
-	Ef               int     `json:"ef"`
+	Ef               int     `json:"ef,omitempty"`
+	RescoreLimit     int     `json:"rescoreLimit,omitempty"`
 	EfConstruction   int     `json:"efConstruction"`
 	MaxConnections   int     `json:"maxConnections"`
 	Mean             float64 `json:"meanLatency"`
@@ -1100,11 +1101,19 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 			result = benchmarkANN(*cfg, testData, neighbors, filters)
 		}
 
-		log.WithFields(log.Fields{
-			"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall, "ndcg": result.NDCG,
-			"parallel": cfg.Parallel, "limit": cfg.Limit,
-			"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed,
-		}).Info("Benchmark result")
+		if cfg.IndexType == "hnsw" || cfg.IndexType == "dynamic" {
+			log.WithFields(log.Fields{
+				"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall, "ndcg": result.NDCG,
+				"parallel": cfg.Parallel, "limit": cfg.Limit,
+				"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed,
+			}).Info("Benchmark result")
+		} else {
+			log.WithFields(log.Fields{
+				"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall, "ndcg": result.NDCG,
+				"parallel": cfg.Parallel, "limit": cfg.Limit,
+				"api": cfg.API, "rescoreLimit": ef, "count": result.Total, "failed": result.Failed,
+			}).Info("Benchmark result")
+		}
 
 		dataset := filepath.Base(cfg.BenchmarkFile)
 
@@ -1112,7 +1121,6 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 
 		benchResult := ResultsJSONBenchmark{
 			Api:              cfg.API,
-			Ef:               ef,
 			EfConstruction:   cfg.EfConstruction,
 			MaxConnections:   cfg.MaxConnections,
 			Mean:             result.Mean.Seconds(),
@@ -1130,6 +1138,12 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 			HeapInuseBytes:   memstats.HeapInuseBytes,
 			HeapSysBytes:     memstats.HeapSysBytes,
 			Timestamp:        time.Now().Format(time.RFC3339),
+		}
+		switch cfg.IndexType {
+		case "flat":
+			benchResult.RescoreLimit = ef
+		case "hnsw", "dynamic":
+			benchResult.Ef = ef
 		}
 
 		jsonData, err := json.Marshal(benchResult)
