@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -14,25 +13,20 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
 	"github.com/hashicorp/go-retryablehttp"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/exp/constraints"
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
-	"github.com/weaviate/hdf5"
 	"github.com/weaviate/weaviate-go-client/v4/weaviate"
 	"github.com/weaviate/weaviate-go-client/v4/weaviate/auth"
 	"github.com/weaviate/weaviate-go-client/v4/weaviate/fault"
 	"github.com/weaviate/weaviate/entities/models"
 	weaviategrpc "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
 	"github.com/weaviate/weaviate/usecases/byteops"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -40,9 +34,10 @@ import (
 type CompressionType byte
 
 const (
-	CompressionTypePQ CompressionType = 0
-	CompressionTypeSQ CompressionType = 1
-	CompressionTypeRQ CompressionType = 2
+	CompressionTypePQ           CompressionType = 0
+	CompressionTypeSQ           CompressionType = 1
+	CompressionTypeRQ           CompressionType = 2
+	CompressionTypeUncompressed CompressionType = 255
 )
 
 // Batch of vectors and offset for writing to Weaviate
@@ -214,7 +209,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		multiTenancyEnabled = true
 	}
 
-	var classObj = &models.Class{
+	classObj := &models.Class{
 		Class:       cfg.ClassName,
 		Description: fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
 		MultiTenancyConfig: &models.MultiTenancyConfig{
@@ -697,374 +692,6 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 	}
 }
 
-func convert1DChunk[D float32 | float64](input []D, dimensions int, batchRows int) [][]float32 {
-	chunkData := make([][]float32, batchRows)
-	for i := range chunkData {
-		chunkData[i] = make([]float32, dimensions)
-		for j := 0; j < dimensions; j++ {
-			chunkData[i][j] = float32(input[i*dimensions+j])
-		}
-	}
-	return chunkData
-}
-
-func getHDF5ByteSize(dataset *hdf5.Dataset) uint {
-	datatype, err := dataset.Datatype()
-	if err != nil {
-		log.Fatalf("Unabled to read datatype\n")
-	}
-
-	// log.WithFields(log.Fields{"size": datatype.Size()}).Printf("Parsing HDF5 byte format\n")
-	byteSize := datatype.Size()
-	if byteSize != 4 && byteSize != 8 && byteSize != 16 {
-		log.Fatalf("Unable to load dataset with byte size %d\n", byteSize)
-	}
-	return byteSize
-}
-
-// Load a large dataset from an hdf5 file and stream it to Weaviate
-// startOffset and maxRecords are ignored if equal to 0
-func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, cfg *Config, startOffset uint, maxRecords uint, filters []int) {
-	dataspace := dataset.Space()
-	dims, _, _ := dataspace.SimpleExtentDims()
-
-	if len(dims) != 2 {
-		log.Fatal("expected 2 dimensions")
-	}
-
-	byteSize := getHDF5ByteSize(dataset)
-
-	rows := dims[0]
-	dimensions := dims[1]
-
-	// Handle offsetting the data for product quantization
-	i := uint(0)
-	if maxRecords != 0 && maxRecords < rows {
-		rows = maxRecords
-	}
-
-	if startOffset != 0 && i < rows {
-		i = startOffset
-	}
-
-	batchSize := uint(cfg.BatchSize)
-
-	log.WithFields(log.Fields{"rows": rows, "dimensions": dimensions}).Printf(
-		"Reading HDF5 dataset")
-
-	memspace, err := hdf5.CreateSimpleDataspace([]uint{batchSize, dimensions}, []uint{batchSize, dimensions})
-	if err != nil {
-		log.Fatalf("Error creating memspace: %v", err)
-	}
-	defer memspace.Close()
-
-	for ; i < rows; i += batchSize {
-
-		batchRows := batchSize
-		// handle final smaller batch
-		if i+batchSize > rows {
-			batchRows = rows - i
-			memspace, err = hdf5.CreateSimpleDataspace([]uint{batchRows, dimensions}, []uint{batchRows, dimensions})
-			if err != nil {
-				log.Fatalf("Error creating final memspace: %v", err)
-			}
-		}
-
-		offset := []uint{i, 0}
-		count := []uint{batchRows, dimensions}
-
-		if err := dataspace.SelectHyperslab(offset, nil, count, nil); err != nil {
-			log.Fatalf("Error selecting hyperslab: %v", err)
-		}
-
-		var chunkData [][]float32
-
-		if byteSize == 4 {
-			chunkData1D := make([]float32, batchRows*dimensions)
-
-			if err := dataset.ReadSubset(&chunkData1D, memspace, dataspace); err != nil {
-				log.Printf("BatchRows = %d, i = %d, rows = %d", batchRows, i, rows)
-				log.Fatalf("Error reading subset: %v", err)
-			}
-
-			chunkData = convert1DChunk[float32](chunkData1D, int(dimensions), int(batchRows))
-
-		} else if byteSize == 8 {
-			chunkData1D := make([]float64, batchRows*dimensions)
-
-			if err := dataset.ReadSubset(&chunkData1D, memspace, dataspace); err != nil {
-				log.Printf("BatchRows = %d, i = %d, rows = %d", batchRows, i, rows)
-				log.Fatalf("Error reading subset: %v", err)
-			}
-
-			chunkData = convert1DChunk[float64](chunkData1D, int(dimensions), int(batchRows))
-
-		}
-
-		if (i+batchRows)%10000 == 0 {
-			log.Printf("Imported %d/%d rows", i+batchRows, rows)
-		}
-
-		filter := []int{}
-		if len(filters) > 0 {
-			filter = filters[i : i+batchRows]
-		}
-
-		chunks <- Batch{Vectors: chunkData, Offset: int(i), Filters: filter}
-	}
-}
-
-// Read an entire dataset from an hdf5 file at once
-func loadHdf5Float32(file *hdf5.File, name string, cfg *Config) [][]float32 {
-	dataset, err := file.OpenDataset(name)
-	if err != nil {
-		log.Fatalf("Error opening loadHdf5Float32 dataset: %v", err)
-	}
-	defer dataset.Close()
-	dataspace := dataset.Space()
-	dims, _, _ := dataspace.SimpleExtentDims()
-
-	byteSize := getHDF5ByteSize(dataset)
-
-	var rows uint
-	var dimensions uint
-	if cfg.MultiVectorDimensions != 0 {
-		rows = dims[0]
-		dimensions = uint(cfg.MultiVectorDimensions)
-	} else {
-		if len(dims) != 2 {
-			log.Fatal("expected 2 dimensions")
-		}
-		rows = dims[0]
-		dimensions = dims[1]
-	}
-
-	var chunkData [][]float32
-
-	if byteSize == 4 {
-		chunkData1D := make([]float32, rows*dimensions)
-		dataset.Read(&chunkData1D)
-		chunkData = convert1DChunk[float32](chunkData1D, int(dimensions), int(rows))
-	} else if byteSize == 8 {
-		chunkData1D := make([]float64, rows*dimensions)
-		dataset.Read(&chunkData1D)
-		chunkData = convert1DChunk[float64](chunkData1D, int(dimensions), int(rows))
-	}
-
-	return chunkData
-}
-
-func loadHdf5Categories(file *hdf5.File, name string) []int {
-	dataset, err := file.OpenDataset(name)
-	if err != nil {
-		log.Fatalf("Error opening neighbors dataset: %v", err)
-	}
-	defer dataset.Close()
-
-	dataspace := dataset.Space()
-	dims, _, _ := dataspace.SimpleExtentDims()
-	if len(dims) != 1 {
-		log.Fatal("expected 1 dimension")
-	}
-
-	elements := dims[0]
-	byteSize := getHDF5ByteSize(dataset)
-
-	chunkData := make([]int, elements)
-
-	if byteSize == 4 {
-		chunkData32 := make([]int32, elements)
-		dataset.Read(&chunkData32)
-		for i := range chunkData {
-			chunkData[i] = int(chunkData32[i])
-		}
-	} else if byteSize == 8 {
-		dataset.Read(&chunkData)
-	}
-
-	return chunkData
-}
-
-// Read an entire dataset from an hdf5 file at once (neighbours)
-func loadHdf5Neighbors(file *hdf5.File, name string) [][]int {
-	dataset, err := file.OpenDataset(name)
-	if err != nil {
-		log.Fatalf("Error opening neighbors dataset: %v", err)
-	}
-	defer dataset.Close()
-	dataspace := dataset.Space()
-	dims, _, _ := dataspace.SimpleExtentDims()
-
-	if len(dims) != 2 {
-		log.Fatal("expected 2 dimensions")
-	}
-
-	rows := dims[0]
-	dimensions := dims[1]
-
-	byteSize := getHDF5ByteSize(dataset)
-
-	chunkData := make([][]int, rows)
-
-	if byteSize == 4 {
-		chunkData1D := make([]int32, rows*dimensions)
-		dataset.Read(&chunkData1D)
-		for i := range chunkData {
-			chunkData[i] = make([]int, dimensions)
-			for j := uint(0); j < dimensions; j++ {
-				chunkData[i][j] = int(chunkData1D[uint(i)*dimensions+j])
-			}
-		}
-	} else if byteSize == 8 {
-		chunkData1D := make([]int, rows*dimensions)
-		dataset.Read(&chunkData1D)
-		for i := range chunkData {
-			chunkData[i] = chunkData1D[i*int(dimensions) : (i+1)*int(dimensions)]
-		}
-	}
-
-	return chunkData
-}
-
-func calculateHdf5TrainExtent(file *hdf5.File, cfg *Config) (uint, uint) {
-	dataset, err := file.OpenDataset("train")
-	if err != nil {
-		log.Fatalf("Error opening dataset: %v", err)
-	}
-	defer dataset.Close()
-	dataspace := dataset.Space()
-	extent, _, _ := dataspace.SimpleExtentDims()
-	dimensions := extent[1]
-	rows := extent[0]
-	return rows, dimensions
-}
-
-func loadHdf5Train(file *hdf5.File, cfg *Config, offset uint, maxRows uint, updatePercent float32) uint {
-	dataset, err := file.OpenDataset("train")
-	if err != nil {
-		log.Fatalf("Error opening dataset: %v", err)
-	}
-	defer dataset.Close()
-	dataspace := dataset.Space()
-	extent, _, _ := dataspace.SimpleExtentDims()
-	var dimensions uint
-
-	if cfg.MultiVectorDimensions == 0 {
-		dimensions = extent[1]
-	} else {
-		dimensions = uint(cfg.MultiVectorDimensions)
-	}
-
-	filters := []int{}
-	if cfg.Filter {
-		filters = loadHdf5Categories(file, "train_categories")
-	}
-
-	chunks := make(chan Batch, 10)
-
-	go func() {
-		if cfg.MultiVectorDimensions > 0 {
-			loadHdf5StreamingColbert(dataset, chunks, cfg, offset, maxRows, filters)
-		} else {
-			loadHdf5Streaming(dataset, chunks, cfg, offset, maxRows, filters)
-		}
-		close(chunks)
-	}()
-
-	var wg sync.WaitGroup
-
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
-			// Import workers will primary use the direct gRPC client
-			// If triggering deletes before import, we need to use the normal go client
-			grpcCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-			httpOption := grpc.WithInsecure()
-			if cfg.HttpScheme == "https" {
-				creds := credentials.NewTLS(&tls.Config{
-					InsecureSkipVerify: true,
-				})
-				httpOption = grpc.WithTransportCredentials(creds)
-			}
-			defer cancel()
-			opts := []retry.CallOption{
-				retry.WithBackoff(retry.BackoffExponential(100 * time.Millisecond)),
-			}
-			grpcConn, err := grpc.DialContext(grpcCtx, cfg.Origin, httpOption, grpc.WithUnaryInterceptor(retry.UnaryClientInterceptor(opts...)))
-			if err != nil {
-				log.Fatalf("Did not connect: %v", err)
-			}
-			defer grpcConn.Close()
-			grpcClient := weaviategrpc.NewWeaviateClient(grpcConn)
-			weaviateClient := createClient(cfg)
-
-			for chunk := range chunks {
-				if updatePercent > 0 {
-					if rand.Float32() < updatePercent {
-						deleteChunk(&chunk, weaviateClient, cfg)
-						writeChunk(&chunk, &grpcClient, cfg)
-					}
-				} else {
-					writeChunk(&chunk, &grpcClient, cfg)
-				}
-			}
-		}()
-	}
-
-	wg.Wait()
-	return dimensions
-}
-
-// Load an hdf5 file in the format of ann-benchmarks.com
-// returns total time duration for load
-func loadANNBenchmarksFile(file *hdf5.File, cfg *Config, client *weaviate.Client, maxRows uint) time.Duration {
-	addTenantIfNeeded(cfg, client)
-	startTime := time.Now()
-
-	if cfg.PQ == "enabled" {
-		dimensions := loadHdf5Train(file, cfg, 0, uint(cfg.TrainingLimit), 0)
-		log.Printf("Pausing to enable PQ.")
-		enableCompression(cfg, client, dimensions, CompressionTypePQ)
-		loadHdf5Train(file, cfg, uint(cfg.TrainingLimit), 0, 0)
-
-	} else if cfg.SQ == "enabled" {
-		dimensions := loadHdf5Train(file, cfg, 0, uint(cfg.TrainingLimit), 0)
-		log.Printf("Pausing to enable SQ.")
-		enableCompression(cfg, client, dimensions, CompressionTypeSQ)
-		loadHdf5Train(file, cfg, uint(cfg.TrainingLimit), 0, 0)
-
-	} else if cfg.RQ == "enabled" {
-		dimensions := loadHdf5Train(file, cfg, 0, uint(cfg.TrainingLimit), 0)
-		log.Printf("Pausing to enable RQ.")
-		enableCompression(cfg, client, dimensions, CompressionTypeRQ)
-		loadHdf5Train(file, cfg, uint(cfg.TrainingLimit), 0, 0)
-	} else {
-		loadHdf5Train(file, cfg, 0, maxRows, 0)
-	}
-	endTime := time.Now()
-	log.WithFields(log.Fields{"duration": endTime.Sub(startTime)}).Printf("Total load time\n")
-	if !cfg.SkipAsyncReady {
-		endTime = waitReady(cfg, client, startTime, 4*time.Hour, 1000)
-	}
-	return endTime.Sub(startTime)
-}
-
-// Load a dataset multiple time with different tenants
-func loadHdf5MultiTenant(file *hdf5.File, cfg *Config, client *weaviate.Client) time.Duration {
-	startTime := time.Now()
-
-	for i := 0; i < cfg.NumTenants; i++ {
-		cfg.Tenant = fmt.Sprintf("%d", i)
-		loadANNBenchmarksFile(file, cfg, client, 0)
-	}
-
-	endTime := time.Now()
-	log.WithFields(log.Fields{"duration": endTime.Sub(startTime)}).Printf("Multi-tenant load time\n")
-	return endTime.Sub(startTime)
-}
-
 func parseEfValues(s string) ([]int, error) {
 	strs := strings.Split(s, ",")
 	nums := make([]int, len(strs))
@@ -1205,11 +832,8 @@ var annBenchmarkCommand = &cobra.Command{
 		memoryMonitor.Start()
 		defer memoryMonitor.Stop()
 
-		file, err := hdf5.OpenFile(cfg.BenchmarkFile, hdf5.F_ACC_RDONLY)
-		if err != nil {
-			log.Fatalf("Error opening file: %v\n", err)
-		}
-		defer file.Close()
+		dataset := NewHdf5Dataset(cfg.BenchmarkFile, cfg.MultiVectorDimensions, cfg.Filter)
+		defer dataset.Close()
 
 		client := createClient(&cfg)
 
@@ -1227,9 +851,9 @@ var annBenchmarkCommand = &cobra.Command{
 			}).Info("Starting import")
 
 			if cfg.NumTenants > 0 {
-				importTime = loadHdf5MultiTenant(file, &cfg, client)
+				importTime = loadANNBenchmarksDataMultiTenant(dataset, &cfg, client)
 			} else {
-				importTime = loadANNBenchmarksFile(file, &cfg, client, 0)
+				importTime = loadANNBenchmarksData(dataset, &cfg, client, 0)
 			}
 
 			sleepDuration := time.Duration(cfg.QueryDelaySeconds) * time.Second
@@ -1246,24 +870,15 @@ var annBenchmarkCommand = &cobra.Command{
 			return
 		}
 
-		neighbors := loadHdf5Neighbors(file, "neighbors")
-		var testData [][]float32
-		if cfg.MultiVectorDimensions > 0 {
-			testData = loadHdf5Colbert(file, "test", cfg.MultiVectorDimensions)
-		} else {
-			testData = loadHdf5Float32(file, "test", &cfg)
-		}
-
-		testFilters := make([]int, 0)
-		if cfg.Filter {
-			testFilters = loadHdf5Categories(file, "test_categories")
-		}
+		neighbors := dataset.Neighbors()
+		testData := dataset.TestVectors()
+		testFilters := dataset.TestFilters()
 
 		runQueries(&cfg, importTime, testData, neighbors, testFilters)
 
 		if cfg.performUpdates() {
 
-			totalRowCount, _ := calculateHdf5TrainExtent(file, &cfg)
+			totalRowCount := dataset.NumTrainVectors()
 			updateRowCount := uint(math.Floor(float64(totalRowCount) * cfg.UpdatePercentage))
 
 			log.Printf("Performing %d update iterations\n", cfg.UpdateIterations)
@@ -1273,10 +888,10 @@ var annBenchmarkCommand = &cobra.Command{
 				startTime := time.Now()
 
 				if cfg.UpdateRandomized {
-					loadHdf5Train(file, &cfg, 0, 0, float32(cfg.UpdatePercentage))
+					loadTrainData(dataset, &cfg, 0, 0, float32(cfg.UpdatePercentage))
 				} else {
 					deleteUuidRange(&cfg, client, 0, int(updateRowCount))
-					loadHdf5Train(file, &cfg, 0, updateRowCount, 0)
+					loadTrainData(dataset, &cfg, 0, updateRowCount, 0)
 				}
 
 				log.WithFields(log.Fields{"duration": time.Since(startTime)}).Printf("Total delete and update time\n")
