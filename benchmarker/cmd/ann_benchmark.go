@@ -832,7 +832,13 @@ var annBenchmarkCommand = &cobra.Command{
 		memoryMonitor.Start()
 		defer memoryMonitor.Stop()
 
-		dataset := NewHdf5Dataset(cfg.BenchmarkFile, cfg.MultiVectorDimensions, cfg.Filter)
+		var dataset Dataset
+		if len(cfg.DatasetRepo) > 0 {
+			dataset = NewParquetDataset(cfg.DatasetRepo, cfg.Dataset, cfg.MultiVectorDimensions, cfg.Filter)
+			// dataset = NewParquetDataset("tobias-weaviate/ann-datasets", "dbpedia-openai-ada002-1536-float32-angular-100k", cfg.MultiVectorDimensions, cfg.Filter)
+		} else {
+			dataset = NewHdf5Dataset(cfg.BenchmarkFile, cfg.MultiVectorDimensions, cfg.Filter)
+		}
 		defer dataset.Close()
 
 		client := createClient(&cfg)
@@ -1036,6 +1042,10 @@ func initAnnBenchmark() {
 		"memoryMonitoringInterval", 5, "Memory monitoring interval in seconds (default 5)")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.MemoryMonitoringFile,
 		"memoryMonitoringFile", "", "Memory monitoring output file name (default: memory_metrics_<timestamp>.json)")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.DatasetRepo,
+		"datasetRepo", "", "Hugging Face dataset repo e.g. weaviate/ann-datasets")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.Dataset,
+		"dataset", "", "Dataset name e.g. dbpedia-openai-ada002-1536-float32-angular-100k")
 }
 
 func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors, filters []int) Results {

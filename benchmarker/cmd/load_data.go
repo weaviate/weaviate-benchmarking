@@ -54,6 +54,10 @@ func loadTrainData(ds Dataset, cfg *Config, offset uint, maxRows uint, updatePer
 			for chunk := range chunks {
 				if updatePercent > 0 {
 					if rand.Float32() < updatePercent {
+						// Always deleting and then inserting the same chunk of
+						// vectors seems like a special case. Would it be more
+						// natural to select vectors to be inserted and deleted
+						// at random and independently from the dataset?
 						deleteChunk(&chunk, weaviateClient, cfg)
 						writeChunk(&chunk, &grpcClient, cfg)
 					}
