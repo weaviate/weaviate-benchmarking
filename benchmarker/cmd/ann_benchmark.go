@@ -344,10 +344,8 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 			vectorIndexConfig["hnsw"].(map[string]interface{})["bq"] = bqConfig
 		}
 	} else if cfg.IndexType == "spfresh" {
-		log.Warn("Currently no vector index configs are set")
-		// TODO: add user config
 		vectorIndexConfig = map[string]interface{}{
-			"random": true,
+			"distance": cfg.DistanceMetric,
 		}
 	} else {
 		log.Fatalf("Unknown index type %s", cfg.IndexType)
@@ -445,7 +443,6 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		}
 	}
 
-	fmt.Println("classObj is ", classObj.VectorIndexType)
 	err = client.Schema().ClassCreator().WithClass(classObj).Do(context.Background())
 	if err != nil {
 		panic(err)
