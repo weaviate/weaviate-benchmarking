@@ -345,6 +345,10 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 			}
 			vectorIndexConfig["hnsw"].(map[string]interface{})["bq"] = bqConfig
 		}
+	} else if cfg.IndexType == "spfresh" {
+		vectorIndexConfig = map[string]interface{}{
+			"distance": cfg.DistanceMetric,
+		}
 	} else {
 		log.Fatalf("Unknown index type %s", cfg.IndexType)
 	}
