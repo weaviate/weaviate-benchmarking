@@ -25,8 +25,7 @@ func NewParquetDataset(datasetID string, subset string, multiVectorDimension int
 		log.Fatalf("parquet datasets do not support multi-vectors (yet)")
 	}
 
-	logger := log.New()
-	hubDataset := datasets.NewHubDataset(datasetID, subset, logger)
+	hubDataset := datasets.NewHubDataset(datasetID, subset)
 	trainReader, err := hubDataset.NewDataReader(datasets.TrainSplit, 0, -1, 100)
 	if err != nil {
 		log.Fatalf("failed to open training data set")
