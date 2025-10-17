@@ -344,6 +344,11 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				bqConfig["rescoreLimit"] = cfg.RescoreLimit
 			}
 			vectorIndexConfig["hnsw"].(map[string]interface{})["bq"] = bqConfig
+		} else if cfg.RQ == "auto" {
+			vectorIndexConfig["hnsw"].(map[string]interface{})["rq"] = map[string]interface{}{
+				"enabled": true,
+				"bits":    cfg.RQBits,
+			}
 		}
 	} else if cfg.IndexType == "spfresh" {
 		vectorIndexConfig = map[string]interface{}{
