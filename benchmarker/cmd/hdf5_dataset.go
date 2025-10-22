@@ -26,13 +26,12 @@ func NewHdf5Dataset(filePath string, multiVectorDimension int, filters bool) *Hd
 	defer dataset.Close()
 	dataspace := dataset.Space()
 	extent, _, _ := dataspace.SimpleExtentDims()
-	dimension := int(extent[1])
 	rows := int(extent[0])
-
-	// We pass this dimension to the compression.
-	// It seems like the multivector dimension has to be specified manually.
+	var dimension int
 	if multiVectorDimension > 0 {
 		dimension = multiVectorDimension
+	} else {
+		dimension = int(extent[1])
 	}
 
 	return &Hdf5Dataset{

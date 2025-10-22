@@ -34,22 +34,22 @@ def convert_hdf5_to_parquet(hdf5_file: str, output_dir: str, dataset_name: str, 
             print(f"Train dimensions: {train_data.shape}")
             
             # Convert vectors/embeddings to variable-length byte arrays
-            vector_bytes = []
+            embedding_bytes = []
             for row in train_data:
                 # Store all embeddings as float32
                 float32_array = row.astype(np.float32)
-                vector_bytes.append(float32_array.tobytes())
+                embedding_bytes.append(float32_array.tobytes())
 
-            print(f"Length of embeddings {len(vector_bytes)}")
+            print(f"Length of embeddings {len(embedding_bytes)}")
             
             # Create Pyarrow table
             train_schema = pa.schema([
                 pa.field("id", pa.uint64(), nullable=False),
-                pa.field("vector", pa.binary(), nullable=False),
+                pa.field("embedding", pa.binary(), nullable=False),
             ])
             train_table = pa.Table.from_pydict({
                 "id": list(range(len(train_data))),
-                "vector": vector_bytes,
+                "embedding": embedding_bytes,
             }, schema=train_schema)
 
             train_path = dataset_path / "train"
@@ -63,11 +63,11 @@ def convert_hdf5_to_parquet(hdf5_file: str, output_dir: str, dataset_name: str, 
             print(f"Test dimensions: {test_data.shape}")
             
             # Convert embeddings to variable-length byte arrays
-            test_vector_bytes = []
+            test_embedding_bytes = []
             for row in test_data:
                 # Store all embeddings as float32
                 float32_array = row.astype(np.float32)
-                test_vector_bytes.append(float32_array.tobytes())
+                test_embedding_bytes.append(float32_array.tobytes())
             
             # Collect neighbor lists
             neighbors_data = hf["neighbors"][:]
@@ -76,12 +76,12 @@ def convert_hdf5_to_parquet(hdf5_file: str, output_dir: str, dataset_name: str, 
             # Create Pyarrow table
             test_schema = pa.schema([
                 pa.field("id", pa.uint64(), nullable=False),
-                pa.field("vector", pa.binary(), nullable=False),
+                pa.field("embedding", pa.binary(), nullable=False),
                 pa.field("neighbors", pa.list_(pa.field("item", pa.uint64(), nullable=False), list_size=100), nullable=False)
             ])
             test_table = pa.Table.from_pydict({
                 "id": list(range(len(test_data))),
-                "vector": test_vector_bytes,
+                "embedding": test_embedding_bytes,
                 "neighbors": neighbors_data.tolist(),
             }, schema=test_schema)
 
@@ -96,10 +96,10 @@ def convert_hdf5_to_parquet(hdf5_file: str, output_dir: str, dataset_name: str, 
             "dataset_name": dataset_name,
             "distance": distance,
             "dimensions": train_data.shape[1] if "train" in hf else None,
-            "vector_format": "variable_length_byte_array",
-            "vector_dtype": "float32",
-            "vector_byte_order": "little_endian",
-            "vector_size_bytes": len(vector_bytes[0]) if "train" in hf and vector_bytes else None,
+            "embedding_format": "variable_length_byte_array",
+            "embedding_dtype": "float32",
+            "embedding_byte_order": "little_endian",
+            "embedding_size_bytes": len(embedding_bytes[0]) if "train" in hf and embedding_bytes else None,
             "neighbors": 100,
             "splits": {
                 "train": len(train_data) if "train" in hf else 0,

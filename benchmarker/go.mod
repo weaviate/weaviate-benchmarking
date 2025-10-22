@@ -4,8 +4,6 @@ go 1.24
 
 toolchain go1.24.0
 
-replace github.com/weaviate/weaviate => /Users/tobiaschristiani/code/parquet-reader
-
 require (
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.0.1
@@ -16,7 +14,7 @@ require (
 	github.com/spf13/cobra v1.8.1
 	github.com/stretchr/testify v1.10.0
 	github.com/weaviate/hdf5 v0.0.0-20230911114900-3cd888ffadcd
-	github.com/weaviate/weaviate v1.28.5-0.20250126214405-c3c12e7623bf
+	github.com/weaviate/weaviate v1.34.0-rc.0.0.20251022050050-d6dd7edf23f3
 	github.com/weaviate/weaviate-go-client/v4 v4.16.2-0.20250127073049-5b267cd41195
 	golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac
 	google.golang.org/grpc v1.74.2
