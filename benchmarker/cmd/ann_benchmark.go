@@ -533,6 +533,8 @@ func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 	case "dynamic":
 		hnswConfig := vectorIndexConfig["hnsw"].(map[string]interface{})
 		hnswConfig["ef"] = ef
+	case "spfresh":
+		vectorIndexConfig["searchProbe"] = ef
 	}
 
 	if cfg.NamedVector != "" {
