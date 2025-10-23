@@ -75,6 +75,8 @@ type Config struct {
 	MemoryMonitoringEnabled  bool
 	MemoryMonitoringInterval int
 	MemoryMonitoringFile     string
+	DatasetRepo              string
+	Dataset                  string
 }
 
 func (c *Config) Validate() error {
@@ -165,8 +167,12 @@ func (c *Config) parseLabels() {
 }
 
 func (c Config) validateANN() error {
-	if c.BenchmarkFile == "" {
-		return errors.Errorf("a vector benchmark file must be provided")
+	if c.BenchmarkFile == "" && c.DatasetRepo == "" {
+		return errors.Errorf("a vector benchmark file or a dataset repository and dataset must be provided")
+	}
+
+	if c.BenchmarkFile == "" && !(c.DatasetRepo != "" && c.Dataset != "") {
+		return errors.Errorf("if a vector benchmark file is not provided both a dataset repo and a dataset must be provided")
 	}
 
 	if c.API != "grpc" {

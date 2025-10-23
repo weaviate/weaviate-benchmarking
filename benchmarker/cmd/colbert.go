@@ -10,7 +10,7 @@ import (
 	"github.com/weaviate/hdf5"
 )
 
-func loadHdf5StreamingColbert(dataset *hdf5.Dataset, chunks chan<- Batch, cfg *Config, startOffset uint, maxRecords uint, filters []int) {
+func loadHdf5StreamingColbert(dataset *hdf5.Dataset, chunks chan<- Batch, batchSize uint, startOffset uint, maxRecords uint, multiVectorDimension int, filters []int) {
 	dataspace := dataset.Space()
 	dims, _, err := dataspace.SimpleExtentDims()
 	if err != nil {
@@ -27,8 +27,6 @@ func loadHdf5StreamingColbert(dataset *hdf5.Dataset, chunks chan<- Batch, cfg *C
 	if startOffset != 0 && i < rows {
 		i = startOffset
 	}
-
-	batchSize := uint(cfg.BatchSize)
 
 	log.WithFields(log.Fields{"rows": rows}).Printf("Reading HDF5 Colbert dataset")
 
@@ -80,9 +78,9 @@ func loadHdf5StreamingColbert(dataset *hdf5.Dataset, chunks chan<- Batch, cfg *C
 			copy(data, src)
 
 			// Add check length is a multiple of dimensions
-			if length%cfg.MultiVectorDimensions != 0 {
+			if length%multiVectorDimension != 0 {
 				log.Fatalf("Length %d is not a multiple of dimensions %d",
-					length, cfg.MultiVectorDimensions)
+					length, multiVectorDimension)
 			}
 
 			chunkData[j] = data
@@ -106,7 +104,6 @@ func loadHdf5StreamingColbert(dataset *hdf5.Dataset, chunks chan<- Batch, cfg *C
 }
 
 func loadHdf5Colbert(file *hdf5.File, name string, dimensions int) [][]float32 {
-
 	var result [][]float32
 
 	dataset, err := file.OpenDataset(name)
@@ -190,7 +187,6 @@ var colbertCmd = &cobra.Command{
 		log.Infof("First vector:")
 		log.Infof("  Length: %d", len(res[0]))
 		log.Infof("  First three values: %v, %v, %v", res[0][0], res[0][1], res[0][2])
-
 	},
 }
 

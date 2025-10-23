@@ -1,11 +1,11 @@
 import h5py
 import numpy as np
-import pandas as pd
 import json
 import argparse
+import pyarrow as pa
+import pyarrow.parquet as pq
 from pathlib import Path
 from typing import Optional
-from datasets import Dataset, Features, Value, Array2D, Sequence
 
 
 def convert_hdf5_to_parquet(hdf5_file: str, output_dir: str, dataset_name: str, distance: str) -> None:
@@ -33,7 +33,7 @@ def convert_hdf5_to_parquet(hdf5_file: str, output_dir: str, dataset_name: str, 
             train_data = hf["train"][:]
             print(f"Train dimensions: {train_data.shape}")
             
-            # Convert embeddings to variable-length byte arrays
+            # Convert vectors/embeddings to variable-length byte arrays
             embedding_bytes = []
             for row in train_data:
                 # Store all embeddings as float32
@@ -42,23 +42,19 @@ def convert_hdf5_to_parquet(hdf5_file: str, output_dir: str, dataset_name: str, 
 
             print(f"Length of embeddings {len(embedding_bytes)}")
             
-            # Convert to DataFrame with embedding and id columns
-            train_df = pd.DataFrame({
-                "id": range(len(train_data)),
-                "embedding": embedding_bytes
-            })
-            
-            # Define schema with variable-length byte array for embeddings
-            train_features = Features({
-                "id": Value("int64"),
-                "embedding": Value("binary")  # Variable-length binary data (BYTE_ARRAY)
-            })
-            
-            # Create train dataset with explicit schema and save as parquet
-            train_dataset = Dataset.from_pandas(train_df, features=train_features)
+            # Create Pyarrow table
+            train_schema = pa.schema([
+                pa.field("id", pa.uint64(), nullable=False),
+                pa.field("embedding", pa.binary(), nullable=False),
+            ])
+            train_table = pa.Table.from_pydict({
+                "id": list(range(len(train_data))),
+                "embedding": embedding_bytes,
+            }, schema=train_schema)
+
             train_path = dataset_path / "train"
             train_path.mkdir(exist_ok=True)
-            train_dataset.to_parquet(str(train_path / "train.parquet"))
+            pq.write_table(train_table, str(train_path / "train.parquet"))
             print(f"Saved train data to {train_path}")
         
         # Convert test data
@@ -73,34 +69,25 @@ def convert_hdf5_to_parquet(hdf5_file: str, output_dir: str, dataset_name: str, 
                 float32_array = row.astype(np.float32)
                 test_embedding_bytes.append(float32_array.tobytes())
             
-            # Convert to DataFrame with embedding and id columns
-            test_df = pd.DataFrame({
-                "id": range(len(test_data)),
-                "embedding": test_embedding_bytes
-            })
+            # Collect neighbor lists
+            neighbors_data = hf["neighbors"][:]
+            print(f"Neighbors dimensions: {neighbors_data.shape}")
             
-            # Add neighbors data if available
-            if "neighbors" in hf:
-                neighbors_data = hf["neighbors"][:]
-                print(f"Neighbors dimensions: {neighbors_data.shape}")
-                test_df["neighbors"] = neighbors_data.tolist()
-            
-            # Define schema with variable-length byte array for embeddings
-            test_features = Features({
-                "id": Value("int64"),
-                "embedding": Value("binary")  # Variable-length binary data (BYTE_ARRAY)
-            })
-            
-            # Add neighbors to schema if available
-            if "neighbors" in hf:
-                # Use Sequence feature for variable-length lists of integers
-                test_features["neighbors"] = Sequence(Value("int64"))
-            
-            # Create test dataset with explicit schema and save as parquet
-            test_dataset = Dataset.from_pandas(test_df, features=test_features)
+            # Create Pyarrow table
+            test_schema = pa.schema([
+                pa.field("id", pa.uint64(), nullable=False),
+                pa.field("embedding", pa.binary(), nullable=False),
+                pa.field("neighbors", pa.list_(pa.field("item", pa.uint64(), nullable=False), list_size=100), nullable=False)
+            ])
+            test_table = pa.Table.from_pydict({
+                "id": list(range(len(test_data))),
+                "embedding": test_embedding_bytes,
+                "neighbors": neighbors_data.tolist(),
+            }, schema=test_schema)
+
             test_path = dataset_path / "test"
             test_path.mkdir(exist_ok=True)
-            test_dataset.to_parquet(str(test_path / "test.parquet"))
+            pq.write_table(test_table, str(test_path / "test.parquet"))
             print(f"Saved test data to {test_path}")
         
         # Create dataset info for this subset
@@ -113,6 +100,7 @@ def convert_hdf5_to_parquet(hdf5_file: str, output_dir: str, dataset_name: str, 
             "embedding_dtype": "float32",
             "embedding_byte_order": "little_endian",
             "embedding_size_bytes": len(embedding_bytes[0]) if "train" in hf and embedding_bytes else None,
+            "neighbors": 100,
             "splits": {
                 "train": len(train_data) if "train" in hf else 0,
                 "test": len(test_data) if "test" in hf else 0
