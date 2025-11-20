@@ -77,6 +77,10 @@ type Config struct {
 	MemoryMonitoringFile     string
 	DatasetRepo              string
 	Dataset                  string
+	MaxPostingSize           int
+	MinPostingSize           int
+	NumReplicas              int
+	RngFactor                float64
 }
 
 func (c *Config) Validate() error {
