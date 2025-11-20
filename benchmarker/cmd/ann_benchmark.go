@@ -1053,13 +1053,13 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.Dataset,
 		"dataset", "", "Dataset name e.g. dbpedia-openai-ada002-1536-float32-angular-100k")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MaxPostingSize,
-		"maxPostingSize", 0, "Max posting size (default 0)")
+		"maxPostingSize", 0, "Max posting size for SPFresh index (default 0)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MinPostingSize,
-		"minPostingSize", 10, "Min posting size (default 10)")
+		"minPostingSize", 10, "Min posting size for SPFresh index (default 10)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.Replicas,
-		"replicas", 8, "Number of replicas (default 8)")
+		"replicas", 8, "Number of replicas for SPFresh index (default 8)")
 	annBenchmarkCommand.PersistentFlags().Float64Var(&globalConfig.RngFactor,
-		"rngFactor", 10.0, "RNG factor (default 10.0)")
+		"rngFactor", 10.0, "RNG factor for SPFresh index (default 10.0)")
 }
 
 func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors, filters []int) Results {
