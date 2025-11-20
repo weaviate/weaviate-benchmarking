@@ -79,7 +79,7 @@ type Config struct {
 	Dataset                  string
 	MaxPostingSize           int
 	MinPostingSize           int
-	NumReplicas              int
+	Replicas                 int
 	RngFactor                float64
 }
 
