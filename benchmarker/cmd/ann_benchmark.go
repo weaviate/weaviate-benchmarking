@@ -53,6 +53,7 @@ type ResultsJSONBenchmark struct {
 	Api              string  `json:"api"`
 	Ef               int     `json:"ef,omitempty"`
 	RescoreLimit     int     `json:"rescoreLimit,omitempty"`
+	SearchProbe      int     `json:"searchProbe,omitempty"`
 	EfConstruction   int     `json:"efConstruction"`
 	MaxConnections   int     `json:"maxConnections"`
 	Mean             float64 `json:"meanLatency"`
@@ -792,6 +793,8 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 			benchResult.RescoreLimit = ef
 		case "hnsw", "dynamic":
 			benchResult.Ef = ef
+		case "spfresh":
+			benchResult.SearchProbe = ef
 		}
 
 		jsonData, err := json.Marshal(benchResult)
