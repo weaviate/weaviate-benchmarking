@@ -53,6 +53,7 @@ type ResultsJSONBenchmark struct {
 	Api              string  `json:"api"`
 	Ef               int     `json:"ef,omitempty"`
 	RescoreLimit     int     `json:"rescoreLimit,omitempty"`
+	SearchProbe      int     `json:"searchProbe,omitempty"`
 	EfConstruction   int     `json:"efConstruction"`
 	MaxConnections   int     `json:"maxConnections"`
 	Mean             float64 `json:"meanLatency"`
@@ -749,6 +750,12 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 				"parallel": cfg.Parallel, "limit": cfg.Limit,
 				"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed,
 			}).Info("Benchmark result")
+		} else if cfg.IndexType == "spfresh" {
+			log.WithFields(log.Fields{
+				"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall, "ndcg": result.NDCG,
+				"parallel": cfg.Parallel, "limit": cfg.Limit,
+				"api": cfg.API, "searchProbe": ef, "count": result.Total, "failed": result.Failed,
+			}).Info("Benchmark result")
 		} else {
 			log.WithFields(log.Fields{
 				"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall, "ndcg": result.NDCG,
@@ -786,6 +793,8 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 			benchResult.RescoreLimit = ef
 		case "hnsw", "dynamic":
 			benchResult.Ef = ef
+		case "spfresh":
+			benchResult.SearchProbe = ef
 		}
 
 		jsonData, err := json.Marshal(benchResult)
