@@ -346,7 +346,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				"bits":    cfg.RQBits,
 			}
 		}
-	} else if cfg.IndexType == "spfresh" {
+	} else if cfg.IndexType == "hfresh" {
 		vectorIndexConfig = map[string]interface{}{
 			"distance":       cfg.DistanceMetric,
 			"maxPostingSize": cfg.MaxPostingSize,
@@ -533,7 +533,7 @@ func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 	case "dynamic":
 		hnswConfig := vectorIndexConfig["hnsw"].(map[string]interface{})
 		hnswConfig["ef"] = ef
-	case "spfresh":
+	case "hfresh":
 		vectorIndexConfig["searchProbe"] = ef
 	}
 
@@ -767,7 +767,7 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 					"parallel": cfg.Parallel, "limit": cfg.Limit,
 					"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed,
 				}).Info("Benchmark result")
-			} else if cfg.IndexType == "spfresh" {
+			} else if cfg.IndexType == "hfresh" {
 				log.WithFields(log.Fields{
 					"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall, "ndcg": result.NDCG,
 					"parallel": cfg.Parallel, "limit": cfg.Limit,
@@ -810,7 +810,7 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 				benchResult.RescoreLimit = ef
 			case "hnsw", "dynamic":
 				benchResult.Ef = ef
-			case "spfresh":
+			case "hfresh":
 				benchResult.SearchProbe = ef
 			}
 
@@ -855,7 +855,7 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 }
 
 func shouldStopRunQueries(iteration int, cfg *Config) bool {
-	if cfg.IndexType != "spfresh" {
+	if cfg.IndexType != "hfresh" {
 		return true
 	}
 	if iteration == 0 { // we want to trigger merge operations
