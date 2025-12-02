@@ -852,6 +852,66 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 		}
 
 	}
+
+	if iteration > 0 {
+		cleanupRunResultFiles(baseRunID, iteration)
+	}
+
+}
+
+// aggregate results sharing the same prefix baseRunID
+func cleanupRunResultFiles(baseRunID string, highestIteration int) {
+	if highestIteration <= 0 {
+		return
+	}
+
+	resultsDir := "./results"
+
+	entries, err := os.ReadDir(resultsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return
+		}
+		log.WithError(err).Warn("Failed to read results directory for cleanup")
+		return
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		if filepath.Ext(name) != ".json" {
+			continue
+		}
+
+		trimmed := strings.TrimSuffix(name, ".json")
+
+		lastDash := strings.LastIndex(trimmed, "-")
+		if lastDash == -1 {
+			continue
+		}
+
+		prefix := trimmed[:lastDash]
+		if prefix != baseRunID {
+			continue
+		}
+
+		iterStr := trimmed[lastDash+1:]
+		iter, err := strconv.Atoi(iterStr)
+		if err != nil {
+			log.WithError(err).Warnf("Failed to parse iteration for %s", name)
+			continue
+		}
+
+		if iter < highestIteration {
+			fullPath := filepath.Join(resultsDir, name)
+			if err := os.Remove(fullPath); err != nil && !os.IsNotExist(err) {
+				log.WithError(err).Warnf("Failed to delete %s", fullPath)
+			}
+		}
+	}
 }
 
 func shouldStopRunQueries(iteration int, cfg *Config) bool {
@@ -878,7 +938,12 @@ func shouldStopRunQueries(iteration int, cfg *Config) bool {
 		}).Info("All SPFresh background operations complete")
 		return true
 	}
-
+	if iteration > 15 {
+		log.WithFields(log.Fields{
+			"iteration": iteration,
+		}).Info("SPFresh background operations still running, stopping after 15 iterations")
+		return true
+	}
 	secs := 30
 
 	for {
