@@ -52,6 +52,7 @@ type Config struct {
 	SkipAsyncReady           bool
 	SkipTombstonesEmpty      bool
 	SkipMemoryStats          bool
+	WaitForBackground        bool
 	PQRatio                  uint
 	PQSegments               uint
 	TrainingLimit            int

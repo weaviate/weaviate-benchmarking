@@ -58,6 +58,65 @@ func readMemoryMetrics(cfg *Config) (*Memstats, error) {
 	return &memstats, nil
 }
 
+type SPFreshPendingMetrics struct {
+	PendingSplitOperations    int `json:"pending_split_operations"`
+	PendingMergeOperations    int `json:"pending_merge_operations"`
+	PendingReassignOperations int `json:"pending_reassign_operations"`
+}
+
+func readSPFreshMetrics(cfg *Config) (*SPFreshPendingMetrics, error) {
+	prometheusURL := fmt.Sprintf("http://%s/metrics", strings.Replace(cfg.HttpOrigin, "8080", "2112", -1))
+	response, err := http.Get(prometheusURL)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP request failed with status code %d", response.StatusCode)
+	}
+
+	body, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	bodyReader := strings.NewReader(string(body))
+	parser := expfmt.TextParser{}
+	metrics, err := parser.TextToMetricFamilies(bodyReader)
+	if err != nil {
+		return nil, err
+	}
+
+	var spfreshMetrics SPFreshPendingMetrics
+
+	if metric, ok := metrics["vector_index_pending_background_operations"]; ok {
+		for _, m := range metric.Metric {
+			var (
+				op string
+			)
+			for _, lbl := range m.GetLabel() {
+				switch lbl.GetName() {
+				case "operation":
+					op = lbl.GetValue()
+				}
+			}
+
+			value := int(m.GetGauge().GetValue())
+			switch op {
+			case "split":
+				spfreshMetrics.PendingSplitOperations = value
+			case "merge":
+				spfreshMetrics.PendingMergeOperations = value
+			case "reassign":
+				spfreshMetrics.PendingReassignOperations = value
+			}
+		}
+	}
+
+	return &spfreshMetrics, nil
+}
+
 func waitTombstonesEmpty(cfg *Config) error {
 
 	prometheusURL := fmt.Sprintf("http://%s/metrics", strings.Replace(cfg.HttpOrigin, "8080", "2112", -1))

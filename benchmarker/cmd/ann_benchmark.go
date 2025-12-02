@@ -346,7 +346,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				"bits":    cfg.RQBits,
 			}
 		}
-	} else if cfg.IndexType == "spfresh" {
+	} else if cfg.IndexType == "hfresh" {
 		vectorIndexConfig = map[string]interface{}{
 			"distance":       cfg.DistanceMetric,
 			"maxPostingSize": cfg.MaxPostingSize,
@@ -533,7 +533,7 @@ func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 	case "dynamic":
 		hnswConfig := vectorIndexConfig["hnsw"].(map[string]interface{})
 		hnswConfig["ef"] = ef
-	case "spfresh":
+	case "hfresh":
 		vectorIndexConfig["searchProbe"] = ef
 	}
 
@@ -713,7 +713,7 @@ func parseEfValues(s string) ([]int, error) {
 }
 
 func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, neighbors [][]int, filters []int) {
-	runID := strconv.FormatInt(time.Now().Unix(), 10)
+	baseRunID := strconv.FormatInt(time.Now().Unix(), 10)
 
 	efCandidates, err := parseEfValues(cfg.EfArray)
 	if err != nil {
@@ -731,102 +731,180 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 	}
 
 	client := createClient(cfg)
-
-	var benchmarkResultsMap []map[string]interface{}
-	for _, ef := range efCandidates {
-		updateEf(ef, cfg, client)
-
-		var result Results
-
-		if cfg.QueryDuration > 0 {
-			result = benchmarkANNDuration(*cfg, testData, neighbors, filters)
-		} else {
-			result = benchmarkANN(*cfg, testData, neighbors, filters)
-		}
-
-		if cfg.IndexType == "hnsw" || cfg.IndexType == "dynamic" {
-			log.WithFields(log.Fields{
-				"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall, "ndcg": result.NDCG,
-				"parallel": cfg.Parallel, "limit": cfg.Limit,
-				"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed,
-			}).Info("Benchmark result")
-		} else if cfg.IndexType == "spfresh" {
-			log.WithFields(log.Fields{
-				"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall, "ndcg": result.NDCG,
-				"parallel": cfg.Parallel, "limit": cfg.Limit,
-				"api": cfg.API, "searchProbe": ef, "count": result.Total, "failed": result.Failed,
-			}).Info("Benchmark result")
-		} else {
-			log.WithFields(log.Fields{
-				"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall, "ndcg": result.NDCG,
-				"parallel": cfg.Parallel, "limit": cfg.Limit,
-				"api": cfg.API, "rescoreLimit": ef, "count": result.Total, "failed": result.Failed,
-			}).Info("Benchmark result")
-		}
-
-		dataset := filepath.Base(cfg.BenchmarkFile)
-
-		var resultMap map[string]interface{}
-
-		benchResult := ResultsJSONBenchmark{
-			Api:              cfg.API,
-			EfConstruction:   cfg.EfConstruction,
-			MaxConnections:   cfg.MaxConnections,
-			Mean:             result.Mean.Seconds(),
-			P99Latency:       result.Percentiles[len(result.Percentiles)-1].Seconds(),
-			QueriesPerSecond: result.QueriesPerSecond,
-			Shards:           cfg.Shards,
-			Parallelization:  cfg.Parallel,
-			Limit:            cfg.Limit,
-			ImportTime:       importTime.Seconds(),
-			RunID:            runID,
-			Dataset:          dataset,
-			NDCG:             result.NDCG,
-			Recall:           result.Recall,
-			HeapAllocBytes:   memstats.HeapAllocBytes,
-			HeapInuseBytes:   memstats.HeapInuseBytes,
-			HeapSysBytes:     memstats.HeapSysBytes,
-			Timestamp:        time.Now().Format(time.RFC3339),
-		}
-		switch cfg.IndexType {
-		case "flat":
-			benchResult.RescoreLimit = ef
-		case "hnsw", "dynamic":
-			benchResult.Ef = ef
-		case "spfresh":
-			benchResult.SearchProbe = ef
-		}
-
-		jsonData, err := json.Marshal(benchResult)
-		if err != nil {
-			log.Fatalf("Error converting result to json")
-		}
-
-		if err := json.Unmarshal(jsonData, &resultMap); err != nil {
-			log.Fatalf("Error converting json to map")
-		}
-
-		if cfg.LabelMap != nil {
-			for key, value := range cfg.LabelMap {
-				resultMap[key] = value
-			}
-		}
-
-		benchmarkResultsMap = append(benchmarkResultsMap, resultMap)
-
-	}
-
-	data, err := json.MarshalIndent(benchmarkResultsMap, "", "    ")
-	if err != nil {
-		log.Fatalf("Error marshaling benchmark results: %v", err)
-	}
-
 	os.Mkdir("./results", 0o755)
 
-	err = os.WriteFile(fmt.Sprintf("./results/%s.json", runID), data, 0o644)
-	if err != nil {
-		log.Fatalf("Error writing benchmark results to file: %v", err)
+	iteration := 0
+	for {
+		shouldStop := shouldStopRunQueries(iteration, cfg)
+		if cfg.WaitForBackground && shouldStop {
+			// todo
+			break
+		}
+
+		iteration++
+		runID := fmt.Sprintf("%s-%d", baseRunID, iteration)
+		isFinalIteration := !cfg.WaitForBackground || shouldStop
+
+		if isFinalIteration {
+			runID = fmt.Sprintf("%s-true", runID)
+		}
+
+		benchmarkResultsMap := make([]map[string]interface{}, 0, len(efCandidates))
+		for _, ef := range efCandidates {
+			updateEf(ef, cfg, client)
+
+			var result Results
+
+			if cfg.QueryDuration > 0 {
+				result = benchmarkANNDuration(*cfg, testData, neighbors, filters)
+			} else {
+				result = benchmarkANN(*cfg, testData, neighbors, filters)
+			}
+
+			if cfg.IndexType == "hnsw" || cfg.IndexType == "dynamic" {
+				log.WithFields(log.Fields{
+					"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall, "ndcg": result.NDCG,
+					"parallel": cfg.Parallel, "limit": cfg.Limit,
+					"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed,
+				}).Info("Benchmark result")
+			} else if cfg.IndexType == "hfresh" {
+				log.WithFields(log.Fields{
+					"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall, "ndcg": result.NDCG,
+					"parallel": cfg.Parallel, "limit": cfg.Limit,
+					"api": cfg.API, "searchProbe": ef, "count": result.Total, "failed": result.Failed,
+				}).Info("Benchmark result")
+			} else {
+				log.WithFields(log.Fields{
+					"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall, "ndcg": result.NDCG,
+					"parallel": cfg.Parallel, "limit": cfg.Limit,
+					"api": cfg.API, "rescoreLimit": ef, "count": result.Total, "failed": result.Failed,
+				}).Info("Benchmark result")
+			}
+
+			dataset := filepath.Base(cfg.BenchmarkFile)
+
+			var resultMap map[string]interface{}
+
+			benchResult := ResultsJSONBenchmark{
+				Api:              cfg.API,
+				EfConstruction:   cfg.EfConstruction,
+				MaxConnections:   cfg.MaxConnections,
+				Mean:             result.Mean.Seconds(),
+				P99Latency:       result.Percentiles[len(result.Percentiles)-1].Seconds(),
+				QueriesPerSecond: result.QueriesPerSecond,
+				Shards:           cfg.Shards,
+				Parallelization:  cfg.Parallel,
+				Limit:            cfg.Limit,
+				ImportTime:       importTime.Seconds(),
+				RunID:            runID,
+				Dataset:          dataset,
+				NDCG:             result.NDCG,
+				Recall:           result.Recall,
+				HeapAllocBytes:   memstats.HeapAllocBytes,
+				HeapInuseBytes:   memstats.HeapInuseBytes,
+				HeapSysBytes:     memstats.HeapSysBytes,
+				Timestamp:        time.Now().Format(time.RFC3339),
+			}
+			switch cfg.IndexType {
+			case "flat":
+				benchResult.RescoreLimit = ef
+			case "hnsw", "dynamic":
+				benchResult.Ef = ef
+			case "hfresh":
+				benchResult.SearchProbe = ef
+			}
+
+			jsonData, err := json.Marshal(benchResult)
+			if err != nil {
+				log.Fatalf("Error converting result to json")
+			}
+
+			if err := json.Unmarshal(jsonData, &resultMap); err != nil {
+				log.Fatalf("Error converting json to map")
+			}
+
+			if cfg.LabelMap != nil {
+				for key, value := range cfg.LabelMap {
+					resultMap[key] = value
+				}
+			}
+
+			if isFinalIteration {
+				resultMap["finalIteration"] = true
+			}
+
+			benchmarkResultsMap = append(benchmarkResultsMap, resultMap)
+
+		}
+
+		data, err := json.MarshalIndent(benchmarkResultsMap, "", "    ")
+		if err != nil {
+			log.Fatalf("Error marshaling benchmark results: %v", err)
+		}
+
+		err = os.WriteFile(fmt.Sprintf("./results/%s.json", runID), data, 0o644)
+		if err != nil {
+			log.Fatalf("Error writing benchmark results to file: %v", err)
+		}
+
+		if !cfg.WaitForBackground {
+			break
+		}
+
 	}
+}
+
+func shouldStopRunQueries(iteration int, cfg *Config) bool {
+	if cfg.IndexType != "hfresh" {
+		return true
+	}
+	if iteration == 0 { // we want to trigger merge operations
+		return false
+	}
+
+	metrics, err := readSPFreshMetrics(cfg)
+	if err != nil {
+		log.WithError(err).Warn("Failed to read SPFresh pending operations metrics")
+		return false
+	}
+
+	noPendingOps := metrics.PendingSplitOperations == 0 &&
+		metrics.PendingMergeOperations == 0 &&
+		metrics.PendingReassignOperations == 0
+
+	if noPendingOps {
+		log.WithFields(log.Fields{
+			"iteration": iteration,
+		}).Info("All SPFresh background operations complete")
+		return true
+	}
+
+	secs := 30
+
+	for {
+		metrics, err := readSPFreshMetrics(cfg)
+		if err != nil {
+			log.WithError(err).Warn("Failed to read SPFresh pending operations metrics")
+			return false
+		}
+
+		log.WithFields(log.Fields{
+			"iteration":                 iteration,
+			"pendingSplitOperations":    metrics.PendingSplitOperations,
+			"pendingMergeOperations":    metrics.PendingMergeOperations,
+			"pendingReassignOperations": metrics.PendingReassignOperations,
+		}).Info("SPFresh background operations still running, checking again in ", secs, " seconds")
+		noPendingOps := metrics.PendingSplitOperations == 0 &&
+			metrics.PendingMergeOperations == 0 &&
+			metrics.PendingReassignOperations == 0
+
+		if noPendingOps {
+			break
+		}
+		time.Sleep(time.Duration(secs) * time.Second)
+	}
+
+	return false
 }
 
 var annBenchmarkCommand = &cobra.Command{
@@ -959,6 +1037,8 @@ func initAnnBenchmark() {
 		"bq", false, "Set BQ")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.Cache,
 		"cache", false, "Set cache")
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.WaitForBackground,
+		"waitForBackground", false, "Repeat query runs until background condition is satisfied")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.RescoreLimit,
 		"rescoreLimit", -1, "Rescore limit. If not set, it will be set by Weaviate automatically when rescoring is enabled")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.PQ,
