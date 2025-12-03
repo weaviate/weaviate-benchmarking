@@ -64,6 +64,7 @@ type ResultsJSONBenchmark struct {
 	Limit            int     `json:"limit"`
 	ImportTime       float64 `json:"importTime"`
 	RunID            string  `json:"run_id"`
+	IterationRunID   string  `json:"iteration_run_id"`
 	Dataset          string  `json:"dataset_file"`
 	Recall           float64 `json:"recall"`
 	NDCG             float64 `json:"ndcg"`
@@ -713,7 +714,7 @@ func parseEfValues(s string) ([]int, error) {
 }
 
 func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, neighbors [][]int, filters []int) {
-	baseRunID := strconv.FormatInt(time.Now().Unix(), 10)
+	runID := strconv.FormatInt(time.Now().Unix(), 10)
 
 	efCandidates, err := parseEfValues(cfg.EfArray)
 	if err != nil {
@@ -742,11 +743,11 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 		}
 
 		iteration++
-		runID := fmt.Sprintf("%s-%d", baseRunID, iteration)
+		iterationRunID := fmt.Sprintf("%s-%d", runID, iteration)
 		isFinalIteration := !cfg.WaitForBackground || shouldStop
 
 		if isFinalIteration {
-			runID = fmt.Sprintf("%s-true", runID)
+			iterationRunID = fmt.Sprintf("%s-true", iterationRunID)
 		}
 
 		benchmarkResultsMap := make([]map[string]interface{}, 0, len(efCandidates))
@@ -797,6 +798,7 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 				Limit:            cfg.Limit,
 				ImportTime:       importTime.Seconds(),
 				RunID:            runID,
+				IterationRunID:   iterationRunID,
 				Dataset:          dataset,
 				NDCG:             result.NDCG,
 				Recall:           result.Recall,
