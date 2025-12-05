@@ -48,7 +48,7 @@ Flags:
   -h, --help                         help for ann-benchmark
       --httpOrigin string            The http origin for Weaviate (only used if grpc enabled) (default "localhost:8080")
       --httpScheme string            The http scheme (http or https) (default "http")
-      --indexType string             Index type (hnsw, flat, spfresh) (default "hnsw")
+      --indexType string             Index type (hnsw, flat, hfresh) (default "hnsw")
       --labels string                Labels of format key1=value1,key2=value2,...
   -l, --limit int                    Set the query limit / k (default 10) (default 10)
       --maxConnections int           Set Weaviate efConstruction parameter (default 16) (default 16)
