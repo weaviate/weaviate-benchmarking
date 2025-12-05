@@ -864,9 +864,9 @@ func shouldStopRunQueries(iteration int, cfg *Config) bool {
 		return false
 	}
 
-	metrics, err := readSPFreshMetrics(cfg)
+	metrics, err := readHFreshMetrics(cfg)
 	if err != nil {
-		log.WithError(err).Warn("Failed to read SPFresh pending operations metrics")
+		log.WithError(err).Warn("Failed to read HFresh pending operations metrics")
 		return false
 	}
 
@@ -877,16 +877,16 @@ func shouldStopRunQueries(iteration int, cfg *Config) bool {
 	if noPendingOps {
 		log.WithFields(log.Fields{
 			"iteration": iteration,
-		}).Info("All SPFresh background operations complete")
+		}).Info("All HFresh background operations complete")
 		return true
 	}
 
 	secs := 30
 
 	for {
-		metrics, err := readSPFreshMetrics(cfg)
+		metrics, err := readHFreshMetrics(cfg)
 		if err != nil {
-			log.WithError(err).Warn("Failed to read SPFresh pending operations metrics")
+			log.WithError(err).Warn("Failed to read HFresh pending operations metrics")
 			return false
 		}
 
@@ -895,7 +895,7 @@ func shouldStopRunQueries(iteration int, cfg *Config) bool {
 			"pendingSplitOperations":    metrics.PendingSplitOperations,
 			"pendingMergeOperations":    metrics.PendingMergeOperations,
 			"pendingReassignOperations": metrics.PendingReassignOperations,
-		}).Info("SPFresh background operations still running, checking again in ", secs, " seconds")
+		}).Info("HFresh background operations still running, checking again in ", secs, " seconds")
 		noPendingOps := metrics.PendingSplitOperations == 0 &&
 			metrics.PendingMergeOperations == 0 &&
 			metrics.PendingReassignOperations == 0
@@ -1080,7 +1080,7 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.EfArray,
 		"efArray", "16,24,32,48,64,96,128,256,512", "Array of ef parameters as comma separated list")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.IndexType,
-		"indexType", "hnsw", "Index type (hnsw, flat or spfresh)")
+		"indexType", "hnsw", "Index type (hnsw, flat or hfresh)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MaxConnections,
 		"maxConnections", 16, "Set Weaviate efConstruction parameter (default 16)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.Shards,
@@ -1144,13 +1144,13 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.Dataset,
 		"dataset", "", "Dataset name e.g. dbpedia-openai-ada002-1536-float32-angular-100k")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MaxPostingSize,
-		"maxPostingSize", 0, "Max posting size for SPFresh index (default 0)")
+		"maxPostingSize", 0, "Max posting size for HFresh index (default 0)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MinPostingSize,
-		"minPostingSize", 10, "Min posting size for SPFresh index (default 10)")
+		"minPostingSize", 10, "Min posting size for HFresh index (default 10)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.Replicas,
-		"replicas", 8, "Number of replicas for SPFresh index (default 8)")
+		"replicas", 8, "Number of replicas for HFresh index (default 8)")
 	annBenchmarkCommand.PersistentFlags().Float64Var(&globalConfig.RngFactor,
-		"rngFactor", 10.0, "RNG factor for SPFresh index (default 10.0)")
+		"rngFactor", 10.0, "RNG factor for HFresh index (default 10.0)")
 }
 
 func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors, filters []int) Results {

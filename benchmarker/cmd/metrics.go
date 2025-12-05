@@ -58,13 +58,13 @@ func readMemoryMetrics(cfg *Config) (*Memstats, error) {
 	return &memstats, nil
 }
 
-type SPFreshPendingMetrics struct {
+type HFreshPendingMetrics struct {
 	PendingSplitOperations    int `json:"pending_split_operations"`
 	PendingMergeOperations    int `json:"pending_merge_operations"`
 	PendingReassignOperations int `json:"pending_reassign_operations"`
 }
 
-func readSPFreshMetrics(cfg *Config) (*SPFreshPendingMetrics, error) {
+func readHFreshMetrics(cfg *Config) (*HFreshPendingMetrics, error) {
 	prometheusURL := fmt.Sprintf("http://%s/metrics", strings.Replace(cfg.HttpOrigin, "8080", "2112", -1))
 	response, err := http.Get(prometheusURL)
 	if err != nil {
@@ -88,7 +88,7 @@ func readSPFreshMetrics(cfg *Config) (*SPFreshPendingMetrics, error) {
 		return nil, err
 	}
 
-	var spfreshMetrics SPFreshPendingMetrics
+	var hfreshMetrics HFreshPendingMetrics
 
 	if metric, ok := metrics["vector_index_pending_background_operations"]; ok {
 		for _, m := range metric.Metric {
@@ -105,16 +105,16 @@ func readSPFreshMetrics(cfg *Config) (*SPFreshPendingMetrics, error) {
 			value := int(m.GetGauge().GetValue())
 			switch op {
 			case "split":
-				spfreshMetrics.PendingSplitOperations = value
+				hfreshMetrics.PendingSplitOperations = value
 			case "merge":
-				spfreshMetrics.PendingMergeOperations = value
+				hfreshMetrics.PendingMergeOperations = value
 			case "reassign":
-				spfreshMetrics.PendingReassignOperations = value
+				hfreshMetrics.PendingReassignOperations = value
 			}
 		}
 	}
 
-	return &spfreshMetrics, nil
+	return &hfreshMetrics, nil
 }
 
 func waitTombstonesEmpty(cfg *Config) error {
