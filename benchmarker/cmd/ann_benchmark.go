@@ -64,7 +64,7 @@ type ResultsJSONBenchmark struct {
 	Limit            int     `json:"limit"`
 	ImportTime       float64 `json:"importTime"`
 	RunID            string  `json:"run_id"`
-	IterationRunID   string  `json:"iteration_run_id"`
+	IterationRunID   string  `json:"iteration"`
 	Dataset          string  `json:"dataset_file"`
 	Recall           float64 `json:"recall"`
 	NDCG             float64 `json:"ndcg"`
@@ -743,12 +743,8 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 		}
 
 		iteration++
-		iterationRunID := fmt.Sprintf("%s-%d", runID, iteration)
+		iterationRunID := fmt.Sprintf("%d", iteration)
 		isFinalIteration := !cfg.WaitForBackground || shouldStop
-
-		if isFinalIteration {
-			iterationRunID = fmt.Sprintf("%s-true", iterationRunID)
-		}
 
 		benchmarkResultsMap := make([]map[string]interface{}, 0, len(efCandidates))
 		for _, ef := range efCandidates {
