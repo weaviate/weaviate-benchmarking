@@ -60,6 +60,7 @@ type Config struct {
 	StartTenantNum           int
 	NumTenants               int
 	ExistingSchema           bool
+	MetricsEndpoint          string
 	HttpOrigin               string
 	HttpScheme               string
 	UpdatePercentage         float64

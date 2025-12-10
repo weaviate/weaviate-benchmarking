@@ -1099,6 +1099,8 @@ func initAnnBenchmark() {
 		"httpOrigin", "localhost:8080", "The http origin for Weaviate (only used if grpc enabled)")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.HttpScheme,
 		"httpScheme", "http", "The http scheme (http or https)")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.MetricsEndpoint,
+		"metricsEndpoint", "http://localhost:2112/metrics", "The metrics endpoint for Weaviate(default http://localhost:2112/metrics)")
 	annBenchmarkCommand.PersistentFlags().StringVarP(&globalConfig.OutputFormat,
 		"format", "f", "text", "Output format, one of [text, json]")
 	annBenchmarkCommand.PersistentFlags().IntVarP(&globalConfig.Limit,
