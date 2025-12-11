@@ -18,7 +18,7 @@ type Memstats struct {
 }
 
 func readMemoryMetrics(cfg *Config) (*Memstats, error) {
-	prometheusURL := fmt.Sprintf("http://%s/metrics", strings.Replace(cfg.HttpOrigin, "8080", "2112", -1))
+	prometheusURL := cfg.MetricsEndpoint
 	response, err := http.Get(prometheusURL)
 	if err != nil {
 		return nil, err
@@ -65,7 +65,7 @@ type HFreshPendingMetrics struct {
 }
 
 func readHFreshMetrics(cfg *Config) (*HFreshPendingMetrics, error) {
-	prometheusURL := fmt.Sprintf("http://%s/metrics", strings.Replace(cfg.HttpOrigin, "8080", "2112", -1))
+	prometheusURL := cfg.MetricsEndpoint
 	response, err := http.Get(prometheusURL)
 	if err != nil {
 		return nil, err
@@ -119,7 +119,7 @@ func readHFreshMetrics(cfg *Config) (*HFreshPendingMetrics, error) {
 
 func waitTombstonesEmpty(cfg *Config) error {
 
-	prometheusURL := fmt.Sprintf("http://%s/metrics", strings.Replace(cfg.HttpOrigin, "8080", "2112", -1))
+	prometheusURL := cfg.MetricsEndpoint
 	metricName := "vector_index_tombstones"
 
 	log.Printf("Waiting to allow for tombstone cleanup\n")
