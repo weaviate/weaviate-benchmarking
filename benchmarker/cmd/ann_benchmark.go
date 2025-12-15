@@ -321,6 +321,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
 				"flatSearchCutoff":       cfg.FlatSearchCutoff,
 			},
+			"flat": map[string]interface{}{},
 		}
 		if cfg.PQ == "auto" {
 			pqConfig := map[string]interface{}{
@@ -342,6 +343,10 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 			}
 			vectorIndexConfig["hnsw"].(map[string]interface{})["bq"] = bqConfig
 		} else if cfg.RQ == "auto" {
+			vectorIndexConfig["flat"].(map[string]interface{})["rq"] = map[string]interface{}{
+				"enabled": true,
+				"bits":    cfg.RQBits,
+			}
 			vectorIndexConfig["hnsw"].(map[string]interface{})["rq"] = map[string]interface{}{
 				"enabled": true,
 				"bits":    cfg.RQBits,
@@ -534,6 +539,14 @@ func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 	case "dynamic":
 		hnswConfig := vectorIndexConfig["hnsw"].(map[string]interface{})
 		hnswConfig["ef"] = ef
+		flatConfig := vectorIndexConfig["flat"].(map[string]interface{})
+		if bq, exists := flatConfig["bq"]; exists && cfg.BQ {
+			bqConfig := bq.(map[string]interface{})
+			bqConfig["rescoreLimit"] = ef
+		} else if rq, exists := flatConfig["rq"]; exists {
+			rqConfig := rq.(map[string]interface{})
+			rqConfig["rescoreLimit"] = ef
+		}
 	case "hfresh":
 		vectorIndexConfig["searchProbe"] = ef
 	}
