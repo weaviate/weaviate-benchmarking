@@ -613,7 +613,12 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 	if cfg.MultiVectorDimensions > 0 {
 		vectorIndexConfig = classConfig.VectorConfig["multivector"].VectorIndexConfig.(map[string]interface{})
 	} else {
-		vectorIndexConfig = classConfig.VectorIndexConfig.(map[string]interface{})
+		if cfg.NamedVector == "" {
+			vectorIndexConfig = classConfig.VectorIndexConfig.(map[string]interface{})
+		} else {
+			vectorIndexConfig = classConfig.VectorConfig[cfg.NamedVector].VectorIndexConfig.(map[string]interface{})
+			classConfig.Vectorizer = ""
+		}
 	}
 
 	switch compressionType {
@@ -661,7 +666,13 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 		vectorConfig.VectorIndexConfig = vectorIndexConfig
 		classConfig.VectorConfig["multivector"] = vectorConfig
 	} else {
-		classConfig.VectorIndexConfig = vectorIndexConfig
+		if cfg.NamedVector == "" {
+			classConfig.VectorIndexConfig = vectorIndexConfig
+		} else {
+			vectorConfig := classConfig.VectorConfig[cfg.NamedVector]
+			vectorConfig.VectorIndexConfig = vectorIndexConfig
+			classConfig.VectorConfig[cfg.NamedVector] = vectorConfig
+		}
 	}
 
 	err = client.Schema().ClassUpdater().WithClass(classConfig).Do(context.Background())
