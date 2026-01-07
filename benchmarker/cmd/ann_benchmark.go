@@ -1171,7 +1171,7 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MinPostingSize,
 		"minPostingSize", 10, "Min posting size for HFresh index (default 10)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.Replicas,
-		"replicas", 8, "Number of replicas for HFresh index (default 8)")
+		"replicas", 4, "Number of replicas for HFresh index (default 4)")
 	annBenchmarkCommand.PersistentFlags().Float64Var(&globalConfig.RngFactor,
 		"rngFactor", 10.0, "RNG factor for HFresh index (default 10.0)")
 }
