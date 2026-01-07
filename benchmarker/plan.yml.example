@@ -1,0 +1,29 @@
+path_to_weaviate_repo: ../../weaviate/
+control_branch: stable/v1.34
+candidate_branch: rescore_reuse_consistent_view
+global_parameters:
+  - -v=~/Downloads/dbpedia-100k-openai-ada002-euclidean.hdf5
+  - -d=l2-squared
+  - --queryDuration=1
+runs:
+  - name: OpenAI 100k PQ
+    ingest_on: control # one of control, candidate
+    async_indexing: false
+    parameters:
+      - --pq=enabled
+      - --indexType=hnsw
+  - name: OpenAI 100k RQ8
+    ingest_on: control # one of control, candidate
+    async_indexing: true
+    parameters:
+      - --rq=auto
+      - --indexType=hnsw
+  # - name: OpenAI 100k PQ Named Vector
+  #   ingest_on: candidate # one of control, candidate
+  #   async_indexing: false
+  #   parameters:
+  #     - --pq=enabled
+  #     - --indexType=hnsw
+  #     - --namedVector=my_vector
+
+

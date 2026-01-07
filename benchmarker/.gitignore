@@ -1,3 +1,6 @@
 queries.json
 benchmarker
 venv/
+plan.yml
+results_archive/
+__pycache__/
