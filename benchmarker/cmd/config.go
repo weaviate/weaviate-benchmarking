@@ -79,8 +79,7 @@ type Config struct {
 	MemoryMonitoringFile     string
 	DatasetRepo              string
 	Dataset                  string
-	MaxPostingSize           int
-	MinPostingSize           int
+	MaxPostingSizeKB         int
 	Replicas                 int
 	RngFactor                float64
 }
