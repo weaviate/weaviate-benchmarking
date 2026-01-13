@@ -354,12 +354,11 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		}
 	} else if cfg.IndexType == "hfresh" {
 		vectorIndexConfig = map[string]interface{}{
-			"distance":       cfg.DistanceMetric,
-			"maxPostingSize": cfg.MaxPostingSize,
-			"minPostingSize": cfg.MinPostingSize,
-			"replicas":       cfg.Replicas,
-			"rngFactor":      cfg.RngFactor,
-			"rescoreLimit":   cfg.RescoreLimit,
+			"distance":         cfg.DistanceMetric,
+			"maxPostingSizeKB": cfg.MaxPostingSizeKB,
+			"replicas":         cfg.Replicas,
+			"rngFactor":        cfg.RngFactor,
+			"rescoreLimit":     cfg.RescoreLimit,
 		}
 	} else {
 		log.Fatalf("Unknown index type %s", cfg.IndexType)
@@ -1166,10 +1165,8 @@ func initAnnBenchmark() {
 		"datasetRepo", "", "Hugging Face dataset repo e.g. weaviate/ann-datasets")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.Dataset,
 		"dataset", "", "Dataset name e.g. dbpedia-openai-ada002-1536-float32-angular-100k")
-	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MaxPostingSize,
-		"maxPostingSize", 0, "Max posting size for HFresh index (default 0)")
-	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MinPostingSize,
-		"minPostingSize", 10, "Min posting size for HFresh index (default 10)")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MaxPostingSizeKB,
+		"maxPostingSizeKB", 48, "Max posting size for HFresh index (default 48)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.Replicas,
 		"replicas", 4, "Number of replicas for HFresh index (default 4)")
 	annBenchmarkCommand.PersistentFlags().Float64Var(&globalConfig.RngFactor,
