@@ -358,7 +358,9 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 			"maxPostingSizeKB": cfg.MaxPostingSizeKB,
 			"replicas":         cfg.Replicas,
 			"rngFactor":        cfg.RngFactor,
-			"rescoreLimit":     cfg.RescoreLimit,
+			"rq": map[string]interface{}{
+				"rescoreLimit": cfg.RescoreLimit,
+			},
 		}
 	} else {
 		log.Fatalf("Unknown index type %s", cfg.IndexType)
