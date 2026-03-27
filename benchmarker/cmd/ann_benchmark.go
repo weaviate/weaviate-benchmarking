@@ -962,6 +962,12 @@ var annBenchmarkCommand = &cobra.Command{
 
 		importTime := 0 * time.Second
 
+		if cfg.CreateOnly {
+			createSchema(&cfg, client)
+			log.Printf("Created empty collection %s, exiting", cfg.ClassName)
+			return
+		}
+
 		if !cfg.QueryOnly {
 
 			if !cfg.ExistingSchema {
@@ -994,6 +1000,16 @@ var annBenchmarkCommand = &cobra.Command{
 		}
 
 		neighbors := dataset.Neighbors()
+		if cfg.Diversity && cfg.DiversityBalance != 1 {
+			if hdf5ds, ok := dataset.(*Hdf5Dataset); ok {
+				sparseNeighbors := hdf5ds.SparseNeighbors()
+				if sparseNeighbors == nil {
+					log.Warn("--diversity flag is set but sparse_neighbors dataset not found in the HDF5 file, falling back to neighbors")
+				} else {
+					neighbors = sparseNeighbors
+				}
+			}
+		}
 		testData := dataset.TestVectors()
 		testFilters := dataset.TestFilters()
 
@@ -1113,6 +1129,8 @@ func initAnnBenchmark() {
 		"parallel", "p", numCPU, "Set the number of parallel threads which send queries")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.ExistingSchema,
 		"existingSchema", false, "Leave the schema as-is (default false)")
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.CreateOnly,
+		"createOnly", false, "Only create the collection schema without importing any data (default false)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.NumTenants,
 		"numTenants", 0, "Number of tenants to use (default 0)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.StartTenantNum,
@@ -1173,6 +1191,12 @@ func initAnnBenchmark() {
 		"replicas", 4, "Number of replicas for HFresh index (default 4)")
 	annBenchmarkCommand.PersistentFlags().Float64Var(&globalConfig.RngFactor,
 		"rngFactor", 10.0, "RNG factor for HFresh index (default 10.0)")
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.Diversity,
+		"diversity", false, "Enable MMR diversity selection (default false)")
+	annBenchmarkCommand.PersistentFlags().Float32Var(&globalConfig.DiversityBalance,
+		"diversityBalance", 0.5, "MMR balance parameter: 0=pure diversity, 1=pure relevance (default 0.5)")
+	annBenchmarkCommand.PersistentFlags().Float32Var(&globalConfig.DiversityLimit,
+		"diversityLimit", 10, "MMR candidate limit passed to the selector (default 10)")
 }
 
 func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors, filters []int) Results {

@@ -204,7 +204,19 @@ func nearVectorQueryGrpc(cfg *Config, vec []float32, tenant string, filter int) 
 			On:       []string{"category"},
 			Operator: weaviategrpc.Filters_OPERATOR_EQUAL,
 		}
+	}
 
+	if cfg.Diversity {
+		diversityLimit := cfg.DiversityLimit
+		diversityBalance := cfg.DiversityBalance
+		searchRequest.NearVector.Selection = &weaviategrpc.Selection{
+			Selection: &weaviategrpc.Selection_Mmr{
+				Mmr: &weaviategrpc.Selection_MMR{
+					Limit:   &diversityLimit,
+					Balance: &diversityBalance,
+				},
+			},
+		}
 	}
 
 	data, err := proto.Marshal(searchRequest)

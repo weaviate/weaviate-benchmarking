@@ -65,6 +65,15 @@ func (ds *Hdf5Dataset) Neighbors() [][]int {
 	return loadHdf5Neighbors(ds.file, "neighbors")
 }
 
+func (ds *Hdf5Dataset) SparseNeighbors() [][]int {
+	dataset, err := ds.file.OpenDataset("sparse_neighbors")
+	if err != nil {
+		return nil
+	}
+	dataset.Close()
+	return loadHdf5Neighbors(ds.file, "sparse_neighbors")
+}
+
 func (ds *Hdf5Dataset) TestVectors() [][]float32 {
 	if ds.multiVectorDimension > 0 {
 		return loadHdf5Colbert(ds.file, "test", ds.multiVectorDimension)
