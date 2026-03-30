@@ -151,16 +151,16 @@ func processQueueGrpc(queue []QueryWithNeighbors, cfg *Config, grpcConn *grpc.Cl
 			ids = append(ids, intFromUUID(result.GetMetadata().Id))
 		}
 
-		neighborLimit := min(cfg.Limit, len(query.Neighbors))
-		recallQuery := float64(len(intersection(ids, query.Neighbors[:neighborLimit]))) / float64(neighborLimit)
-		ndcgQuery := calculateLinearNDCG(ids, query.Neighbors, neighborLimit)
-
-		log.Debugf("Query took %s, recall %f, ndcg %f", took, recallQuery, ndcgQuery)
-
 		m.Lock()
 		*times = append(*times, took)
-		*recall = append(*recall, recallQuery)
-		*ndcg = append(*ndcg, ndcgQuery)
+		if len(query.Neighbors) > 0 {
+			neighborLimit := min(cfg.Limit, len(query.Neighbors))
+			recallQuery := float64(len(intersection(ids, query.Neighbors[:neighborLimit]))) / float64(neighborLimit)
+			ndcgQuery := calculateLinearNDCG(ids, query.Neighbors, neighborLimit)
+			log.Debugf("Query took %s, recall %f, ndcg %f", took, recallQuery, ndcgQuery)
+			*recall = append(*recall, recallQuery)
+			*ndcg = append(*ndcg, ndcgQuery)
+		}
 		m.Unlock()
 	}
 }
@@ -281,8 +281,12 @@ func analyze(cfg Config, times []time.Duration, total time.Duration, recall []fl
 	out.Mean = sum / time.Duration(len(times))
 	out.Took = total
 	out.QueriesPerSecond = float64(len(times)) / float64(float64(total)/float64(time.Second))
-	out.Recall = sumRecall / float64(len(recall))
-	out.NDCG = sumNDCG / float64(len(ndcg))
+	if len(recall) > 0 {
+		out.Recall = sumRecall / float64(len(recall))
+	}
+	if len(ndcg) > 0 {
+		out.NDCG = sumNDCG / float64(len(ndcg))
+	}
 
 	sort.Slice(times, func(a, b int) bool {
 		return times[a] < times[b]
