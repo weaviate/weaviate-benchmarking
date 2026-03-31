@@ -2,8 +2,6 @@ module github.com/semi-technologies/weaviate-benchmarking/benchmarker
 
 go 1.26
 
-replace github.com/weaviate/weaviate => /Users/roberto/Desktop/weaviate/weaviate
-
 require (
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.0.1
