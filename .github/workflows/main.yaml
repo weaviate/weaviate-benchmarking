@@ -22,9 +22,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: benchmarker/go.mod
+          cache-dependency-path: benchmarker/go.sum
+      - name: Install hdf5
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential libhdf5-dev
       - name: Run tests
         working-directory: benchmarker
-        run: go test ./...
+        run: CGO_ENABLED=1 go test ./...
 
   Push-Docker:
     name: push-docker
