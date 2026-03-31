@@ -121,6 +121,13 @@ python scripts/python/memory_analysis.py results/memory_metrics_*.json --no-plot
 
 For detailed documentation, see [MEMORY_MONITORING.md](MEMORY_MONITORING.md).
 
+### Running Tests
+
+```
+cd benchmarker
+go test ./...
+```
+
 ### Installation / Running the CLI
 
 #### HDF5 Dependency

@@ -14,6 +14,18 @@ on:
 
 
 jobs:
+  Test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: benchmarker/go.mod
+      - name: Run tests
+        working-directory: benchmarker
+        run: go test ./...
+
   Push-Docker:
     name: push-docker
     runs-on: ubuntu-latest
