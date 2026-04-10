@@ -36,6 +36,8 @@ type ResultsJSONBenchmark struct {
 	HeapInuseBytes   float64 `json:"heap_inuse_bytes"`
 	HeapSysBytes     float64 `json:"heap_sys_bytes"`
 	Timestamp        string  `json:"timestamp"`
+	MMRBalance       *float64 `json:"mmr_balance,omitempty"`
+	MMRLimit         *int     `json:"mmr_limit,omitempty"`
 }
 
 // uuidFromInt converts an integer to a UUID-formatted string.
@@ -301,4 +303,8 @@ func initAnnBenchmark() {
 		"replicas", 4, "Number of replicas for HFresh index (default 4)")
 	annBenchmarkCommand.PersistentFlags().Float64Var(&globalConfig.RngFactor,
 		"rngFactor", 10.0, "RNG factor for HFresh index (default 10.0)")
+	annBenchmarkCommand.PersistentFlags().Float64Var(&globalConfig.MMRBalance,
+		"mmrBalance", -1, "MMR balance between relevance (0) and diversity (1). Disabled if not set or negative.")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MMRLimit,
+		"mmrLimit", 0, "Number of results to return after MMR re-ranking (default: same as --limit)")
 }

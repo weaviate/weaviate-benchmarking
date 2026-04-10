@@ -204,7 +204,25 @@ func nearVectorQueryGrpc(cfg *Config, vec []float32, tenant string, filter int) 
 			On:       []string{"category"},
 			Operator: weaviategrpc.Filters_OPERATOR_EQUAL,
 		}
+	}
 
+	if cfg.MMRBalance >= 0 {
+		mmrLimit := uint32(cfg.MMRLimit)
+		if mmrLimit == 0 {
+			mmrLimit = uint32(cfg.Limit)
+		}
+		balance := float32(cfg.MMRBalance)
+		// When using MMR, the initial candidate set should be larger than the final limit.
+		// The SearchRequest.Limit is used for the initial retrieval; MMR then re-ranks and
+		// returns mmrLimit results.
+		searchRequest.NearVector.Selection = &weaviategrpc.Selection{
+			Selection: &weaviategrpc.Selection_Mmr{
+				Mmr: &weaviategrpc.Selection_MMR{
+					Balance: &balance,
+					Limit:   &mmrLimit,
+				},
+			},
+		}
 	}
 
 	data, err := proto.Marshal(searchRequest)
