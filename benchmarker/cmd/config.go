@@ -82,6 +82,8 @@ type Config struct {
 	MaxPostingSizeKB         int
 	Replicas                 int
 	RngFactor                float64
+	MMRBalance               float64
+	MMRLimit                 int
 }
 
 func (c *Config) Validate() error {

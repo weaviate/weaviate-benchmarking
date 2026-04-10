@@ -25,14 +25,14 @@ docker build -t weaviate-benchmarker .
 ## Tests
 
 ```bash
-# Unit tests (no Weaviate required)
-go test ./cmd/...
-go test -v -run TestAnalyzer ./cmd/...   # run a specific test
+# Unit tests (no Weaviate required) — CGO_ENABLED=1 required for HDF5 C binding
+CGO_ENABLED=1 go test ./cmd/...
+CGO_ENABLED=1 go test -v -run TestAnalyzer ./cmd/...   # run a specific test
 
-# Integration tests (require Weaviate at localhost:8080 / localhost:50051)
+# Integration tests (require Weaviate at localhost:8080 / localhost:50051; auto-skip if unreachable)
 docker run -p 8080:8080 -p 50051:50051 semitechnologies/weaviate:latest
-go test -tags integration ./cmd/...
-go test -tags integration -v -run TestIntegration_RecallForExactNeighbors ./cmd/...
+CGO_ENABLED=1 go test -tags integration ./cmd/...
+CGO_ENABLED=1 go test -tags integration -v -run TestIntegration_RecallForExactNeighbors ./cmd/...
 ```
 
 Unit tests live in `cmd/benchmark_run_test.go` and cover UUID conversions, NDCG calculation, and results analysis. Integration tests live in `cmd/integration_test.go` and exercise the full insert→query cycle against a real Weaviate instance; they skip automatically if Weaviate is not reachable.
@@ -100,7 +100,7 @@ All flags are defined in `cmd/config.go`. Key ones for `ann-benchmark`:
 `scripts/python/` contains analysis tools:
 - `memory_analysis.py` — visualize memory metrics from JSON output
 - `collate-results.py` — aggregate results across multiple runs
-- `ann.py` — ANN benchmark runner wrapper
 - `performance-graphs.py` — generate performance comparison graphs
+- `convert-parquet.py` — convert datasets to Parquet format
 
 Install Python dependencies: `pip install -r requirements.txt`

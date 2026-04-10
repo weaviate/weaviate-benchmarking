@@ -116,7 +116,16 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 				HeapAllocBytes:   memstats.HeapAllocBytes,
 				HeapInuseBytes:   memstats.HeapInuseBytes,
 				HeapSysBytes:     memstats.HeapSysBytes,
-				Timestamp:        time.Now().Format(time.RFC3339),
+				Timestamp: time.Now().Format(time.RFC3339),
+			}
+			if cfg.MMRBalance >= 0 {
+				balance := cfg.MMRBalance
+				benchResult.MMRBalance = &balance
+				mmrLimit := cfg.MMRLimit
+				if mmrLimit == 0 {
+					mmrLimit = cfg.Limit
+				}
+				benchResult.MMRLimit = &mmrLimit
 			}
 			switch cfg.IndexType {
 			case "flat":
