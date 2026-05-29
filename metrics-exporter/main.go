@@ -24,6 +24,7 @@ type MetricData struct {
 	Branch         string  `json:"branch"`
 	DatasetFile    string  `json:"dataset_file"`
 	EF             int     `json:"ef"`
+	SearchProbe    int     `json:"searchProbe"`
 	EFConstruction int     `json:"efConstruction"`
 	Limit          int     `json:"limit"`
 	MaxConnections int     `json:"maxConnections"`
@@ -50,7 +51,7 @@ func NewExporter() *Exporter {
 }
 
 func (e *Exporter) initializeMetrics() {
-	labels := []string{"branch", "dataset", "ef_construction", "max_connections", "limit", "ef", "shards", "test_id"}
+	labels := []string{"branch", "dataset", "ef_construction", "max_connections", "limit", "ef", "search_probe", "shards", "test_id"}
 
 	metricNames := []struct {
 		name string
@@ -111,6 +112,7 @@ func (e *Exporter) processJSONFile(filepath string) error {
 			"max_connections": fmt.Sprintf("%d", data.MaxConnections),
 			"limit":           fmt.Sprintf("%d", data.Limit),
 			"ef":              fmt.Sprintf("%d", data.EF),
+			"search_probe":    fmt.Sprintf("%d", data.SearchProbe),
 			"shards":          fmt.Sprintf("%d", data.Shards),
 			"test_id":         data.TestID,
 		}
