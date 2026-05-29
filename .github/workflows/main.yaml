@@ -25,9 +25,16 @@ jobs:
           cache-dependency-path: benchmarker/go.sum
       - name: Install hdf5
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential libhdf5-dev
-      - name: Run tests
+      - name: Run benchmarker tests
         working-directory: benchmarker
         run: CGO_ENABLED=1 go test ./...
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: metrics-exporter/go.mod
+          cache-dependency-path: metrics-exporter/go.sum
+      - name: Run metrics-exporter tests
+        working-directory: metrics-exporter
+        run: go test ./...
 
   Push-Docker:
     name: push-docker
