@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -24,6 +25,7 @@ type MetricData struct {
 	Branch         string  `json:"branch"`
 	DatasetFile    string  `json:"dataset_file"`
 	EF             int     `json:"ef"`
+	SearchProbe    int     `json:"searchProbe"`
 	EFConstruction int     `json:"efConstruction"`
 	Limit          int     `json:"limit"`
 	MaxConnections int     `json:"maxConnections"`
@@ -49,8 +51,9 @@ func NewExporter() *Exporter {
 	}
 }
 
-func (e *Exporter) initializeMetrics() {
-	labels := []string{"branch", "dataset", "ef_construction", "max_connections", "limit", "ef", "shards", "test_id"}
+func (e *Exporter) initializeMetrics(registerer prometheus.Registerer) {
+	labels := []string{"branch", "dataset", "ef_construction", "max_connections", "limit", "ef", "search_probe", "shards", "test_id"}
+	factory := promauto.With(registerer)
 
 	metricNames := []struct {
 		name string
@@ -68,7 +71,7 @@ func (e *Exporter) initializeMetrics() {
 	}
 
 	for _, metric := range metricNames {
-		e.metrics[metric.name] = promauto.NewGaugeVec(
+		e.metrics[metric.name] = factory.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Namespace: namespace,
 				Name:      metric.name,
@@ -76,6 +79,26 @@ func (e *Exporter) initializeMetrics() {
 			},
 			labels,
 		)
+	}
+}
+
+func prometheusLabels(data MetricData) prometheus.Labels {
+	if data.Branch == "" {
+		data.Branch = "main"
+	}
+	if data.TestID == "" {
+		data.TestID = "NA"
+	}
+	return prometheus.Labels{
+		"branch":          data.Branch,
+		"dataset":         data.DatasetFile,
+		"ef_construction": fmt.Sprintf("%d", data.EFConstruction),
+		"max_connections": fmt.Sprintf("%d", data.MaxConnections),
+		"limit":           fmt.Sprintf("%d", data.Limit),
+		"ef":              fmt.Sprintf("%d", data.EF),
+		"search_probe":    fmt.Sprintf("%d", data.SearchProbe),
+		"shards":          fmt.Sprintf("%d", data.Shards),
+		"test_id":         data.TestID,
 	}
 }
 
@@ -96,24 +119,7 @@ func (e *Exporter) processJSONFile(filepath string) error {
 
 	// Update metrics with new values
 	for _, data := range metricsData {
-		if data.Branch == "" {
-			data.Branch = "main"
-		}
-
-		if data.TestID == "" {
-			data.TestID = "NA"
-		}
-
-		labels := prometheus.Labels{
-			"branch":          data.Branch,
-			"dataset":         data.DatasetFile,
-			"ef_construction": fmt.Sprintf("%d", data.EFConstruction),
-			"max_connections": fmt.Sprintf("%d", data.MaxConnections),
-			"limit":           fmt.Sprintf("%d", data.Limit),
-			"ef":              fmt.Sprintf("%d", data.EF),
-			"shards":          fmt.Sprintf("%d", data.Shards),
-			"test_id":         data.TestID,
-		}
+		labels := prometheusLabels(data)
 
 		if metric := e.metrics["latency_mean"]; metric != nil {
 			metric.With(labels).Set(data.MeanLatency)
@@ -173,13 +179,19 @@ func findLatestJSONFile(dirPath string) (string, error) {
 	return latestFile, nil
 }
 
-func pollDirectory(dirPath string, exporter *Exporter) {
-	ticker := time.NewTicker(10 * time.Second)
+func pollDirectory(ctx context.Context, dirPath string, exporter *Exporter, interval time.Duration) {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	var lastProcessedFile string
 
-	for range ticker.C {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+
 		latestFile, err := findLatestJSONFile(dirPath)
 		if err != nil {
 			log.Printf("Unable to public metrics: %v", err)
@@ -212,10 +224,10 @@ func main() {
 
 			prometheus.Unregister(prometheus.NewGoCollector())
 			exporter := NewExporter()
-			exporter.initializeMetrics()
+			exporter.initializeMetrics(prometheus.DefaultRegisterer)
 
 			// Start polling directory
-			go pollDirectory(dirPath, exporter)
+			go pollDirectory(cmd.Context(), dirPath, exporter, 10*time.Second)
 
 			// Set up HTTP server
 			http.Handle("/metrics", promhttp.Handler())

@@ -1,0 +1,39 @@
+[
+  {
+    "api": "grpc",
+    "branch": "feature-branch",
+    "dataset_file": "sample.hdf5",
+    "ef": 16,
+    "searchProbe": 8,
+    "efConstruction": 256,
+    "limit": 10,
+    "maxConnections": 32,
+    "meanLatency": 0.01,
+    "p99Latency": 0.05,
+    "qps": 1000,
+    "recall": 0.9,
+    "shards": 2,
+    "importTime": 42.5,
+    "heap_alloc_bytes": 100,
+    "heap_inuse_bytes": 200,
+    "heap_sys_bytes": 300,
+    "test_id": "run-001"
+  },
+  {
+    "api": "grpc",
+    "dataset_file": "defaults.hdf5",
+    "ef": 24,
+    "efConstruction": 128,
+    "limit": 5,
+    "maxConnections": 16,
+    "meanLatency": 0.02,
+    "p99Latency": 0.06,
+    "qps": 500,
+    "recall": 0.8,
+    "shards": 1,
+    "importTime": 10,
+    "heap_alloc_bytes": 50,
+    "heap_inuse_bytes": 60,
+    "heap_sys_bytes": 70
+  }
+]
