@@ -115,6 +115,34 @@ func setupTestCollection(t *testing.T, cfg *Config, vectors [][]float32) {
 	time.Sleep(3 * time.Second)
 }
 
+// setupTestCollectionFromSchema creates a fresh collection using createSchema(),
+// inserts vectors through gRPC, and registers cleanup.
+func setupTestCollectionFromSchema(t *testing.T, cfg *Config, vectors [][]float32) {
+	t.Helper()
+	client := createClient(cfg)
+	if cfg.FilterStrategy == "" {
+		cfg.FilterStrategy = "sweeping"
+	}
+
+	createSchema(cfg, client)
+
+	t.Cleanup(func() {
+		_ = client.Schema().ClassDeleter().WithClassName(cfg.ClassName).Do(context.Background())
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	conn, err := grpc.DialContext(ctx, cfg.Origin, grpc.WithInsecure()) //nolint:staticcheck
+	require.NoError(t, err)
+	defer conn.Close()
+	grpcClient := weaviategrpc.NewWeaviateClient(conn)
+
+	writeChunk(&Batch{Vectors: vectors, Offset: 0}, &grpcClient, cfg)
+
+	// Give indexers time to finish indexing before querying.
+	time.Sleep(3 * time.Second)
+}
+
 // TestIntegration_QueriesSucceed runs a full insert→query cycle with random
 // query vectors and asserts that no queries fail and throughput is positive.
 func TestIntegration_QueriesSucceed(t *testing.T) {
@@ -195,4 +223,90 @@ func TestIntegration_ResultsJSON(t *testing.T) {
 	assert.Contains(t, out, `"qps"`)
 	assert.Contains(t, out, `"successful"`)
 	assert.Contains(t, out, `"recall"`)
+}
+
+func TestIntegration_SmokePerIndexType(t *testing.T) {
+	base := integrationCfg()
+	skipIfWeaviateUnavailable(t, base.Origin)
+
+	vectors := generateVectors(integrationVectorCount, integrationDimensions, 314159)
+
+	testCases := []struct {
+		name       string
+		indexType  string
+		className  string
+		configure  func(*Config)
+		queryParam int
+	}{
+		{
+			name:      "hnsw",
+			indexType: "hnsw",
+			className: "BenchmarkIntTestHNSW",
+			configure: func(cfg *Config) {},
+			queryParam: 32,
+		},
+		{
+			name:      "flat-rq",
+			indexType: "flat",
+			className: "BenchmarkIntTestFlatRQ",
+			configure: func(cfg *Config) {
+				cfg.RQ = "auto"
+				cfg.RQBits = 8
+				cfg.Cache = true
+				cfg.RescoreLimit = 32
+			},
+			queryParam: 24,
+		},
+		{
+			name:      "dynamic",
+			indexType: "dynamic",
+			className: "BenchmarkIntTestDynamic",
+			configure: func(cfg *Config) {
+				cfg.DynamicThreshold = 100
+			},
+			queryParam: 32,
+		},
+		{
+			name:      "hfresh",
+			indexType: "hfresh",
+			className: "BenchmarkIntTestHFresh",
+			configure: func(cfg *Config) {
+				cfg.MaxPostingSizeKB = 64
+				cfg.Replicas = 1
+				cfg.RngFactor = 10
+				cfg.RescoreLimit = 32
+			},
+			queryParam: 16,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := integrationCfg()
+			cfg.IndexType = tc.indexType
+			cfg.ClassName = tc.className
+			cfg.Queries = 20
+			cfg.Limit = 10
+			cfg.FilterStrategy = "sweeping"
+
+			tc.configure(&cfg)
+
+			setupTestCollectionFromSchema(t, &cfg, vectors)
+
+			client := createClient(&cfg)
+			updateEf(tc.queryParam, &cfg, client)
+
+			results := benchmark(cfg, func(_ string) QueryWithNeighbors {
+				return QueryWithNeighbors{
+					Query: nearVectorQueryGrpc(&cfg, randomVector(cfg.Dimensions), "", -1),
+				}
+			})
+
+			assert.Equal(t, 0, results.Failed, "expected zero failed queries for %s", tc.indexType)
+			assert.Equal(t, cfg.Queries, results.Successful, "all queries should succeed for %s", tc.indexType)
+			assert.Greater(t, results.QueriesPerSecond, 0.0, "QPS should be positive for %s", tc.indexType)
+			assert.Greater(t, int64(results.Mean), int64(0), "mean latency should be positive for %s", tc.indexType)
+		})
+	}
 }
