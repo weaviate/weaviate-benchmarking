@@ -121,21 +121,22 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 				end := start + cfg.MultiVectorDimensions
 				multiVec[i] = vector[start:end]
 			}
+			name := "multivector"
+			if cfg.NamedVector != "" {
+				name = cfg.NamedVector
+			}
 			objects[i].Vectors = []*weaviategrpc.Vectors{{
-				Name:        "multivector",
+				Name:        name,
 				VectorBytes: byteops.Fp32SliceOfSlicesToBytes(multiVec),
 				Type:        weaviategrpc.Vectors_VECTOR_TYPE_MULTI_FP32,
 			}}
+		} else if cfg.NamedVector != "" {
+			objects[i].Vectors = []*weaviategrpc.Vectors{{
+				Name:        cfg.NamedVector,
+				VectorBytes: encodeVector(vector),
+			}}
 		} else {
 			objects[i].VectorBytes = encodeVector(vector)
-		}
-		if cfg.NamedVector != "" {
-			vectors := make([]*weaviategrpc.Vectors, 1)
-			vectors[0] = &weaviategrpc.Vectors{
-				VectorBytes: encodeVector(vector),
-				Name:        cfg.NamedVector,
-			}
-			objects[i].Vectors = vectors
 		}
 		if cfg.Filter {
 			nonRefProperties, err := structpb.NewStruct(map[string]interface{}{
@@ -369,6 +370,17 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 	vectorIndexConfig["filterStrategy"] = cfg.FilterStrategy
 
 	if cfg.NamedVector != "" {
+		if cfg.MultiVectorDimensions > 0 {
+			vectorIndexConfig["multivector"] = map[string]interface{}{
+				"enabled": true,
+				"muvera": map[string]interface{}{
+					"enabled":      cfg.MuveraEnabled,
+					"ksim":         cfg.MuveraKSim,
+					"dprojections": cfg.MuveraDProjections,
+					"repetition":   cfg.MuveraRepetition,
+				},
+			}
+		}
 		vectorConfig := make(map[string]models.VectorConfig)
 		vectorConfig[cfg.NamedVector] = models.VectorConfig{
 			Vectorizer:        map[string]interface{}{"none": nil},
@@ -611,15 +623,13 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 	var segments uint
 	var vectorIndexConfig map[string]interface{}
 
-	if cfg.MultiVectorDimensions > 0 {
+	if cfg.NamedVector != "" {
+		vectorIndexConfig = classConfig.VectorConfig[cfg.NamedVector].VectorIndexConfig.(map[string]interface{})
+		classConfig.Vectorizer = ""
+	} else if cfg.MultiVectorDimensions > 0 {
 		vectorIndexConfig = classConfig.VectorConfig["multivector"].VectorIndexConfig.(map[string]interface{})
 	} else {
-		if cfg.NamedVector == "" {
-			vectorIndexConfig = classConfig.VectorIndexConfig.(map[string]interface{})
-		} else {
-			vectorIndexConfig = classConfig.VectorConfig[cfg.NamedVector].VectorIndexConfig.(map[string]interface{})
-			classConfig.Vectorizer = ""
-		}
+		vectorIndexConfig = classConfig.VectorIndexConfig.(map[string]interface{})
 	}
 
 	switch compressionType {
@@ -662,18 +672,16 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 		vectorIndexConfig["rq"] = rqConfig
 	}
 
-	if cfg.MultiVectorDimensions > 0 {
+	if cfg.NamedVector != "" {
+		vectorConfig := classConfig.VectorConfig[cfg.NamedVector]
+		vectorConfig.VectorIndexConfig = vectorIndexConfig
+		classConfig.VectorConfig[cfg.NamedVector] = vectorConfig
+	} else if cfg.MultiVectorDimensions > 0 {
 		vectorConfig := classConfig.VectorConfig["multivector"]
 		vectorConfig.VectorIndexConfig = vectorIndexConfig
 		classConfig.VectorConfig["multivector"] = vectorConfig
 	} else {
-		if cfg.NamedVector == "" {
-			classConfig.VectorIndexConfig = vectorIndexConfig
-		} else {
-			vectorConfig := classConfig.VectorConfig[cfg.NamedVector]
-			vectorConfig.VectorIndexConfig = vectorIndexConfig
-			classConfig.VectorConfig[cfg.NamedVector] = vectorConfig
-		}
+		classConfig.VectorIndexConfig = vectorIndexConfig
 	}
 
 	err = client.Schema().ClassUpdater().WithClass(classConfig).Do(context.Background())
