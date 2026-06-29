@@ -137,9 +137,14 @@ func encodeVector(fs []float32) []byte {
 
 func nearVectorQueryGrpc(cfg *Config, vec []float32, tenant string, filter int) []byte {
 
-	var searchRequest *weaviategrpc.SearchRequest
-	if cfg.MultiVectorDimensions > 0 {
+	metadata := &weaviategrpc.MetadataRequest{
+		Certainty: false,
+		Distance:  false,
+		Uuid:      true,
+	}
 
+	var nearVector *weaviategrpc.NearVector
+	if cfg.MultiVectorDimensions > 0 {
 		rows := len(vec) / cfg.MultiVectorDimensions
 		doc := make([][]float32, rows)
 		for i := 0; i < rows; i++ {
@@ -147,46 +152,24 @@ func nearVectorQueryGrpc(cfg *Config, vec []float32, tenant string, filter int) 
 			end := start + cfg.MultiVectorDimensions
 			doc[i] = vec[start:end]
 		}
-		multiVec := []*weaviategrpc.Vectors{{
-			Name:        "multivector",
-			VectorBytes: byteops.Fp32SliceOfSlicesToBytes(doc),
-			Type:        weaviategrpc.Vectors_VECTOR_TYPE_MULTI_FP32,
-		}}
-
-		searchRequest = &weaviategrpc.SearchRequest{
-			Collection: cfg.ClassName,
-			Limit:      uint32(cfg.Limit),
-			NearVector: &weaviategrpc.NearVector{
-				Vectors: multiVec,
-			},
-			Metadata: &weaviategrpc.MetadataRequest{
-				Certainty: false,
-				Distance:  false,
-				Uuid:      true,
-			},
+		name := "multivector"
+		if cfg.NamedVector != "" {
+			name = cfg.NamedVector
 		}
-
-	} else {
-		searchRequest = &weaviategrpc.SearchRequest{
-			Collection: cfg.ClassName,
-			Limit:      uint32(cfg.Limit),
-			NearVector: &weaviategrpc.NearVector{
-				VectorBytes: encodeVector(vec),
-			},
-			Metadata: &weaviategrpc.MetadataRequest{
-				Certainty: false,
-				Distance:  false,
-				Uuid:      true,
-			},
+		nearVector = &weaviategrpc.NearVector{
+			Vectors: []*weaviategrpc.Vectors{{
+				Name:        name,
+				VectorBytes: byteops.Fp32SliceOfSlicesToBytes(doc),
+				Type:        weaviategrpc.Vectors_VECTOR_TYPE_MULTI_FP32,
+			}},
 		}
-	}
-
-	if tenant != "" {
-		searchRequest.Tenant = tenant
-	}
-
-	if cfg.NamedVector != "" {
-		searchRequest.NearVector = &weaviategrpc.NearVector{
+		if cfg.NamedVector != "" {
+			nearVector.Targets = &weaviategrpc.Targets{
+				TargetVectors: []string{cfg.NamedVector},
+			}
+		}
+	} else if cfg.NamedVector != "" {
+		nearVector = &weaviategrpc.NearVector{
 			Targets: &weaviategrpc.Targets{
 				TargetVectors: []string{cfg.NamedVector},
 			},
@@ -194,6 +177,21 @@ func nearVectorQueryGrpc(cfg *Config, vec []float32, tenant string, filter int) 
 				cfg.NamedVector: encodeVector(vec),
 			},
 		}
+	} else {
+		nearVector = &weaviategrpc.NearVector{
+			VectorBytes: encodeVector(vec),
+		}
+	}
+
+	searchRequest := &weaviategrpc.SearchRequest{
+		Collection: cfg.ClassName,
+		Limit:      uint32(cfg.Limit),
+		NearVector: nearVector,
+		Metadata:   metadata,
+	}
+
+	if tenant != "" {
+		searchRequest.Tenant = tenant
 	}
 
 	if filter >= 0 {
