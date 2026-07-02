@@ -81,7 +81,7 @@ Flags:
 
 ## BM25 benchmark
 
-The `bm25-benchmark` command imports a [BEIR](https://github.com/beir-cellar/beir)-format text corpus (`corpus.jsonl` + `queries.jsonl`) into a vectorless collection and benchmarks BM25 keyword-search latency/QPS. Unlike ANN, BM25 top-k is exact, so this is a pure performance test (no recall/ground-truth). It can also generate inverted-index tombstones (via deletes/updates) to measure BM25 performance under tombstone load. Results are written to `./results/<runID>.json`, one row per phase, in the same shape as `ann-benchmark`.
+The `bm25-benchmark` command imports a [BEIR](https://github.com/beir-cellar/beir)-format text corpus (`corpus.jsonl` + `queries.jsonl`) into a vectorless collection and benchmarks BM25 keyword-search latency/QPS. By default it is a pure performance test; `--measureQuality` additionally computes NDCG@10 / Recall@100 vs the BEIR qrels as a quality regression gate (see below). It can also generate inverted-index tombstones (via deletes/updates) to measure BM25 performance under tombstone load. Results are written to `./results/<runID>.json`, one row per phase, in the same shape as `ann-benchmark`.
 
 Running `benchmarker bm25-benchmark -h` results in the following output:
 
@@ -114,20 +114,24 @@ Flags:
       --labels string                  Labels of format key1=value1,key2=value2 merged into each result row
   -l, --limit int                      Query limit (top_k) (default 10)
       --measureBaseline                Run a 0-tombstone baseline before the tombstone phase (default true)
+      --measureQuality                 Measure NDCG@k / Recall@k vs BEIR qrels (fills recall/ndcg)
       --memoryMonitoringEnabled        Enable continuous memory monitoring
       --memoryMonitoringFile string    Memory monitoring output file
       --memoryMonitoringInterval int   Memory monitoring interval in seconds (default 5)
       --metricsEndpoint string         Weaviate metrics endpoint (default "http://localhost:2112/metrics")
       --minimumOrTokensMatch int       minimumOrTokensMatch for the OR operator (0 = unset)
+      --ndcgCutoff int                 NDCG cutoff written to the ndcg field (default 10)
       --numTenants int                 Number of tenants; each gets a full corpus copy (0 = single-tenant)
   -o, --output string                  Optional output file for the results JSON
   -p, --parallel int                   Number of parallel query threads (default: number of CPUs)
+      --qrels string                   Path to BEIR qrels TSV; if empty, auto-detect <corpusdir>/qrels/{test,dev}.tsv
       --queries int                    Number of query executions per phase (0 = one pass over the query set)
       --queriesFile string             Path to the BEIR queries.jsonl file (required)
       --query                          Do not import; query an existing collection
       --queryDelaySeconds int          How long to wait after import before querying (default 30)
       --queryDuration int              Query for the specified duration in seconds instead of a fixed count
       --queryProperties string         Comma-separated properties to run BM25 against (default "text")
+      --recallCutoff int               Recall cutoff written to the recall field (default 100)
       --replicationFactor int          Replication factor (default 1)
       --searchType string              Search type (bm25; hybrid reserved for a future version) (default "bm25")
       --shards int                     Number of shards (default 1)
@@ -160,6 +164,29 @@ go run . bm25-benchmark \
   --tombstonePercentage 0.5 --tombstoneMode update --tombstoneIterations 2 \
   --labels "weaviateVersion=<commit>"
 ```
+
+### Quality regression gate (`--measureQuality`)
+
+`--measureQuality` fills the `recall`/`ndcg` fields with **Recall@100** and **NDCG@10 vs
+the BEIR qrels** (the relevance judgments that ship with the dataset), so a change that
+degrades what BM25 returns — a tombstone/WAND regression or a Weaviate upgrade — shows
+up as a metric drop that the downstream comparison can flag, exactly like ANN recall.
+
+```
+go run . bm25-benchmark \
+  --corpus benchmark-data/scifact/corpus.jsonl \
+  --queriesFile benchmark-data/scifact/queries.jsonl \
+  --measureQuality --queryProperties text,title \
+  --tombstonePercentage 0.5 --tombstoneMode update
+```
+
+- Qrels auto-detect at `<corpusdir>/qrels/test.tsv` (then `dev.tsv`); override with `--qrels`.
+- Cutoffs are independent of `--limit` (`--ndcgCutoff` / `--recallCutoff`), so `recall`/`ndcg` mean the same thing across runs.
+- The quality pass is deterministic, single-tenant and unfiltered; latency/QPS still come from the throughput pass.
+- Before measuring, quality mode **waits for the index to settle** (relevant docs searchable, then the metric stops climbing), so import/reindex lag on a multi-node cluster isn't misread as a regression. This adds wall-clock time on a lagging cluster; a genuine regression (docs never recover) still surfaces as a low `tombstoneRetrievability` and a metric drop.
+- In quality mode the tombstone churn targets the **judged** documents, and a **retrievability probe** (`tombstoneRetrievability`) verifies reinserted docs stay findable — the direct tombstone-correctness signal.
+- Rows are labeled `benchmarkType: bm25-qrels`. Downstream, use **negative thresholds** (e.g. `ndcg: -0.02`) to flag *decreases*, and never compare BM25 and ANN result files together (their `recall`/`ndcg` are on different scales).
+- Absolute scores sit below published Anserini BEIR numbers (Weaviate's default tokenization does no stemming/stopword removal); use `--queryProperties text,title` and treat the value as an internally-calibrated band.
 
 ## Memory Monitoring Feature 🆕
 

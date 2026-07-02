@@ -9,6 +9,9 @@ import (
 
 func writeBeirFixture(t *testing.T, dir, name string, lines []string) string {
 	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", dir, err)
+	}
 	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
 		t.Fatalf("write fixture %s: %v", name, err)

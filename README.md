@@ -99,4 +99,32 @@ go run . bm25-benchmark \
   per doc per iteration, matching an update-heavy workload); `delete` only deletes.
 - `--tombstoneConcurrent` churns tombstones in the background *during* the query run.
 
+### Quality measurement (regression gate)
+
+`--measureQuality` computes **NDCG@10** and **Recall@100 vs the BEIR qrels** for each
+phase (filling the `recall`/`ndcg` fields), so a change that degrades what BM25
+returns — a tombstone/WAND regression or a new Weaviate version — shows up as a drop
+in those metrics. The reference (qrels) ships with the dataset, so nothing is stored
+between runs; comparison happens downstream exactly like ANN recall.
+
+```sh
+go run . bm25-benchmark \
+  --corpus benchmark-data/scifact/corpus.jsonl \
+  --queriesFile benchmark-data/scifact/queries.jsonl \
+  --measureQuality --queryProperties text,title \
+  --tombstonePercentage 0.5 --tombstoneMode update
+```
+
+- The qrels file auto-detects at `<corpusdir>/qrels/test.tsv` (then `dev.tsv`); override with `--qrels`.
+- Cutoffs are decoupled from `--limit`: tune with `--ndcgCutoff` / `--recallCutoff`.
+- In quality mode the tombstone churn targets the **judged** docs and a
+  **retrievability probe** (`tombstoneRetrievability`) checks reinserted docs stay
+  findable — the direct tombstone-correctness signal.
+- Rows carry a `benchmarkType: bm25-qrels` label. **When comparing runs downstream,
+  use negative thresholds** (e.g. `ndcg: -0.02`) so *decreases* are flagged, and never
+  mix BM25 and ANN result files (their `recall`/`ndcg` are on different scales).
+- Note: absolute scores sit below published Anserini BEIR numbers (Weaviate's default
+  tokenization does no stemming/stopword removal). Use `--queryProperties text,title`
+  and treat the value as an internally-calibrated band.
+
 

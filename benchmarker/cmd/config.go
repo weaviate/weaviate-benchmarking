@@ -100,6 +100,12 @@ type Config struct {
 	TombstoneIterations int
 	TombstoneConcurrent bool
 	MeasureBaseline     bool
+
+	// BM25 quality measurement (qrels-based regression gate)
+	MeasureQuality bool
+	QrelsFile      string
+	NDCGCutoff     int
+	RecallCutoff   int
 }
 
 func (c *Config) Validate() error {
@@ -248,6 +254,21 @@ func (c Config) validateBM25() error {
 
 	if c.Parallel < 1 {
 		return errors.Errorf("parallel must be at least 1")
+	}
+
+	if c.MeasureQuality {
+		if c.CorpusFile == "" {
+			return errors.Errorf("--measureQuality requires --corpus (needed to map qrels doc-ids to document indices, even with --query)")
+		}
+		if c.Filter {
+			return errors.Errorf("--measureQuality is incompatible with --filter (a category filter misaligns results with corpus-wide qrels)")
+		}
+		if c.NumTenants > 0 {
+			return errors.Errorf("--measureQuality requires single-tenant (--numTenants 0)")
+		}
+		if c.NDCGCutoff < 1 || c.RecallCutoff < 1 {
+			return errors.Errorf("--ndcgCutoff and --recallCutoff must be at least 1")
+		}
 	}
 
 	return nil
