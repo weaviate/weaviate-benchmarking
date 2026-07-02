@@ -11,6 +11,7 @@ Usage:
 
 Available Commands:
   ann-benchmark  Benchmark ANN Benchmark style datasets
+  bm25-benchmark Benchmark BM25 keyword search on a BEIR-format text corpus
   help           Help about any command
   random-vectors Benchmark random vector queries
   raw            Benchmark raw GraphQL queries
@@ -76,6 +77,88 @@ Flags:
   -v, --vectors string               Path to the hdf5 file containing the vectors
 
 
+```
+
+## BM25 benchmark
+
+The `bm25-benchmark` command imports a [BEIR](https://github.com/beir-cellar/beir)-format text corpus (`corpus.jsonl` + `queries.jsonl`) into a vectorless collection and benchmarks BM25 keyword-search latency/QPS. Unlike ANN, BM25 top-k is exact, so this is a pure performance test (no recall/ground-truth). It can also generate inverted-index tombstones (via deletes/updates) to measure BM25 performance under tombstone load. Results are written to `./results/<runID>.json`, one row per phase, in the same shape as `ann-benchmark`.
+
+Running `benchmarker bm25-benchmark -h` results in the following output:
+
+```
+Import a BEIR-format text corpus (corpus.jsonl) into a vectorless Weaviate
+collection and benchmark BM25 keyword-search latency/QPS using queries.jsonl.
+
+Optionally generates inverted-index tombstones (via deletes/updates) to measure
+BM25 keyword-search performance under tombstone load.
+
+Usage:
+  benchmarker bm25-benchmark [flags]
+
+Flags:
+  -a, --api string                     API to use (only grpc is supported) (default "grpc")
+  -b, --batchSize int                  Batch size for import (default 1000)
+      --bm25Operator string            BM25 search operator: or, and, or empty for server default
+      --bm25b float                    BM25 b parameter (default 0.75)
+      --bm25k1 float                   BM25 k1 parameter (default 1.2)
+  -c, --className string               Class name for the benchmark collection (default "Bm25Bench")
+      --corpus string                  Path to the BEIR corpus.jsonl file (required unless --query)
+      --existingSchema                 Leave the schema as-is (do not recreate the class)
+      --filter                         Combine BM25 with an equality filter on a category bucket
+      --filterCount int                Number of category buckets (filter selectivity = 1/filterCount) (default 10)
+  -f, --format string                  Output format, one of [text, json] (default "text")
+  -u, --grpcOrigin string              The gRPC origin that Weaviate is running at (default "localhost:50051")
+  -h, --help                           help for bm25-benchmark
+      --httpOrigin string              The HTTP origin for Weaviate (default "localhost:8080")
+      --httpScheme string              The HTTP scheme (http or https) (default "http")
+      --labels string                  Labels of format key1=value1,key2=value2 merged into each result row
+  -l, --limit int                      Query limit (top_k) (default 10)
+      --measureBaseline                Run a 0-tombstone baseline before the tombstone phase (default true)
+      --memoryMonitoringEnabled        Enable continuous memory monitoring
+      --memoryMonitoringFile string    Memory monitoring output file
+      --memoryMonitoringInterval int   Memory monitoring interval in seconds (default 5)
+      --metricsEndpoint string         Weaviate metrics endpoint (default "http://localhost:2112/metrics")
+      --minimumOrTokensMatch int       minimumOrTokensMatch for the OR operator (0 = unset)
+      --numTenants int                 Number of tenants; each gets a full corpus copy (0 = single-tenant)
+  -o, --output string                  Optional output file for the results JSON
+  -p, --parallel int                   Number of parallel query threads (default: number of CPUs)
+      --queries int                    Number of query executions per phase (0 = one pass over the query set)
+      --queriesFile string             Path to the BEIR queries.jsonl file (required)
+      --query                          Do not import; query an existing collection
+      --queryDelaySeconds int          How long to wait after import before querying (default 30)
+      --queryDuration int              Query for the specified duration in seconds instead of a fixed count
+      --queryProperties string         Comma-separated properties to run BM25 against (default "text")
+      --replicationFactor int          Replication factor (default 1)
+      --searchType string              Search type (bm25; hybrid reserved for a future version) (default "bm25")
+      --shards int                     Number of shards (default 1)
+      --skipQuery                      Only import data, skip the query phase
+      --tokenization string            Tokenization for the text properties (word, lowercase, whitespace, field, trigram) (default "word")
+      --tombstoneConcurrent            Churn tombstones in the background during the query run
+      --tombstoneIterations int        Number of tombstone-generation iterations (re-measured each time) (default 1)
+      --tombstoneMode string           How to create tombstones: update (delete+reinsert) or delete (default "update")
+      --tombstonePercentage float      Fraction of docs (0..1) to tombstone per iteration (0 disables)
+```
+
+Download a BEIR dataset (e.g. the small `nfcorpus`) and run a pure BM25 benchmark:
+
+```
+curl -L -o nfcorpus.zip https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/nfcorpus.zip
+unzip nfcorpus.zip
+
+go run . bm25-benchmark \
+  --corpus nfcorpus/corpus.jsonl \
+  --queriesFile nfcorpus/queries.jsonl \
+  -c Bm25Bench -l 10 -p 8 --bm25Operator or
+```
+
+To measure BM25 latency under inverted-index tombstone load, run a 0-tombstone baseline followed by one or more delete/reinsert iterations (record the Weaviate version via `--labels`, since tombstone handling varies across versions):
+
+```
+go run . bm25-benchmark \
+  --corpus nfcorpus/corpus.jsonl --queriesFile nfcorpus/queries.jsonl \
+  -c Bm25Bench -l 10 -p 8 \
+  --tombstonePercentage 0.5 --tombstoneMode update --tombstoneIterations 2 \
+  --labels "weaviateVersion=<commit>"
 ```
 
 ## Memory Monitoring Feature 🆕

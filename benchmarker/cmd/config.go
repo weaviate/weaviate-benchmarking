@@ -82,6 +82,24 @@ type Config struct {
 	MaxPostingSizeKB         int
 	Replicas                 int
 	RngFactor                float64
+
+	// BM25 benchmark
+	CorpusFile      string
+	SearchType      string
+	QueryProperties string
+	BM25Operator    string
+	MinOrTokens     int
+	BM25K1          float64
+	BM25B           float64
+	Tokenization    string
+	FilterCount     int
+
+	// BM25 tombstone generation (slow-path reproduction)
+	TombstonePercentage float64
+	TombstoneMode       string
+	TombstoneIterations int
+	TombstoneConcurrent bool
+	MeasureBaseline     bool
 }
 
 func (c *Config) Validate() error {
@@ -99,6 +117,8 @@ func (c *Config) Validate() error {
 		return c.validateDataset()
 	case "ann-benchmark":
 		return c.validateANN()
+	case "bm25-benchmark":
+		return c.validateBM25()
 	default:
 		return errors.Errorf("unrecognized mode %q", c.Mode)
 	}
@@ -186,6 +206,48 @@ func (c Config) validateANN() error {
 
 	if c.DistanceMetric == "" {
 		return errors.Errorf("distance metric must be set")
+	}
+
+	return nil
+}
+
+func (c Config) validateBM25() error {
+	if c.API != "grpc" {
+		return errors.Errorf("only grpc is supported for bm25-benchmark")
+	}
+
+	if !c.QueryOnly && c.CorpusFile == "" {
+		return errors.Errorf("a corpus file (--corpus, BEIR corpus.jsonl) must be provided unless --query is set")
+	}
+
+	if c.QueriesFile == "" {
+		return errors.Errorf("a queries file (--queriesFile, BEIR queries.jsonl) must be provided")
+	}
+
+	switch c.TombstoneMode {
+	case "", "update", "delete":
+	default:
+		return errors.Errorf("unsupported tombstoneMode %q, must be one of [update, delete]", c.TombstoneMode)
+	}
+
+	if c.TombstonePercentage < 0 || c.TombstonePercentage > 1 {
+		return errors.Errorf("tombstonePercentage must be between 0 and 1")
+	}
+
+	if c.TombstonePercentage > 0 && c.CorpusFile == "" {
+		return errors.Errorf("a corpus file (--corpus) is required to generate tombstones")
+	}
+
+	if c.TombstoneConcurrent && c.QueryDuration <= 0 {
+		return errors.Errorf("--tombstoneConcurrent requires --queryDuration > 0 so queries overlap the background churn")
+	}
+
+	if c.TombstoneConcurrent && c.TombstoneMode == "delete" {
+		return errors.Errorf("--tombstoneConcurrent requires --tombstoneMode update (delete does not sustain churn)")
+	}
+
+	if c.Parallel < 1 {
+		return errors.Errorf("parallel must be at least 1")
 	}
 
 	return nil

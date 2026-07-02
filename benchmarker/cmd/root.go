@@ -33,6 +33,7 @@ func init() {
 	initDataset()
 	initRaw()
 	initAnnBenchmark()
+	initBM25Benchmark()
 	initColbert()
 }
 
