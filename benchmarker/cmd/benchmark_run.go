@@ -142,7 +142,11 @@ func processQueueGrpc(queue []QueryWithNeighbors, cfg *Config, grpcConn *grpc.Cl
 		}
 		took := time.Since(before)
 
-		if len(searchReply.GetResults()) != cfg.Limit {
+		// Only warn about a short result set when we have ground-truth neighbors to
+		// compare against (recall runs, e.g. ann-benchmark), where fewer than `limit`
+		// results signals a problem. For keyword/BM25 or random queries there is no
+		// ground truth and returning fewer than `limit` matches is normal.
+		if len(query.Neighbors) > 0 && len(searchReply.GetResults()) != cfg.Limit {
 			fmt.Printf("Warning grpc got %d results, expected %d\n", len(searchReply.GetResults()), cfg.Limit)
 		}
 

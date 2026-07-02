@@ -43,6 +43,8 @@ const (
 // Batch of vectors and offset for writing to Weaviate
 type Batch struct {
 	Vectors [][]float32
+	Text    []string // BM25/text import; parallel to Vectors (nil for pure-ANN batches)
+	Titles  []string // optional per-object title, parallel to Text
 	Offset  int
 	Filters []int
 }
@@ -98,9 +100,14 @@ func intFromUUID(uuidStr string) int {
 
 // Writes a single batch of vectors to Weaviate using gRPC
 func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) {
-	objects := make([]*weaviategrpc.BatchObject, len(chunk.Vectors))
+	n := len(chunk.Vectors)
+	if n == 0 {
+		// Text-only (BM25) batches carry no vectors.
+		n = len(chunk.Text)
+	}
+	objects := make([]*weaviategrpc.BatchObject, n)
 
-	for i, vector := range chunk.Vectors {
+	for i := 0; i < n; i++ {
 		objects[i] = &weaviategrpc.BatchObject{
 			Uuid:       uuidFromInt(i + chunk.Offset + cfg.Offset),
 			Collection: cfg.ClassName,
@@ -108,42 +115,59 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 		if cfg.Tenant != "" {
 			objects[i].Tenant = cfg.Tenant
 		}
-		if cfg.MultiVectorDimensions > 0 {
-			if len(vector)%cfg.MultiVectorDimensions != 0 {
-				log.Fatalf("Vector length %d is not a multiple of dimensions %d",
-					len(vector), cfg.MultiVectorDimensions)
-			}
-			rows := len(vector) / cfg.MultiVectorDimensions
+		if i < len(chunk.Vectors) {
+			vector := chunk.Vectors[i]
+			if cfg.MultiVectorDimensions > 0 {
+				if len(vector)%cfg.MultiVectorDimensions != 0 {
+					log.Fatalf("Vector length %d is not a multiple of dimensions %d",
+						len(vector), cfg.MultiVectorDimensions)
+				}
+				rows := len(vector) / cfg.MultiVectorDimensions
 
-			multiVec := make([][]float32, rows)
-			for i := 0; i < rows; i++ {
-				start := i * cfg.MultiVectorDimensions
-				end := start + cfg.MultiVectorDimensions
-				multiVec[i] = vector[start:end]
+				multiVec := make([][]float32, rows)
+				for j := 0; j < rows; j++ {
+					start := j * cfg.MultiVectorDimensions
+					end := start + cfg.MultiVectorDimensions
+					multiVec[j] = vector[start:end]
+				}
+				name := "multivector"
+				if cfg.NamedVector != "" {
+					name = cfg.NamedVector
+				}
+				objects[i].Vectors = []*weaviategrpc.Vectors{{
+					Name:        name,
+					VectorBytes: byteops.Fp32SliceOfSlicesToBytes(multiVec),
+					Type:        weaviategrpc.Vectors_VECTOR_TYPE_MULTI_FP32,
+				}}
+			} else if cfg.NamedVector != "" {
+				objects[i].Vectors = []*weaviategrpc.Vectors{{
+					Name:        cfg.NamedVector,
+					VectorBytes: encodeVector(vector),
+				}}
+			} else {
+				objects[i].VectorBytes = encodeVector(vector)
 			}
-			name := "multivector"
-			if cfg.NamedVector != "" {
-				name = cfg.NamedVector
+		}
+
+		// Object properties. For pure-ANN batches this only sets "category" when
+		// filtering is enabled (unchanged behavior). BM25/text batches add the
+		// searchable "text"/"title" properties plus a numeric "docId" used for
+		// range-based batch deletes during tombstone generation.
+		props := map[string]interface{}{}
+		if i < len(chunk.Text) {
+			props["text"] = chunk.Text[i]
+			props["docId"] = float64(i + chunk.Offset + cfg.Offset)
+			if i < len(chunk.Titles) {
+				props["title"] = chunk.Titles[i]
 			}
-			objects[i].Vectors = []*weaviategrpc.Vectors{{
-				Name:        name,
-				VectorBytes: byteops.Fp32SliceOfSlicesToBytes(multiVec),
-				Type:        weaviategrpc.Vectors_VECTOR_TYPE_MULTI_FP32,
-			}}
-		} else if cfg.NamedVector != "" {
-			objects[i].Vectors = []*weaviategrpc.Vectors{{
-				Name:        cfg.NamedVector,
-				VectorBytes: encodeVector(vector),
-			}}
-		} else {
-			objects[i].VectorBytes = encodeVector(vector)
 		}
 		if cfg.Filter {
-			nonRefProperties, err := structpb.NewStruct(map[string]interface{}{
-				"category": strconv.Itoa(chunk.Filters[i]),
-			})
+			props["category"] = strconv.Itoa(chunk.Filters[i])
+		}
+		if len(props) > 0 {
+			nonRefProperties, err := structpb.NewStruct(props)
 			if err != nil {
-				log.Fatalf("Error creating filtered struct: %v", err)
+				log.Fatalf("Error creating properties struct: %v", err)
 			}
 			objects[i].Properties = &weaviategrpc.BatchObject_Properties{
 				NonRefProperties: nonRefProperties,
