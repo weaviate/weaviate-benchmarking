@@ -357,6 +357,16 @@ func analyze(cfg Config, times []time.Duration, total time.Duration, recall []fl
 	out.Total = cfg.Queries
 	out.Failed = cfg.Queries - out.Successful
 	out.Parallelization = cfg.Parallel
+
+	// Reachable when every query in a pass errored (the quality-pass soft-fail
+	// records no timing then): return a zeroed result instead of dividing by zero.
+	if len(times) == 0 {
+		out.Min = 0
+		out.Took = total
+		out.Percentiles = make([]time.Duration, len(targetPercentiles))
+		return out
+	}
+
 	out.Mean = sum / time.Duration(len(times))
 	out.Took = total
 	out.QueriesPerSecond = float64(len(times)) / float64(float64(total)/float64(time.Second))

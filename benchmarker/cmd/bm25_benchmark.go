@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -199,7 +200,12 @@ func loadBM25Data(ds *BeirDataset, cfg *Config, client *weaviate.Client) time.Du
 // retrievability probe.
 func runBM25Queries(cfg *Config, client *weaviate.Client, ds *BeirDataset, queries []string, importTime time.Duration, quality *bm25Quality) {
 	runID := fmt.Sprintf("%d", time.Now().Unix())
-	corpusDocs := ds.NumTrainVectors()
+	// Query-only mode may run without --corpus (tombstones and quality both
+	// validate that a corpus is present), so only count docs when we have one.
+	corpusDocs := 0
+	if cfg.CorpusFile != "" {
+		corpusDocs = ds.NumTrainVectors()
+	}
 	var rows []map[string]interface{}
 
 	// measure runs the throughput pass and (when withQuality) a separate quality
@@ -215,10 +221,24 @@ func runBM25Queries(cfg *Config, client *weaviate.Client, ds *BeirDataset, queri
 			result = benchmarkBM25(*cfg, queries)
 		}
 		retrievability := -1.0
+		qualityFailed := -1
+		qualityMeasured := false
 		if withQuality && quality != nil {
 			qr := stableQuality(*cfg, quality, 180*time.Second)
-			result.Recall = qr.Recall
-			result.NDCG = qr.NDCG
+			if qr.Successful == 0 {
+				// Every quality query errored (e.g. cluster unreachable mid-churn):
+				// a 0.0 here is an artifact, not a measurement. Omit the quality
+				// fields so downstream thresholds never read it as a real collapse.
+				log.Errorf("quality pass had no successful queries (failed=%d) — omitting recall/ndcg from the %s row", qr.Failed, phase)
+			} else {
+				if qr.Failed > 0 {
+					log.Warnf("quality pass: %d/%d queries failed; recall/ndcg averaged over the %d successful", qr.Failed, qr.Total, qr.Successful)
+				}
+				result.Recall = qr.Recall
+				result.NDCG = qr.NDCG
+				qualityFailed = qr.Failed
+				qualityMeasured = true
+			}
 			if isTombstone && cfg.TombstoneMode != "delete" {
 				retrievability = tombstoneRetrievability(cfg, quality, 100)
 			}
@@ -232,14 +252,14 @@ func runBM25Queries(cfg *Config, client *weaviate.Client, ds *BeirDataset, queri
 			log.Warnf("Error writing results to stdout: %v", err)
 		}
 		// Only attach the quality labels (benchmarkType=bm25-qrels, cutoffs, ...) to
-		// rows where quality was actually measured; the concurrent phase skips it, so
-		// its row stays a pure latency-under-churn row (no misleading recall=0 on a
-		// bm25-qrels-labeled row).
+		// rows where quality was actually measured; the concurrent phase skips it and
+		// an all-failed quality pass omits them, so those rows stay pure
+		// latency-under-churn rows (no misleading recall=0 on a bm25-qrels row).
 		qualityForRow := quality
-		if !withQuality {
+		if !qualityMeasured {
 			qualityForRow = nil
 		}
-		rows = append(rows, bm25ResultRow(cfg, result, importTime, runID, phase, iteration, tombstoneRatio, qualityForRow, retrievability, corpusDocs))
+		rows = append(rows, bm25ResultRow(cfg, result, importTime, runID, phase, iteration, tombstoneRatio, qualityForRow, qualityFailed, retrievability, corpusDocs))
 	}
 
 	// In quality mode, wait for the freshly-imported corpus to be searchable before
@@ -267,10 +287,20 @@ func runBM25Queries(cfg *Config, client *weaviate.Client, ds *BeirDataset, queri
 			iterations = 1
 		}
 
+		// Judged-doc churn (quality mode, update churn) replaces the docId<k range
+		// churn inside tombstoneOnce, so the fraction actually churned is the judged
+		// set — record that on the rows, not the nominal --tombstonePercentage.
+		churnFraction := cfg.TombstonePercentage
+		if usesJudgedChurn(cfg.TombstoneMode, quality) && corpusDocs > 0 {
+			churnFraction = float64(len(quality.relevantIdx)) / float64(corpusDocs)
+		}
+
 		if cfg.TombstoneConcurrent {
 			// Sustain churn in the background while a single query window runs.
 			// Quality is skipped here: the index is moving, so a qrels number would
 			// be a noisy snapshot, not a stable gate value.
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 			stop := make(chan struct{})
 			done := make(chan struct{})
 			go func() {
@@ -280,16 +310,31 @@ func runBM25Queries(cfg *Config, client *weaviate.Client, ds *BeirDataset, queri
 					case <-stop:
 						return
 					default:
-						generateTombstones(cfg, client, ds, k, quality)
+						if err := generateTombstones(ctx, cfg, client, ds, k, quality); err != nil {
+							if !errors.Is(err, context.Canceled) {
+								log.Errorf("background tombstone churn stopped: %v", err)
+							}
+							return
+						}
 					}
 				}
 			}()
-			measure("concurrent", 0, cfg.TombstonePercentage, false, false)
+			measure("concurrent", 0, churnFraction, false, false)
 			close(stop)
-			<-done
+			cancel() // interrupt any in-flight churn RPC so the join can't hang
+			select {
+			case <-done:
+			case <-time.After(2 * time.Minute):
+				// The only uncancellable churn call is the shared import pipeline
+				// (loadTrainData); don't let a hung server discard the results.
+				log.Warnf("background churn did not stop within 2m; writing results without waiting")
+			}
 		} else {
 			for it := 1; it <= iterations; it++ {
-				generateTombstones(cfg, client, ds, k, quality)
+				if err := generateTombstones(context.Background(), cfg, client, ds, k, quality); err != nil {
+					log.Errorf("tombstone churn failed on iteration %d: %v — keeping rows collected so far", it, err)
+					break
+				}
 				// Wait for the reinserted docs to become searchable before measuring
 				// quality: their reindex can lag on a multi-node cluster, and that
 				// transient window must not be read as a regression. A real bug (docs
@@ -298,7 +343,7 @@ func runBM25Queries(cfg *Config, client *weaviate.Client, ds *BeirDataset, queri
 				if quality != nil && cfg.TombstoneMode != "delete" {
 					waitRetrievable(cfg, quality, 0.99, 5*time.Minute)
 				}
-				measure("tombstoned", it, cfg.TombstonePercentage*float64(it), true, true)
+				measure("tombstoned", it, churnFraction*float64(it), true, true)
 			}
 		}
 	}
@@ -370,14 +415,23 @@ func benchmarkBM25Duration(cfg Config, queries []string) Results {
 // (docId < k). Under multi-tenancy each tenant has its own inverted index, so it
 // churns every tenant. It never mutates the shared cfg (it passes per-tenant
 // Config copies), which keeps it safe to run concurrently with the query phase.
-func generateTombstones(cfg *Config, client *weaviate.Client, ds *BeirDataset, k int, quality *bm25Quality) {
+func generateTombstones(ctx context.Context, cfg *Config, client *weaviate.Client, ds *BeirDataset, k int, quality *bm25Quality) error {
 	if cfg.NumTenants > 0 {
 		for i := 0; i < cfg.NumTenants; i++ {
-			tombstoneOnce(*cfg, client, ds, k, fmt.Sprintf("%d", i), quality)
+			if err := tombstoneOnce(ctx, *cfg, client, ds, k, fmt.Sprintf("%d", i), quality); err != nil {
+				return err
+			}
 		}
-		return
+		return nil
 	}
-	tombstoneOnce(*cfg, client, ds, k, cfg.Tenant, quality)
+	return tombstoneOnce(ctx, *cfg, client, ds, k, cfg.Tenant, quality)
+}
+
+// usesJudgedChurn reports whether tombstone churn targets the judged (relevant)
+// docs instead of the docId<k range — quality mode with update churn. Shared by
+// tombstoneOnce (branch) and runBM25Queries (row labeling) so they cannot drift.
+func usesJudgedChurn(tombstoneMode string, quality *bm25Quality) bool {
+	return quality != nil && tombstoneMode != "delete" && len(quality.relevantIdx) > 0
 }
 
 // tombstoneOnce creates tombstones in a single tenant (empty tenant = single-tenant
@@ -390,7 +444,7 @@ func generateTombstones(cfg *Config, client *weaviate.Client, ds *BeirDataset, k
 // than docId<k, so a tombstone-handling bug actually moves NDCG/Recall (on a large
 // corpus the first-k docs are otherwise disjoint from the judged set). Quality mode
 // is single-tenant, so this path never runs multi-tenant.
-func tombstoneOnce(cfg Config, client *weaviate.Client, ds *BeirDataset, k int, tenant string, quality *bm25Quality) {
+func tombstoneOnce(ctx context.Context, cfg Config, client *weaviate.Client, ds *BeirDataset, k int, tenant string, quality *bm25Quality) error {
 	cfg.Tenant = tenant
 
 	// Judged-doc-biased churn only applies to update mode: delete+reinsert the
@@ -399,31 +453,39 @@ func tombstoneOnce(cfg Config, client *weaviate.Client, ds *BeirDataset, k int, 
 	// churn (it does NOT delete judged docs), so delete-mode quality does not
 	// exercise relevance churn — it just measures quality after deleting the first k
 	// (mostly non-judged) docs.
-	if quality != nil && cfg.TombstoneMode != "delete" && len(quality.relevantIdx) > 0 {
-		deleteUuidSlice(&cfg, client, quality.relevantIdx)
-		reinsertDocs(&cfg, quality.relevantDocs)
+	if usesJudgedChurn(cfg.TombstoneMode, quality) {
+		if err := deleteUuidSlice(ctx, &cfg, client, quality.relevantIdx); err != nil {
+			return fmt.Errorf("judged-doc delete: %w", err)
+		}
+		if err := reinsertDocs(ctx, &cfg, quality.relevantDocs); err != nil {
+			return fmt.Errorf("judged-doc reinsert: %w", err)
+		}
 		log.WithFields(log.Fields{
 			"churned": len(quality.relevantIdx), "mode": cfg.TombstoneMode, "target": "judged",
 		}).Printf("Generated tombstones")
-		return
+		return nil
 	}
 
-	deleted := batchDeleteDocIDRange(&cfg, client, k)
+	deleted, err := batchDeleteDocIDRange(ctx, &cfg, client, k)
+	if err != nil {
+		return fmt.Errorf("batch delete docId<%d: %w", k, err)
+	}
 	log.WithFields(log.Fields{
 		"deleted": deleted, "mode": cfg.TombstoneMode, "range": k, "tenant": tenant,
 	}).Printf("Generated tombstones")
 
 	if cfg.TombstoneMode == "delete" {
-		return
+		return nil
 	}
 	// Default ("update"): reinsert the same document range.
 	loadTrainData(ds, &cfg, 0, uint(k), 0)
+	return nil
 }
 
 // batchDeleteDocIDRange deletes all objects with docId < end, looping because the
 // server deletes at most QUERY_MAXIMUM_RESULTS (~10k) objects per call. Returns
 // the total number of objects deleted.
-func batchDeleteDocIDRange(cfg *Config, client *weaviate.Client, end int) int64 {
+func batchDeleteDocIDRange(ctx context.Context, cfg *Config, client *weaviate.Client, end int) (int64, error) {
 	where := filters.Where().
 		WithPath([]string{"docId"}).
 		WithOperator(filters.LessThan).
@@ -438,22 +500,21 @@ func batchDeleteDocIDRange(cfg *Config, client *weaviate.Client, end int) int64 
 		if cfg.Tenant != "" {
 			deleter = deleter.WithTenant(cfg.Tenant)
 		}
-		resp, err := deleter.Do(context.Background())
+		resp, err := deleter.Do(ctx)
 		if err != nil {
-			log.Fatalf("Error batch-deleting objects for tombstones: %v", err)
+			return total, fmt.Errorf("batch-deleting objects for tombstones: %w", err)
 		}
-		if resp.Results == nil || resp.Results.Successful == 0 {
-			break
+		if resp == nil || resp.Results == nil || resp.Results.Successful == 0 {
+			return total, nil
 		}
 		total += resp.Results.Successful
 	}
-	return total
 }
 
 // bm25ResultRow builds one JSON result row, reusing the ANN-compatible
 // ResultsJSONBenchmark shape and adding BM25/tombstone-specific fields plus any
 // user --labels, so runs remain ingestible by weaviate-performance-tests.
-func bm25ResultRow(cfg *Config, result Results, importTime time.Duration, runID, phase string, iteration int, tombstoneRatio float64, quality *bm25Quality, retrievability float64, corpusDocs int) map[string]interface{} {
+func bm25ResultRow(cfg *Config, result Results, importTime time.Duration, runID, phase string, iteration int, tombstoneRatio float64, quality *bm25Quality, qualityFailed int, retrievability float64, corpusDocs int) map[string]interface{} {
 	p99 := 0.0
 	if len(result.Percentiles) > 0 {
 		p99 = result.Percentiles[len(result.Percentiles)-1].Seconds()
@@ -504,6 +565,11 @@ func bm25ResultRow(cfg *Config, result Results, importTime time.Duration, runID,
 		row["scoredQueries"] = quality.scoredQueries
 		row["qrelsFile"] = filepath.Base(quality.qrelsFile)
 		row["tokenization"] = cfg.Tokenization
+		if qualityFailed >= 0 {
+			// Failed queries shrink the recall/ndcg averaging denominator; surface
+			// the count so downstream can discount incomplete quality passes.
+			row["qualityFailedQueries"] = qualityFailed
+		}
 	}
 	if retrievability >= 0 {
 		row["tombstoneRetrievability"] = retrievability

@@ -512,15 +512,16 @@ func deleteChunk(chunk *Batch, client *weaviate.Client, cfg *Config) {
 	}
 }
 
-func deleteUuidSlice(cfg *Config, client *weaviate.Client, slice []int) {
+func deleteUuidSlice(ctx context.Context, cfg *Config, client *weaviate.Client, slice []int) error {
 	log.WithFields(log.Fields{"length": len(slice), "class": cfg.ClassName}).Printf("Deleting objects to trigger tombstone operations")
 	for _, i := range slice {
-		err := client.Data().Deleter().WithClassName(cfg.ClassName).WithID(uuidFromInt(i)).Do(context.Background())
+		err := client.Data().Deleter().WithClassName(cfg.ClassName).WithID(uuidFromInt(i)).Do(ctx)
 		if err != nil {
-			log.Fatalf("Error deleting object: %v", err)
+			return fmt.Errorf("deleting object %d: %w", i, err)
 		}
 	}
 	log.WithFields(log.Fields{"length": len(slice), "class": cfg.ClassName}).Printf("Completed deletes")
+	return nil
 }
 
 func deleteUuidRange(cfg *Config, client *weaviate.Client, start int, end int) {
@@ -528,7 +529,9 @@ func deleteUuidRange(cfg *Config, client *weaviate.Client, start int, end int) {
 	for i := start; i < end; i++ {
 		slice = append(slice, i)
 	}
-	deleteUuidSlice(cfg, client, slice)
+	if err := deleteUuidSlice(context.Background(), cfg, client, slice); err != nil {
+		log.Fatalf("Error deleting object: %v", err)
+	}
 }
 
 func addTenantIfNeeded(cfg *Config, client *weaviate.Client) {

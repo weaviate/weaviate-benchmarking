@@ -184,7 +184,7 @@ go run . bm25-benchmark \
 - Cutoffs are independent of `--limit` (`--ndcgCutoff` / `--recallCutoff`), so `recall`/`ndcg` mean the same thing across runs.
 - The quality pass is deterministic, single-tenant and unfiltered; latency/QPS still come from the throughput pass.
 - Before measuring, quality mode **waits for the index to settle** (relevant docs searchable, then the metric stops climbing), so import/reindex lag on a multi-node cluster isn't misread as a regression. This adds wall-clock time on a lagging cluster; a genuine regression (docs never recover) still surfaces as a low `tombstoneRetrievability` and a metric drop.
-- In quality mode the tombstone churn targets the **judged** documents, and a **retrievability probe** (`tombstoneRetrievability`) verifies reinserted docs stay findable — the direct tombstone-correctness signal.
+- In quality mode the update-churn targets the **judged** documents (the rows' `tombstoneRatio` then reflects the judged fraction actually churned, not `--tombstonePercentage`), and a **retrievability probe** (`tombstoneRetrievability`) verifies reinserted docs stay findable — the direct tombstone-correctness signal.
 - Rows are labeled `benchmarkType: bm25-qrels`. Downstream, use **negative thresholds** (e.g. `ndcg: -0.02`) to flag *decreases*, and never compare BM25 and ANN result files together (their `recall`/`ndcg` are on different scales).
 - Absolute scores sit below published Anserini BEIR numbers (Weaviate's default tokenization does no stemming/stopword removal); use `--queryProperties text,title` and treat the value as an internally-calibrated band.
 

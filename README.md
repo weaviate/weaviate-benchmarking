@@ -52,13 +52,14 @@ docker compose run benchmarker /app/benchmarker ann-benchmark -h
 
 The `bm25-benchmark` command measures **BM25 keyword-search** performance (latency
 percentiles, QPS, throughput under concurrency) on a [BEIR](https://github.com/beir-cellar/beir)-format
-text corpus. Unlike ANN, BM25 top-k is computed exactly, so this is a pure
-performance test — no recall/ground-truth is used.
+text corpus. Unlike ANN, BM25 top-k is computed exactly, so by default this is a
+pure performance test — add `--measureQuality` to also compute NDCG/Recall against
+the dataset's qrels as a regression gate (see below).
 
 ### Get a dataset
 
 BEIR datasets ship as a zip containing `corpus.jsonl` and `queries.jsonl`
-(`qrels/` is ignored — this is a performance test, not a relevance evaluation).
+(`qrels/` is only read with `--measureQuality`; otherwise ignored).
 
 ```sh
 # small (smoke): nfcorpus (~3.6K docs), scifact (~5K); large (scale): msmarco (~8.8M)
@@ -117,9 +118,10 @@ go run . bm25-benchmark \
 
 - The qrels file auto-detects at `<corpusdir>/qrels/test.tsv` (then `dev.tsv`); override with `--qrels`.
 - Cutoffs are decoupled from `--limit`: tune with `--ndcgCutoff` / `--recallCutoff`.
-- In quality mode the tombstone churn targets the **judged** docs and a
-  **retrievability probe** (`tombstoneRetrievability`) checks reinserted docs stay
-  findable — the direct tombstone-correctness signal.
+- In quality mode the update-churn targets the **judged** docs (the rows'
+  `tombstoneRatio` then reflects the judged fraction actually churned, not
+  `--tombstonePercentage`) and a **retrievability probe** (`tombstoneRetrievability`)
+  checks reinserted docs stay findable — the direct tombstone-correctness signal.
 - Rows carry a `benchmarkType: bm25-qrels` label. **When comparing runs downstream,
   use negative thresholds** (e.g. `ndcg: -0.02`) so *decreases* are flagged, and never
   mix BM25 and ANN result files (their `recall`/`ndcg` are on different scales).

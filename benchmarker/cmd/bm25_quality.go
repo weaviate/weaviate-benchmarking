@@ -12,6 +12,7 @@ import (
 	weaviategrpc "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -140,7 +141,9 @@ func measureBM25Quality(cfg Config, q *bm25Quality) Results {
 }
 
 // dialGrpcConn opens a gRPC connection to the configured origin (matches the
-// transport setup used by benchmark()/loadTrainData).
+// transport setup used by benchmark()/loadTrainData). WithBlock makes the 30s
+// timeout actually bound connection establishment, so callers see dial failures
+// here instead of on their first RPC.
 func dialGrpcConn(cfg *Config) (*grpc.ClientConn, error) {
 	opt := grpc.WithInsecure()
 	if cfg.HttpScheme == "https" {
@@ -149,35 +152,47 @@ func dialGrpcConn(cfg *Config) (*grpc.ClientConn, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	return grpc.DialContext(ctx, cfg.Origin, opt)
+	return grpc.DialContext(ctx, cfg.Origin, opt, grpc.WithBlock())
+}
+
+// grpcAuthCtx attaches the Authorization: Bearer metadata when --httpAuth
+// (HTTP_AUTH) is configured, matching processQueueGrpc/writeChunk — raw-gRPC
+// helpers must not silently drop auth that the rest of the tool sends.
+func grpcAuthCtx(ctx context.Context, cfg *Config) context.Context {
+	if cfg.HttpAuth == "" {
+		return ctx
+	}
+	md := metadata.Pairs("Authorization", fmt.Sprintf("Bearer %s", cfg.HttpAuth))
+	return metadata.NewOutgoingContext(ctx, md)
 }
 
 // reinsertDocs writes a specific, possibly non-contiguous set of documents back at
 // their exact docIndex (same UUID + docId), used by judged-doc-biased tombstone
 // churn where the target set is scattered across the corpus.
-func reinsertDocs(cfg *Config, docs map[int]beirCorpusDoc) {
+func reinsertDocs(ctx context.Context, cfg *Config, docs map[int]beirCorpusDoc) error {
 	if len(docs) == 0 {
-		return
+		return nil
 	}
 	conn, err := dialGrpcConn(cfg)
 	if err != nil {
-		log.Fatalf("reinsertDocs: grpc dial: %v", err)
+		return fmt.Errorf("grpc dial: %w", err)
 	}
 	defer conn.Close()
 	client := weaviategrpc.NewWeaviateClient(conn)
 
 	const chunk = 500
 	objects := make([]*weaviategrpc.BatchObject, 0, chunk)
-	flush := func() {
+	flush := func() error {
 		if len(objects) == 0 {
-			return
+			return nil
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second*300)
+		batchCtx, cancel := context.WithTimeout(ctx, time.Second*300)
 		defer cancel()
-		if _, err := client.BatchObjects(ctx, &weaviategrpc.BatchObjectsRequest{Objects: objects}); err != nil {
-			log.Fatalf("reinsertDocs: batch: %v", err)
+		if _, err := client.BatchObjects(grpcAuthCtx(batchCtx, cfg), &weaviategrpc.BatchObjectsRequest{Objects: objects}); err != nil {
+			return fmt.Errorf("batch: %w", err)
 		}
 		objects = objects[:0]
+		return nil
 	}
 
 	for idx, doc := range docs {
@@ -187,7 +202,7 @@ func reinsertDocs(cfg *Config, docs map[int]beirCorpusDoc) {
 			"docId": float64(idx + cfg.Offset),
 		})
 		if err != nil {
-			log.Fatalf("reinsertDocs: struct: %v", err)
+			return fmt.Errorf("struct: %w", err)
 		}
 		obj := &weaviategrpc.BatchObject{
 			Uuid:       uuidFromInt(idx + cfg.Offset),
@@ -199,10 +214,12 @@ func reinsertDocs(cfg *Config, docs map[int]beirCorpusDoc) {
 		}
 		objects = append(objects, obj)
 		if len(objects) >= chunk {
-			flush()
+			if err := flush(); err != nil {
+				return err
+			}
 		}
 	}
-	flush()
+	return flush()
 }
 
 // tombstoneRetrievability probes whether reinserted (relevant) documents are still
@@ -255,7 +272,7 @@ func tombstoneRetrievability(cfg *Config, q *bm25Quality, sampleSize int) float6
 			req.Tenant = cfg.Tenant
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		reply, err := client.Search(ctx, req)
+		reply, err := client.Search(grpcAuthCtx(ctx, cfg), req)
 		cancel()
 		if err != nil {
 			log.Debugf("retrievability probe query error (soft): %v", err)
@@ -285,8 +302,10 @@ func stableQuality(cfg Config, q *bm25Quality, timeout time.Duration) Results {
 
 // settleMetric polls `poll` every `interval` until neither NDCG nor Recall has
 // improved by more than `epsilon` for `patience` consecutive polls, then returns
-// the per-metric maxima seen. Factored out of stableQuality so the settle logic is
-// unit-testable with a scripted poll sequence.
+// the per-metric maxima seen. Successful/Failed/Total reflect the LAST poll, so
+// callers can tell how complete the settled measurement was (a shrunken averaging
+// denominator must not pass silently). Factored out of stableQuality so the settle
+// logic is unit-testable with a scripted poll sequence.
 func settleMetric(poll func() Results, interval time.Duration, patience int, epsilon float64, timeout time.Duration) Results {
 	best := poll()
 	stale := 0
@@ -305,6 +324,9 @@ func settleMetric(poll func() Results, interval time.Duration, patience int, eps
 		if cur.Recall > best.Recall {
 			best.Recall = cur.Recall
 		}
+		best.Successful = cur.Successful
+		best.Failed = cur.Failed
+		best.Total = cur.Total
 		if improved {
 			stale = 0
 			log.WithFields(log.Fields{"ndcg": cur.NDCG, "recall": cur.Recall}).Debug("quality still improving; index settling")
