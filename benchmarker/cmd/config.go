@@ -230,6 +230,16 @@ func (c Config) validateBM25() error {
 		return errors.Errorf("a queries file (--queriesFile, BEIR queries.jsonl) must be provided")
 	}
 
+	if c.SearchType != "bm25" {
+		return errors.Errorf("unsupported searchType %q: only \"bm25\" is implemented (hybrid is reserved for a future version)", c.SearchType)
+	}
+
+	switch c.BM25Operator {
+	case "", "or", "and":
+	default:
+		return errors.Errorf("unsupported bm25Operator %q, must be one of [or, and] (empty = server default)", c.BM25Operator)
+	}
+
 	switch c.TombstoneMode {
 	case "", "update", "delete":
 	default:

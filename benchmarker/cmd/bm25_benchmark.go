@@ -519,6 +519,12 @@ func bm25ResultRow(cfg *Config, result Results, importTime time.Duration, runID,
 	if len(result.Percentiles) > 0 {
 		p99 = result.Percentiles[len(result.Percentiles)-1].Seconds()
 	}
+	// Query-only runs may carry no corpus; label the row by the query set instead
+	// of letting filepath.Base("") stamp an unhelpful ".".
+	datasetFile := cfg.CorpusFile
+	if datasetFile == "" {
+		datasetFile = cfg.QueriesFile
+	}
 	benchResult := ResultsJSONBenchmark{
 		Api:              cfg.API,
 		Mean:             result.Mean.Seconds(),
@@ -530,7 +536,7 @@ func bm25ResultRow(cfg *Config, result Results, importTime time.Duration, runID,
 		ImportTime:       importTime.Seconds(),
 		RunID:            runID,
 		IterationRunID:   fmt.Sprintf("%d", iteration),
-		Dataset:          filepath.Base(cfg.CorpusFile),
+		Dataset:          filepath.Base(datasetFile),
 		Recall:           result.Recall,
 		NDCG:             result.NDCG,
 		Timestamp:        time.Now().Format(time.RFC3339),

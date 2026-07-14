@@ -150,21 +150,22 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 		}
 
 		// Object properties. For pure-ANN batches this only sets "category" when
-		// filtering is enabled (unchanged behavior). BM25/text batches add the
-		// searchable "text"/"title" properties plus a numeric "docId" used for
-		// range-based batch deletes during tombstone generation.
-		props := map[string]interface{}{}
-		if i < len(chunk.Text) {
-			props["text"] = chunk.Text[i]
-			props["docId"] = float64(i + chunk.Offset + cfg.Offset)
-			if i < len(chunk.Titles) {
-				props["title"] = chunk.Titles[i]
+		// filtering is enabled (unchanged behavior — and no per-object allocation
+		// otherwise). BM25/text batches add the searchable "text"/"title"
+		// properties plus a numeric "docId" used for range-based batch deletes
+		// during tombstone generation.
+		if i < len(chunk.Text) || cfg.Filter {
+			props := map[string]interface{}{}
+			if i < len(chunk.Text) {
+				props["text"] = chunk.Text[i]
+				props["docId"] = float64(i + chunk.Offset + cfg.Offset)
+				if i < len(chunk.Titles) {
+					props["title"] = chunk.Titles[i]
+				}
 			}
-		}
-		if cfg.Filter {
-			props["category"] = strconv.Itoa(chunk.Filters[i])
-		}
-		if len(props) > 0 {
+			if cfg.Filter {
+				props["category"] = strconv.Itoa(chunk.Filters[i])
+			}
 			nonRefProperties, err := structpb.NewStruct(props)
 			if err != nil {
 				log.Fatalf("Error creating properties struct: %v", err)
@@ -512,10 +513,13 @@ func deleteChunk(chunk *Batch, client *weaviate.Client, cfg *Config) {
 	}
 }
 
+// deleteUuidSlice deletes the objects at the given zero-based corpus/dataset
+// indices. cfg.Offset is applied here (like writeChunk/deleteChunk) so callers
+// pass raw indices and --offset runs still target the objects they imported.
 func deleteUuidSlice(ctx context.Context, cfg *Config, client *weaviate.Client, slice []int) error {
 	log.WithFields(log.Fields{"length": len(slice), "class": cfg.ClassName}).Printf("Deleting objects to trigger tombstone operations")
 	for _, i := range slice {
-		err := client.Data().Deleter().WithClassName(cfg.ClassName).WithID(uuidFromInt(i)).Do(ctx)
+		err := client.Data().Deleter().WithClassName(cfg.ClassName).WithID(uuidFromInt(i + cfg.Offset)).Do(ctx)
 		if err != nil {
 			return fmt.Errorf("deleting object %d: %w", i, err)
 		}
