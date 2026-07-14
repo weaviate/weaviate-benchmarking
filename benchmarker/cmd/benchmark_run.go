@@ -29,6 +29,10 @@ import (
 type QueryWithNeighbors struct {
 	Query     []byte
 	Neighbors []int
+	// Relevance, when non-nil, switches recall/ndcg to graded IR metrics vs BEIR
+	// qrels (docIndex -> grade, relevant docs only) for the BM25 quality pass.
+	// It takes precedence over Neighbors; ANN leaves it nil.
+	Relevance map[int]int
 }
 
 func processQueueHttp(queue []QueryWithNeighbors, cfg *Config, c *http.Client, m *sync.Mutex, times *[]time.Duration) {
@@ -112,6 +116,61 @@ func calculateLinearNDCG(ids []int, neighbors []int, k int) float64 {
 	return score / perfectScore
 }
 
+// calculateGradedNDCG computes NDCG@cutoff for a result ranking `ids` against a
+// graded relevance map (docIndex -> grade, relevant docs only), using linear gain
+// and log2(rank+1) discount (the trec_eval / pytrec_eval / BEIR convention). The
+// DCG is computed over the delivered order; the ideal DCG (IDCG) uses the query's
+// grades sorted descending. Returns 0 when there are no relevant docs.
+func calculateGradedNDCG(ids []int, relevant map[int]int, cutoff int) float64 {
+	k := min(cutoff, len(ids))
+	dcg := 0.0
+	for p := 0; p < k; p++ {
+		if g, ok := relevant[ids[p]]; ok && g > 0 {
+			dcg += float64(g) / math.Log2(float64(p+2))
+		}
+	}
+
+	grades := make([]int, 0, len(relevant))
+	for _, g := range relevant {
+		if g > 0 {
+			grades = append(grades, g)
+		}
+	}
+	sort.Sort(sort.Reverse(sort.IntSlice(grades)))
+
+	ik := min(cutoff, len(grades))
+	idcg := 0.0
+	for p := 0; p < ik; p++ {
+		idcg += float64(grades[p]) / math.Log2(float64(p+2))
+	}
+	if idcg == 0 {
+		return 0
+	}
+	return dcg / idcg
+}
+
+// recallVsRelevant computes Recall@cutoff = |top-cutoff ∩ relevant| / |relevant|
+// for a result ranking against a graded relevance map (grade > 0 = relevant).
+func recallVsRelevant(ids []int, relevant map[int]int, cutoff int) float64 {
+	totalRelevant := 0
+	for _, g := range relevant {
+		if g > 0 {
+			totalRelevant++
+		}
+	}
+	if totalRelevant == 0 {
+		return 0
+	}
+	k := min(cutoff, len(ids))
+	found := 0
+	for p := 0; p < k; p++ {
+		if g, ok := relevant[ids[p]]; ok && g > 0 {
+			found++
+		}
+	}
+	return float64(found) / float64(totalRelevant)
+}
+
 func processQueueGrpc(queue []QueryWithNeighbors, cfg *Config, grpcConn *grpc.ClientConn, m *sync.Mutex, times *[]time.Duration, recall *[]float64, ndcg *[]float64) {
 
 	grpcClient := wv1.NewWeaviateClient(grpcConn)
@@ -138,11 +197,23 @@ func processQueueGrpc(queue []QueryWithNeighbors, cfg *Config, grpcConn *grpc.Cl
 
 		searchReply, err := grpcClient.Search(ctx, searchRequest)
 		if err != nil {
+			// The BM25 quality/settle pass re-runs many times right after a
+			// delete+reinsert, when a transient (mid-delete) gRPC error is most
+			// likely; soft-fail there so one blip doesn't abort the whole run. ANN
+			// and throughput passes (Relevance nil) keep the original fatal behavior.
+			if query.Relevance != nil {
+				log.Debugf("quality-pass search error (soft): %v", err)
+				continue
+			}
 			log.Fatalf("Could not search with grpc: %v", err)
 		}
 		took := time.Since(before)
 
-		if len(searchReply.GetResults()) != cfg.Limit {
+		// Suppress the short-result warning only for BM25, where returning fewer than
+		// `limit` matches is normal (short/tombstoned posting lists). Vector-search
+		// commands (ann-benchmark, random-vectors, dataset, ...) keep the original
+		// behavior — a short result set there can signal a real problem.
+		if cfg.Mode != "bm25-benchmark" && len(searchReply.GetResults()) != cfg.Limit {
 			fmt.Printf("Warning grpc got %d results, expected %d\n", len(searchReply.GetResults()), cfg.Limit)
 		}
 
@@ -153,7 +224,15 @@ func processQueueGrpc(queue []QueryWithNeighbors, cfg *Config, grpcConn *grpc.Cl
 
 		m.Lock()
 		*times = append(*times, took)
-		if len(query.Neighbors) > 0 {
+		if query.Relevance != nil {
+			// BM25 quality pass: graded IR metrics vs qrels (NDCG@ndcgCutoff,
+			// Recall@recallCutoff), computed on the delivered order.
+			recallQuery := recallVsRelevant(ids, query.Relevance, cfg.RecallCutoff)
+			ndcgQuery := calculateGradedNDCG(ids, query.Relevance, cfg.NDCGCutoff)
+			log.Debugf("Query took %s, recall %f, ndcg %f (qrels)", took, recallQuery, ndcgQuery)
+			*recall = append(*recall, recallQuery)
+			*ndcg = append(*ndcg, ndcgQuery)
+		} else if len(query.Neighbors) > 0 {
 			neighborLimit := min(cfg.Limit, len(query.Neighbors))
 			recallQuery := float64(len(intersection(ids, query.Neighbors[:neighborLimit]))) / float64(neighborLimit)
 			ndcgQuery := calculateLinearNDCG(ids, query.Neighbors, neighborLimit)
@@ -278,6 +357,16 @@ func analyze(cfg Config, times []time.Duration, total time.Duration, recall []fl
 	out.Total = cfg.Queries
 	out.Failed = cfg.Queries - out.Successful
 	out.Parallelization = cfg.Parallel
+
+	// Reachable when every query in a pass errored (the quality-pass soft-fail
+	// records no timing then): return a zeroed result instead of dividing by zero.
+	if len(times) == 0 {
+		out.Min = 0
+		out.Took = total
+		out.Percentiles = make([]time.Duration, len(targetPercentiles))
+		return out
+	}
+
 	out.Mean = sum / time.Duration(len(times))
 	out.Took = total
 	out.QueriesPerSecond = float64(len(times)) / float64(float64(total)/float64(time.Second))

@@ -82,6 +82,30 @@ type Config struct {
 	MaxPostingSizeKB         int
 	Replicas                 int
 	RngFactor                float64
+
+	// BM25 benchmark
+	CorpusFile      string
+	SearchType      string
+	QueryProperties string
+	BM25Operator    string
+	MinOrTokens     int
+	BM25K1          float64
+	BM25B           float64
+	Tokenization    string
+	FilterCount     int
+
+	// BM25 tombstone generation (slow-path reproduction)
+	TombstonePercentage float64
+	TombstoneMode       string
+	TombstoneIterations int
+	TombstoneConcurrent bool
+	MeasureBaseline     bool
+
+	// BM25 quality measurement (qrels-based regression gate)
+	MeasureQuality bool
+	QrelsFile      string
+	NDCGCutoff     int
+	RecallCutoff   int
 }
 
 func (c *Config) Validate() error {
@@ -99,6 +123,8 @@ func (c *Config) Validate() error {
 		return c.validateDataset()
 	case "ann-benchmark":
 		return c.validateANN()
+	case "bm25-benchmark":
+		return c.validateBM25()
 	default:
 		return errors.Errorf("unrecognized mode %q", c.Mode)
 	}
@@ -186,6 +212,73 @@ func (c Config) validateANN() error {
 
 	if c.DistanceMetric == "" {
 		return errors.Errorf("distance metric must be set")
+	}
+
+	return nil
+}
+
+func (c Config) validateBM25() error {
+	if c.API != "grpc" {
+		return errors.Errorf("only grpc is supported for bm25-benchmark")
+	}
+
+	if !c.QueryOnly && c.CorpusFile == "" {
+		return errors.Errorf("a corpus file (--corpus, BEIR corpus.jsonl) must be provided unless --query is set")
+	}
+
+	if c.QueriesFile == "" {
+		return errors.Errorf("a queries file (--queriesFile, BEIR queries.jsonl) must be provided")
+	}
+
+	if c.SearchType != "bm25" {
+		return errors.Errorf("unsupported searchType %q: only \"bm25\" is implemented (hybrid is reserved for a future version)", c.SearchType)
+	}
+
+	switch c.BM25Operator {
+	case "", "or", "and":
+	default:
+		return errors.Errorf("unsupported bm25Operator %q, must be one of [or, and] (empty = server default)", c.BM25Operator)
+	}
+
+	switch c.TombstoneMode {
+	case "", "update", "delete":
+	default:
+		return errors.Errorf("unsupported tombstoneMode %q, must be one of [update, delete]", c.TombstoneMode)
+	}
+
+	if c.TombstonePercentage < 0 || c.TombstonePercentage > 1 {
+		return errors.Errorf("tombstonePercentage must be between 0 and 1")
+	}
+
+	if c.TombstonePercentage > 0 && c.CorpusFile == "" {
+		return errors.Errorf("a corpus file (--corpus) is required to generate tombstones")
+	}
+
+	if c.TombstoneConcurrent && c.QueryDuration <= 0 {
+		return errors.Errorf("--tombstoneConcurrent requires --queryDuration > 0 so queries overlap the background churn")
+	}
+
+	if c.TombstoneConcurrent && c.TombstoneMode == "delete" {
+		return errors.Errorf("--tombstoneConcurrent requires --tombstoneMode update (delete does not sustain churn)")
+	}
+
+	if c.Parallel < 1 {
+		return errors.Errorf("parallel must be at least 1")
+	}
+
+	if c.MeasureQuality {
+		if c.CorpusFile == "" {
+			return errors.Errorf("--measureQuality requires --corpus (needed to map qrels doc-ids to document indices, even with --query)")
+		}
+		if c.Filter {
+			return errors.Errorf("--measureQuality is incompatible with --filter (a category filter misaligns results with corpus-wide qrels)")
+		}
+		if c.NumTenants > 0 {
+			return errors.Errorf("--measureQuality requires single-tenant (--numTenants 0)")
+		}
+		if c.NDCGCutoff < 1 || c.RecallCutoff < 1 {
+			return errors.Errorf("--ndcgCutoff and --recallCutoff must be at least 1")
+		}
 	}
 
 	return nil

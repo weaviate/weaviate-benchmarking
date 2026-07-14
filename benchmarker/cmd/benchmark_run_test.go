@@ -194,3 +194,17 @@ func TestCalculateLinearNDCG(t *testing.T) {
 		})
 	}
 }
+
+// TestAnalyzeEmptyTimes locks the guard against an all-failed pass: the quality
+// soft-fail can leave times empty, which previously divided by zero in Mean.
+func TestAnalyzeEmptyTimes(t *testing.T) {
+	cfg := Config{Queries: 5, Parallel: 2}
+
+	out := analyze(cfg, nil, 3*time.Second, nil, nil)
+
+	require.Equal(t, 0, out.Successful)
+	require.Equal(t, 5, out.Failed)
+	require.Equal(t, time.Duration(0), out.Mean)
+	require.Equal(t, float64(0), out.QueriesPerSecond)
+	require.Len(t, out.Percentiles, len(targetPercentiles))
+}

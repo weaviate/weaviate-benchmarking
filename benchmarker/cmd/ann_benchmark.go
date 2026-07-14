@@ -43,6 +43,8 @@ const (
 // Batch of vectors and offset for writing to Weaviate
 type Batch struct {
 	Vectors [][]float32
+	Text    []string // BM25/text import; parallel to Vectors (nil for pure-ANN batches)
+	Titles  []string // optional per-object title, parallel to Text
 	Offset  int
 	Filters []int
 }
@@ -98,9 +100,14 @@ func intFromUUID(uuidStr string) int {
 
 // Writes a single batch of vectors to Weaviate using gRPC
 func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) {
-	objects := make([]*weaviategrpc.BatchObject, len(chunk.Vectors))
+	n := len(chunk.Vectors)
+	if n == 0 {
+		// Text-only (BM25) batches carry no vectors.
+		n = len(chunk.Text)
+	}
+	objects := make([]*weaviategrpc.BatchObject, n)
 
-	for i, vector := range chunk.Vectors {
+	for i := 0; i < n; i++ {
 		objects[i] = &weaviategrpc.BatchObject{
 			Uuid:       uuidFromInt(i + chunk.Offset + cfg.Offset),
 			Collection: cfg.ClassName,
@@ -108,42 +115,60 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 		if cfg.Tenant != "" {
 			objects[i].Tenant = cfg.Tenant
 		}
-		if cfg.MultiVectorDimensions > 0 {
-			if len(vector)%cfg.MultiVectorDimensions != 0 {
-				log.Fatalf("Vector length %d is not a multiple of dimensions %d",
-					len(vector), cfg.MultiVectorDimensions)
-			}
-			rows := len(vector) / cfg.MultiVectorDimensions
+		if i < len(chunk.Vectors) {
+			vector := chunk.Vectors[i]
+			if cfg.MultiVectorDimensions > 0 {
+				if len(vector)%cfg.MultiVectorDimensions != 0 {
+					log.Fatalf("Vector length %d is not a multiple of dimensions %d",
+						len(vector), cfg.MultiVectorDimensions)
+				}
+				rows := len(vector) / cfg.MultiVectorDimensions
 
-			multiVec := make([][]float32, rows)
-			for i := 0; i < rows; i++ {
-				start := i * cfg.MultiVectorDimensions
-				end := start + cfg.MultiVectorDimensions
-				multiVec[i] = vector[start:end]
+				multiVec := make([][]float32, rows)
+				for j := 0; j < rows; j++ {
+					start := j * cfg.MultiVectorDimensions
+					end := start + cfg.MultiVectorDimensions
+					multiVec[j] = vector[start:end]
+				}
+				name := "multivector"
+				if cfg.NamedVector != "" {
+					name = cfg.NamedVector
+				}
+				objects[i].Vectors = []*weaviategrpc.Vectors{{
+					Name:        name,
+					VectorBytes: byteops.Fp32SliceOfSlicesToBytes(multiVec),
+					Type:        weaviategrpc.Vectors_VECTOR_TYPE_MULTI_FP32,
+				}}
+			} else if cfg.NamedVector != "" {
+				objects[i].Vectors = []*weaviategrpc.Vectors{{
+					Name:        cfg.NamedVector,
+					VectorBytes: encodeVector(vector),
+				}}
+			} else {
+				objects[i].VectorBytes = encodeVector(vector)
 			}
-			name := "multivector"
-			if cfg.NamedVector != "" {
-				name = cfg.NamedVector
-			}
-			objects[i].Vectors = []*weaviategrpc.Vectors{{
-				Name:        name,
-				VectorBytes: byteops.Fp32SliceOfSlicesToBytes(multiVec),
-				Type:        weaviategrpc.Vectors_VECTOR_TYPE_MULTI_FP32,
-			}}
-		} else if cfg.NamedVector != "" {
-			objects[i].Vectors = []*weaviategrpc.Vectors{{
-				Name:        cfg.NamedVector,
-				VectorBytes: encodeVector(vector),
-			}}
-		} else {
-			objects[i].VectorBytes = encodeVector(vector)
 		}
-		if cfg.Filter {
-			nonRefProperties, err := structpb.NewStruct(map[string]interface{}{
-				"category": strconv.Itoa(chunk.Filters[i]),
-			})
+
+		// Object properties. For pure-ANN batches this only sets "category" when
+		// filtering is enabled (unchanged behavior — and no per-object allocation
+		// otherwise). BM25/text batches add the searchable "text"/"title"
+		// properties plus a numeric "docId" used for range-based batch deletes
+		// during tombstone generation.
+		if i < len(chunk.Text) || cfg.Filter {
+			props := map[string]interface{}{}
+			if i < len(chunk.Text) {
+				props["text"] = chunk.Text[i]
+				props["docId"] = float64(i + chunk.Offset + cfg.Offset)
+				if i < len(chunk.Titles) {
+					props["title"] = chunk.Titles[i]
+				}
+			}
+			if cfg.Filter {
+				props["category"] = strconv.Itoa(chunk.Filters[i])
+			}
+			nonRefProperties, err := structpb.NewStruct(props)
 			if err != nil {
-				log.Fatalf("Error creating filtered struct: %v", err)
+				log.Fatalf("Error creating properties struct: %v", err)
 			}
 			objects[i].Properties = &weaviategrpc.BatchObject_Properties{
 				NonRefProperties: nonRefProperties,
@@ -488,15 +513,19 @@ func deleteChunk(chunk *Batch, client *weaviate.Client, cfg *Config) {
 	}
 }
 
-func deleteUuidSlice(cfg *Config, client *weaviate.Client, slice []int) {
+// deleteUuidSlice deletes the objects at the given zero-based corpus/dataset
+// indices. cfg.Offset is applied here (like writeChunk/deleteChunk) so callers
+// pass raw indices and --offset runs still target the objects they imported.
+func deleteUuidSlice(ctx context.Context, cfg *Config, client *weaviate.Client, slice []int) error {
 	log.WithFields(log.Fields{"length": len(slice), "class": cfg.ClassName}).Printf("Deleting objects to trigger tombstone operations")
 	for _, i := range slice {
-		err := client.Data().Deleter().WithClassName(cfg.ClassName).WithID(uuidFromInt(i)).Do(context.Background())
+		err := client.Data().Deleter().WithClassName(cfg.ClassName).WithID(uuidFromInt(i + cfg.Offset)).Do(ctx)
 		if err != nil {
-			log.Fatalf("Error deleting object: %v", err)
+			return fmt.Errorf("deleting object %d: %w", i, err)
 		}
 	}
 	log.WithFields(log.Fields{"length": len(slice), "class": cfg.ClassName}).Printf("Completed deletes")
+	return nil
 }
 
 func deleteUuidRange(cfg *Config, client *weaviate.Client, start int, end int) {
@@ -504,7 +533,9 @@ func deleteUuidRange(cfg *Config, client *weaviate.Client, start int, end int) {
 	for i := start; i < end; i++ {
 		slice = append(slice, i)
 	}
-	deleteUuidSlice(cfg, client, slice)
+	if err := deleteUuidSlice(context.Background(), cfg, client, slice); err != nil {
+		log.Fatalf("Error deleting object: %v", err)
+	}
 }
 
 func addTenantIfNeeded(cfg *Config, client *weaviate.Client) {
