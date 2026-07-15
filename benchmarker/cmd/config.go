@@ -35,6 +35,7 @@ type Config struct {
 	Shards                   int
 	DistanceMetric           string
 	MaxConnections           int
+	CacheSize                int
 	Labels                   string
 	LabelMap                 map[string]string
 	EfConstruction           int
@@ -82,6 +83,7 @@ type Config struct {
 	MaxPostingSizeKB         int
 	Replicas                 int
 	RngFactor                float64
+	PayloadBytes             int
 }
 
 func (c *Config) Validate() error {
@@ -105,7 +107,7 @@ func (c *Config) Validate() error {
 }
 
 func (c *Config) performUpdates() bool {
-	return c.UpdatePercentage > 0 && c.UpdatePercentage < 1 && c.UpdateIterations > 0
+	return c.UpdatePercentage > 0 && c.UpdatePercentage <= 1 && c.UpdateIterations > 0
 }
 
 func (c *Config) validateCommon() error {
