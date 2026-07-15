@@ -97,6 +97,18 @@ func intFromUUID(uuidStr string) int {
 }
 
 // Writes a single batch of vectors to Weaviate using gRPC
+const payloadAlphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 "
+
+// randomPayload returns a pseudo-random string of n bytes, used to simulate
+// non-vector data so the objects-bucket value is dominated by properties.
+func randomPayload(n int) string {
+	b := make([]byte, n)
+	for i := range b {
+		b[i] = payloadAlphabet[rand.Intn(len(payloadAlphabet))]
+	}
+	return string(b)
+}
+
 func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) {
 	objects := make([]*weaviategrpc.BatchObject, len(chunk.Vectors))
 
@@ -138,12 +150,17 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 		} else {
 			objects[i].VectorBytes = encodeVector(vector)
 		}
-		if cfg.Filter {
-			nonRefProperties, err := structpb.NewStruct(map[string]interface{}{
-				"category": strconv.Itoa(chunk.Filters[i]),
-			})
+		if cfg.Filter || cfg.PayloadBytes > 0 {
+			props := map[string]interface{}{}
+			if cfg.Filter {
+				props["category"] = strconv.Itoa(chunk.Filters[i])
+			}
+			if cfg.PayloadBytes > 0 {
+				props["payload"] = randomPayload(cfg.PayloadBytes)
+			}
+			nonRefProperties, err := structpb.NewStruct(props)
 			if err != nil {
-				log.Fatalf("Error creating filtered struct: %v", err)
+				log.Fatalf("Error creating properties struct: %v", err)
 			}
 			objects[i].Properties = &weaviategrpc.BatchObject_Properties{
 				NonRefProperties: nonRefProperties,
@@ -212,8 +229,20 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		multiTenancyEnabled = true
 	}
 
+	var classProperties []*models.Property
+	if cfg.PayloadBytes > 0 {
+		indexInverted := false
+		classProperties = append(classProperties, &models.Property{
+			Name:            "payload",
+			DataType:        []string{"text"},
+			IndexFilterable: &indexInverted,
+			IndexSearchable: &indexInverted,
+		})
+	}
+
 	classObj := &models.Class{
 		Class:       cfg.ClassName,
+		Properties:  classProperties,
 		Description: fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
 		MultiTenancyConfig: &models.MultiTenancyConfig{
 			Enabled: multiTenancyEnabled,
@@ -368,6 +397,10 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 	}
 
 	vectorIndexConfig["filterStrategy"] = cfg.FilterStrategy
+
+	if cfg.CacheSize > 0 {
+		vectorIndexConfig["vectorCacheMaxObjects"] = cfg.CacheSize
+	}
 
 	if cfg.NamedVector != "" {
 		if cfg.MultiVectorDimensions > 0 {
@@ -1067,6 +1100,8 @@ func initAnnBenchmark() {
 		"queryDuration", 0, "Instead of querying the test dataset once, query for the specified duration in seconds (default 0)")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.BQ,
 		"bq", false, "Set BQ")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.PayloadBytes,
+		"payloadBytes", 0, "Attach an incompressible text property of approximately this many bytes to every object, to simulate non-vector data (default 0)")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.Cache,
 		"cache", false, "Set cache")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.WaitForBackground,
@@ -1113,6 +1148,8 @@ func initAnnBenchmark() {
 		"indexType", "hnsw", "Index type (hnsw, flat or hfresh)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MaxConnections,
 		"maxConnections", 16, "Set Weaviate efConstruction parameter (default 16)")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.CacheSize,
+		"cacheSize", 0, "Set vectorCacheMaxObjects in vectorIndexConfig (0 means use Weaviate default)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.Shards,
 		"shards", 1, "Set number of Weaviate shards")
 	annBenchmarkCommand.PersistentFlags().IntVarP(&globalConfig.BatchSize,
