@@ -10,3 +10,4 @@ output.png
 *.mdx
 *.png
 config.alloy
+diversity-results/
