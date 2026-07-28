@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -28,7 +30,9 @@ var bm25BenchmarkCommand = &cobra.Command{
 collection and benchmark BM25 keyword-search latency/QPS using queries.jsonl.
 
 Optionally generates inverted-index tombstones (via deletes/updates) to measure
-BM25 keyword-search performance under tombstone load.`,
+BM25 keyword-search performance under tombstone load, or sweeps a set of query
+limits (--limitArray) producing one result row per limit — the BM25 analog of
+the ANN ef sweep.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := globalConfig
 		cfg.Mode = "bm25-benchmark"
@@ -272,9 +276,30 @@ func runBM25Queries(cfg *Config, client *weaviate.Client, ds *BeirDataset, queri
 	}
 
 	// Baseline (0 tombstones). Always run when there is no tombstone phase, so at
-	// least one measurement is produced.
+	// least one measurement is produced. With --limitArray the baseline becomes a
+	// sweep — one row per limit (the BM25 analog of the ANN ef sweep); validation
+	// guarantees no tombstone phases follow, so the limit column stays unique.
 	if cfg.MeasureBaseline || cfg.TombstonePercentage <= 0 {
-		measure("baseline", 0, 0, true, false)
+		limits := []int{cfg.Limit}
+		if cfg.LimitArray != "" {
+			parsed, err := parseLimitValues(cfg.LimitArray)
+			if err != nil {
+				fatal(err)
+			}
+			limits = parsed
+		}
+		for _, limit := range limits {
+			cfg.Limit = limit
+			if cfg.LimitArray != "" && quality != nil {
+				// Quality follows the swept limit (recall@k/ndcg@k per row). The
+				// quality pass retrieves q.depth results, frozen at construction
+				// from the cutoff flags — keep it in step with the cutoffs.
+				cfg.NDCGCutoff = limit
+				cfg.RecallCutoff = limit
+				quality.depth = limit
+			}
+			measure("baseline", 0, 0, true, false)
+		}
 	}
 
 	if cfg.TombstonePercentage > 0 {
@@ -349,6 +374,21 @@ func runBM25Queries(cfg *Config, client *weaviate.Client, ds *BeirDataset, queri
 	}
 
 	writeBM25Results(cfg, runID, rows)
+}
+
+// parseLimitValues parses the --limitArray CSV into ints (the BM25 counterpart
+// of parseEfValues, kept separate so its errors name the right flag).
+func parseLimitValues(s string) ([]int, error) {
+	strs := strings.Split(s, ",")
+	nums := make([]int, len(strs))
+	for i, str := range strs {
+		num, err := strconv.Atoi(strings.TrimSpace(str))
+		if err != nil {
+			return nil, fmt.Errorf("error converting limitArray value '%s' to integer: %v", str, err)
+		}
+		nums[i] = num
+	}
+	return nums, nil
 }
 
 // benchmarkBM25 runs one pass (or cfg.Queries executions) of BM25 queries through
@@ -633,6 +673,7 @@ func initBM25Benchmark() {
 	f.IntVar(&globalConfig.Queries, "queries", 0, "Number of query executions per phase (0 = one pass over the query set)")
 	f.IntVar(&globalConfig.QueryDuration, "queryDuration", 0, "Query for the specified duration in seconds instead of a fixed count")
 	f.IntVarP(&globalConfig.Limit, "limit", "l", 10, "Query limit (top_k)")
+	f.StringVar(&globalConfig.LimitArray, "limitArray", "", "Comma-separated query limits to sweep, one result row per limit; overrides --limit and makes the quality cutoffs follow each swept limit. Incompatible with tombstone generation")
 	f.IntVarP(&globalConfig.Parallel, "parallel", "p", numCPU, "Number of parallel query threads")
 
 	// Filtering

@@ -93,6 +93,7 @@ type Config struct {
 	BM25B           float64
 	Tokenization    string
 	FilterCount     int
+	LimitArray      string
 
 	// BM25 tombstone generation (slow-path reproduction)
 	TombstonePercentage float64
@@ -264,6 +265,24 @@ func (c Config) validateBM25() error {
 
 	if c.Parallel < 1 {
 		return errors.Errorf("parallel must be at least 1")
+	}
+
+	if c.LimitArray != "" {
+		limits, err := parseLimitValues(c.LimitArray)
+		if err != nil {
+			return err
+		}
+		for _, limit := range limits {
+			if limit < 1 {
+				return errors.Errorf("--limitArray values must be at least 1, got %d", limit)
+			}
+		}
+		if c.TombstonePercentage > 0 {
+			// One sweep dimension per invocation: mixing swept limits with churn
+			// phases would duplicate values in both the limit and tombstoneRatio
+			// columns, and downstream comparisons key rows on exactly one of them.
+			return errors.Errorf("--limitArray cannot be combined with --tombstonePercentage; run the limit sweep and the tombstone sweep as separate invocations")
+		}
 	}
 
 	if c.MeasureQuality {
