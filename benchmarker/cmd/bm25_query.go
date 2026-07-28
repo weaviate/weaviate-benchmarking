@@ -29,6 +29,7 @@ func (cfg *Config) queryPropertiesList() []string {
 // It mirrors nearVectorQueryGrpc:
 //   - Metadata requests the object UUID (required — processQueueGrpc decodes each
 //     result's UUID back into an int and uuid.Parse("") would panic).
+//   - Properties are explicitly not returned (empty PropertiesRequest).
 //   - When BM25Operator is "and"/"or", the corresponding SearchOperatorOptions is
 //     set (with MinimumOrTokensMatch for the OR case); otherwise it is left nil so
 //     the server default applies.
@@ -65,6 +66,13 @@ func bm25QueryGrpc(cfg *Config, query, tenant string, filter int) []byte {
 		Limit:      uint32(cfg.Limit),
 		Bm25Search: bm25,
 		Metadata:   metadata,
+		// An absent Properties field makes the server return every non-ref
+		// property — full documents, which at high limits exceed the gRPC
+		// client's 4MB receive cap (~10MB at limit 10000 on fiqa) and would
+		// make the timed phase measure payload serialization rather than
+		// search. The harness only decodes UUIDs, so request no properties:
+		// an explicitly empty PropertiesRequest.
+		Properties: &weaviategrpc.PropertiesRequest{},
 	}
 
 	if tenant != "" {

@@ -97,4 +97,14 @@ func TestBM25QueryGrpc_Defaults(t *testing.T) {
 	if srNoOp.Bm25Search.SearchOperator != nil {
 		t.Errorf("expected nil SearchOperator when BM25Operator unset, got %v", srNoOp.Bm25Search.SearchOperator)
 	}
+
+	// Return properties must be explicitly suppressed: an absent Properties
+	// field makes the server return full documents, which at high limits
+	// exceed the gRPC client's receive cap.
+	if sr.Properties == nil {
+		t.Fatal("Properties must be set (empty) to suppress returned properties")
+	}
+	if sr.Properties.ReturnAllNonrefProperties || len(sr.Properties.NonRefProperties) > 0 {
+		t.Errorf("expected empty PropertiesRequest, got %v", sr.Properties)
+	}
 }
