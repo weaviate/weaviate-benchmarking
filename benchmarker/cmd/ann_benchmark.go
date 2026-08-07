@@ -217,6 +217,13 @@ func createClient(cfg *Config) *weaviate.Client {
 	return client
 }
 
+func applyRQCentering(rqConfig map[string]interface{}, centering bool, trainingLimit int) {
+	if centering {
+		rqConfig["centering"] = true
+		rqConfig["trainingLimit"] = trainingLimit
+	}
+}
+
 // Re/create Weaviate schema
 func createSchema(cfg *Config, client *weaviate.Client) {
 	err := client.Schema().ClassDeleter().WithClassName(cfg.ClassName).Do(context.Background())
@@ -302,6 +309,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 			if cfg.RescoreLimit > -1 {
 				rqConfig["rescoreLimit"] = cfg.RescoreLimit
 			}
+			applyRQCentering(rqConfig, cfg.RQCentering, cfg.TrainingLimit)
 			vectorIndexConfig = map[string]interface{}{
 				"distance":               cfg.DistanceMetric,
 				"efConstruction":         float64(cfg.EfConstruction),
@@ -462,6 +470,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				if cfg.RescoreLimit > -1 {
 					rqConfig["rescoreLimit"] = cfg.RescoreLimit
 				}
+				applyRQCentering(rqConfig, cfg.RQCentering, cfg.TrainingLimit)
 
 				vectorIndexConfig = map[string]interface{}{
 					"distance":               cfg.DistanceMetric,
@@ -702,6 +711,7 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 		if cfg.RescoreLimit > -1 {
 			rqConfig["rescoreLimit"] = cfg.RescoreLimit
 		}
+		applyRQCentering(rqConfig, cfg.RQCentering, cfg.TrainingLimit)
 		vectorIndexConfig["rq"] = rqConfig
 	}
 
@@ -1119,7 +1129,9 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.RQ,
 		"rq", "disabled", "Set RQ (disabled, auto, or enabled) (default disabled)")
 	annBenchmarkCommand.PersistentFlags().UintVar(&globalConfig.RQBits,
-		"rqBits", 8, "Set RQ bits (default 8)")
+		"rqBits", 8, "Set RQ bits: 1, 4 or 8; 4 requires indexType hnsw (default 8)")
+	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.RQCentering,
+		"rqCentering", false, "Enable RQ centering (requires rqBits=4)")
 	annBenchmarkCommand.PersistentFlags().IntVarP(&globalConfig.MultiVectorDimensions,
 		"multiVector", "m", 0, "Enable multi-dimensional vectors with the specified number of dimensions")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.MuveraEnabled,
@@ -1139,7 +1151,7 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.SkipTombstonesEmpty,
 		"skipTombstonesEmpty", false, "Skip waiting for tombstone to be empty after update (default false)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.TrainingLimit,
-		"trainingLimit", 100000, "Set PQ trainingLimit (default 100000)")
+		"trainingLimit", 0, "Set compression trainingLimit (default 10000 for 4-bit RQ, 100000 otherwise)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.EfConstruction,
 		"efConstruction", 256, "Set Weaviate efConstruction parameter (default 256)")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.EfArray,
