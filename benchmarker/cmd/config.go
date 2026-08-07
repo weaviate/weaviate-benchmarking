@@ -49,6 +49,7 @@ type Config struct {
 	SQ                       string
 	RQ                       string
 	RQBits                   uint
+	RQCentering              bool
 	SkipQuery                bool
 	SkipAsyncReady           bool
 	SkipTombstonesEmpty      bool
@@ -173,7 +174,7 @@ func (c *Config) parseLabels() {
 	c.LabelMap = result
 }
 
-func (c Config) validateANN() error {
+func (c *Config) validateANN() error {
 	if c.BenchmarkFile == "" && c.DatasetRepo == "" {
 		return errors.Errorf("a vector benchmark file or a dataset repository and dataset must be provided")
 	}
@@ -188,6 +189,28 @@ func (c Config) validateANN() error {
 
 	if c.DistanceMetric == "" {
 		return errors.Errorf("distance metric must be set")
+	}
+
+	if c.RQ != "disabled" {
+		switch c.RQBits {
+		case 1, 4, 8:
+		default:
+			return errors.Errorf("rqBits must be 1, 4 or 8, got %d", c.RQBits)
+		}
+		if c.RQBits == 4 && c.IndexType != "hnsw" {
+			return errors.Errorf("rqBits=4 is only supported with indexType hnsw, got %q", c.IndexType)
+		}
+		if c.RQCentering && c.RQBits != 4 {
+			return errors.Errorf("rqCentering requires rqBits=4, got %d", c.RQBits)
+		}
+	}
+
+	if c.TrainingLimit == 0 {
+		if c.RQ != "disabled" && c.RQBits == 4 {
+			c.TrainingLimit = 10000
+		} else {
+			c.TrainingLimit = 100000
+		}
 	}
 
 	return nil
