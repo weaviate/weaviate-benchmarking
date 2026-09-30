@@ -150,13 +150,16 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 		} else {
 			objects[i].VectorBytes = encodeVector(vector)
 		}
-		if cfg.Filter || cfg.PayloadBytes > 0 {
+		if cfg.Filter || cfg.PayloadBytes > 0 || cfg.catalog != nil {
 			props := map[string]interface{}{}
 			if cfg.Filter {
 				props["category"] = strconv.Itoa(chunk.Filters[i])
 			}
 			if cfg.PayloadBytes > 0 {
 				props["payload"] = randomPayload(cfg.PayloadBytes)
+			}
+			if cfg.catalog != nil {
+				cfg.catalog.addProps(props, i+chunk.Offset)
 			}
 			nonRefProperties, err := structpb.NewStruct(props)
 			if err != nil {
@@ -247,6 +250,10 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		})
 	}
 
+	if cfg.catalog != nil {
+		classProperties = append(classProperties, cfg.catalog.schemaProperties()...)
+	}
+
 	classObj := &models.Class{
 		Class:       cfg.ClassName,
 		Properties:  classProperties,
@@ -254,6 +261,10 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		MultiTenancyConfig: &models.MultiTenancyConfig{
 			Enabled: multiTenancyEnabled,
 		},
+	}
+	if cfg.catalog != nil {
+		// per_query catalog filters are stored inverted and queried with IsNull
+		classObj.InvertedIndexConfig = &models.InvertedIndexConfig{IndexNullState: true}
 	}
 
 	if cfg.Shards > 1 {
@@ -296,6 +307,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				"efConstruction":         float64(cfg.EfConstruction),
 				"maxConnections":         float64(cfg.MaxConnections),
 				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+				"flatSearchCutoff":       cfg.FlatSearchCutoff,
 				"sq": map[string]interface{}{
 					"enabled":       true,
 					"trainingLimit": cfg.TrainingLimit,
@@ -315,6 +327,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				"efConstruction":         float64(cfg.EfConstruction),
 				"maxConnections":         float64(cfg.MaxConnections),
 				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+				"flatSearchCutoff":       cfg.FlatSearchCutoff,
 				"rq":                     rqConfig,
 			}
 		}
@@ -1009,6 +1022,14 @@ var annBenchmarkCommand = &cobra.Command{
 		}
 		defer dataset.Close()
 
+		if cfg.FilterCatalog != "" {
+			h5, ok := dataset.(*Hdf5Dataset)
+			if !ok {
+				log.Fatal("--filterCatalog requires an hdf5 dataset")
+			}
+			cfg.catalog = loadFilterCatalog(cfg.FilterCatalog, h5, !cfg.QueryOnly)
+		}
+
 		client := createClient(&cfg)
 
 		importTime := 0 * time.Second
@@ -1027,7 +1048,7 @@ var annBenchmarkCommand = &cobra.Command{
 			if cfg.NumTenants > 0 {
 				importTime = loadANNBenchmarksDataMultiTenant(dataset, &cfg, client)
 			} else {
-				importTime = loadANNBenchmarksData(dataset, &cfg, client, 0)
+				importTime = loadANNBenchmarksData(dataset, &cfg, client, uint(cfg.TrainRows))
 			}
 
 			sleepDuration := time.Duration(cfg.QueryDelaySeconds) * time.Second
@@ -1044,9 +1065,20 @@ var annBenchmarkCommand = &cobra.Command{
 			return
 		}
 
-		neighbors := dataset.Neighbors()
-		testData := dataset.TestVectors()
-		testFilters := dataset.TestFilters()
+		var neighbors [][]int
+		var testData [][]float32
+		var testFilters []int
+		if cfg.catalog != nil {
+			if cfg.FilterSelect == "" {
+				log.Fatal("--filterCatalog queries need --filterSelect (or --skipQuery)")
+			}
+			testData, neighbors, cfg.catalogQueryFilters = cfg.catalog.selectQueries(cfg.FilterSelect, dataset.(*Hdf5Dataset))
+			cfg.LabelMap["filter_select"] = cfg.FilterSelect
+		} else {
+			neighbors = dataset.Neighbors()
+			testData = dataset.TestVectors()
+			testFilters = dataset.TestFilters()
+		}
 
 		runQueries(&cfg, importTime, testData, neighbors, testFilters)
 
@@ -1208,6 +1240,12 @@ func initAnnBenchmark() {
 		"filter", false, "Whether to use filtering for the dataset (default false)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.FlatSearchCutoff,
 		"flatSearchCutoff", 40000, "Flat search cut off (default 40 000)")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.FilterCatalog,
+		"filterCatalog", "", "Path to a filter-catalog manifest JSON; imports one boolean property per catalog filter (see filter_catalog.go)")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.FilterSelect,
+		"filterSelect", "", "Catalog filter(s) to query: global:<name> or per_query:<name-suffix>")
+	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.TrainRows,
+		"trainRows", 0, "Import only the first N train rows (0 = all)")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.FilterStrategy,
 		"filterStrategy", "sweeping", "Use a different filter strategy (options are sweeping or acorn)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.ReplicationFactor,
@@ -1246,6 +1284,12 @@ func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors, filters []in
 		filter := -1
 		if cfg.Filter {
 			filter = filters[i]
+		}
+		if cfg.catalogQueryFilters != nil {
+			return QueryWithNeighbors{
+				Query:     nearVectorQueryGrpcCatalog(&cfg, queries[i], tenant, cfg.catalogQueryFilters[i]),
+				Neighbors: neighbors[i],
+			}
 		}
 
 		return QueryWithNeighbors{
