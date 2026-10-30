@@ -4,7 +4,7 @@ import (
 	"errors"
 	"io"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 	"github.com/weaviate/weaviate/adapters/repos/db/vector/datasets"
 )
 
@@ -18,23 +18,23 @@ type ParquetDataset struct {
 
 func NewParquetDataset(datasetID string, subset string, multiVectorDimension int, useFilters bool) *ParquetDataset {
 	if useFilters {
-		log.Fatalf("parquet datasets do not support filters (yet)")
+		log.Fatal().Msgf("parquet datasets do not support filters (yet)")
 	}
 
 	if multiVectorDimension > 0 {
-		log.Fatalf("parquet datasets do not support multi-vectors (yet)")
+		log.Fatal().Msgf("parquet datasets do not support multi-vectors (yet)")
 	}
 
 	hubDataset := datasets.NewHubDataset(datasetID, subset)
 	trainReader, err := hubDataset.NewDataReader(datasets.TrainSplit, 0, -1, 100)
 	if err != nil {
-		log.Fatalf("failed to open training data set")
+		log.Fatal().Msgf("failed to open training data set")
 	}
 	defer trainReader.Close()
 	trainRows := trainReader.NumRowsInFile()
 	chunk, err := trainReader.ReadNextChunk()
 	if err != nil && !errors.Is(err, io.EOF) {
-		log.Fatalf("failed to read first chunk of training data to identify data dimension")
+		log.Fatal().Msgf("failed to read first chunk of training data to identify data dimension")
 	}
 	dimension := len(chunk.Vectors[0])
 	return &ParquetDataset{
@@ -57,7 +57,7 @@ func (ds *ParquetDataset) TrainFilters() []int {
 func (ds *ParquetDataset) loadTestData() {
 	neighbors, vectors, err := ds.hubDataset.LoadTestData()
 	if err != nil {
-		log.Fatalf("Error loading test data: %v", err)
+		log.Fatal().Msgf("Error loading test data: %v", err)
 	}
 	ds.testVectors = vectors
 	// Cast the neighbors from uint64 to int.
@@ -92,14 +92,14 @@ func (ds *ParquetDataset) StreamTrainData(chunks chan<- Batch, batchSize int, st
 	}
 	trainReader, err := ds.hubDataset.NewDataReader(datasets.TrainSplit, startRow, endRow, batchSize)
 	if err != nil {
-		log.Fatalf("failed to open training data set")
+		log.Fatal().Msgf("failed to open training data set")
 	}
 	defer trainReader.Close()
 
 	for {
 		chunk, err := trainReader.ReadNextChunk()
 		if err != nil && !errors.Is(err, io.EOF) {
-			log.Fatalf("failed while reading chunk of training data: %v", err)
+			log.Fatal().Msgf("failed while reading chunk of training data: %v", err)
 		}
 		batch := Batch{
 			Vectors: chunk.Vectors,
@@ -108,7 +108,7 @@ func (ds *ParquetDataset) StreamTrainData(chunks chan<- Batch, batchSize int, st
 		}
 		// Logging here for compatibility with the HDF5 dataset.
 		if (batch.Offset+batchSize)%10000 == 0 {
-			log.Printf("Imported %d/%d rows", batch.Offset+batchSize, ds.NumTrainVectors())
+			log.Info().Msgf("Imported %d/%d rows", batch.Offset+batchSize, ds.NumTrainVectors())
 		}
 		chunks <- batch
 		if errors.Is(err, io.EOF) {

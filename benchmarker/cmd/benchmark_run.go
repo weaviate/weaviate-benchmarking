@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 
 	wv1 "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
 	"google.golang.org/grpc"
@@ -121,7 +121,7 @@ func processQueueGrpc(queue []QueryWithNeighbors, cfg *Config, grpcConn *grpc.Cl
 		searchRequest := &wv1.SearchRequest{}
 		err := proto.Unmarshal(query.Query, searchRequest)
 		if err != nil {
-			log.Fatalf("Failed to unmarshal grpc query: %v", err)
+			log.Fatal().Msgf("Failed to unmarshal grpc query: %v", err)
 		}
 
 		before := time.Now()
@@ -138,7 +138,7 @@ func processQueueGrpc(queue []QueryWithNeighbors, cfg *Config, grpcConn *grpc.Cl
 
 		searchReply, err := grpcClient.Search(ctx, searchRequest)
 		if err != nil {
-			log.Fatalf("Could not search with grpc: %v", err)
+			log.Fatal().Msgf("Could not search with grpc: %v", err)
 		}
 		took := time.Since(before)
 
@@ -157,7 +157,7 @@ func processQueueGrpc(queue []QueryWithNeighbors, cfg *Config, grpcConn *grpc.Cl
 			neighborLimit := min(cfg.Limit, len(query.Neighbors))
 			recallQuery := float64(len(intersection(ids, query.Neighbors[:neighborLimit]))) / float64(neighborLimit)
 			ndcgQuery := calculateLinearNDCG(ids, query.Neighbors, neighborLimit)
-			log.Debugf("Query took %s, recall %f, ndcg %f", took, recallQuery, ndcgQuery)
+			log.Debug().Stringer("took", took).Float64("recall", recallQuery).Float64("ndcg", ndcgQuery).Msg("Query done")
 			*recall = append(*recall, recallQuery)
 			*ndcg = append(*ndcg, ndcgQuery)
 		}
@@ -199,7 +199,7 @@ func benchmark(cfg Config, getQueryFn func(className string) QueryWithNeighbors)
 	defer cancel()
 	grpcConn, err := grpc.DialContext(grpcCtx, cfg.Origin, httpOption)
 	if err != nil {
-		log.Fatalf("Did not connect: %v", err)
+		log.Fatal().Msgf("Did not connect: %v", err)
 	}
 	defer grpcConn.Close()
 
