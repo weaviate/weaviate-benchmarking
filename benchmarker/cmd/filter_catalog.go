@@ -8,7 +8,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/weaviate/hdf5"
-	"github.com/weaviate/weaviate/entities/models"
+	"github.com/weaviate/weaviate-go-client/v6/collections"
 	weaviategrpc "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
 	"google.golang.org/protobuf/proto"
 )
@@ -93,16 +93,16 @@ func loadFilterCatalog(manifestPath string, ds *Hdf5Dataset, withBitmaps bool) *
 }
 
 // schemaProperties returns one filterable boolean property per catalog filter.
-func (c *filterCatalog) schemaProperties() []*models.Property {
+func (c *filterCatalog) schemaProperties() []collections.Property {
 	t, f := true, false
-	props := make([]*models.Property, 0, len(c.Filters))
+	props := make([]collections.Property, 0, len(c.Filters))
 	for _, cf := range c.Filters {
-		props = append(props, &models.Property{
-			Name:              cf.Prop,
-			DataType:          []string{"boolean"},
-			IndexFilterable:   &t,
-			IndexSearchable:   &f,
-			IndexRangeFilters: &f,
+		props = append(props, collections.Property{
+			Name:            cf.Prop,
+			DataType:        collections.DataTypeBool,
+			IndexFilterable: &t,
+			IndexSearchable: &f,
+			IndexRangeable:  &f,
 		})
 	}
 	return props

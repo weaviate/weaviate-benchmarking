@@ -1,12 +1,16 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"math/rand"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -15,16 +19,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hashicorp/go-retryablehttp"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/exp/constraints"
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
-	"github.com/weaviate/weaviate-go-client/v4/weaviate"
-	"github.com/weaviate/weaviate-go-client/v4/weaviate/auth"
-	"github.com/weaviate/weaviate-go-client/v4/weaviate/fault"
-	"github.com/weaviate/weaviate/entities/models"
+	"github.com/weaviate/weaviate-go-client/v6"
+	"github.com/weaviate/weaviate-go-client/v6/cluster"
+	"github.com/weaviate/weaviate-go-client/v6/collections"
+	"github.com/weaviate/weaviate-go-client/v6/collections/vectorindex"
+	"github.com/weaviate/weaviate-go-client/v6/modules/selfprovided"
+	"github.com/weaviate/weaviate-go-client/v6/tenant"
 	weaviategrpc "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
 	"github.com/weaviate/weaviate/usecases/byteops"
 	"google.golang.org/grpc/metadata"
@@ -199,25 +204,135 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 	}
 }
 
-func createClient(cfg *Config) *weaviate.Client {
-	retryClient := retryablehttp.NewClient()
-	retryClient.RetryMax = 10
+func splitOrigin(origin, defaultPort string) (host, port string) {
+	host, port, err := net.SplitHostPort(origin)
+	if err != nil {
+		return origin, defaultPort
+	}
+	return host, port
+}
 
-	wcfg := weaviate.Config{
-		Host:             cfg.HttpOrigin,
-		Scheme:           cfg.HttpScheme,
-		ConnectionClient: retryClient.HTTPClient,
-		StartupTimeout:   60 * time.Second,
+func createClient(cfg *Config) *weaviate.Client {
+	httpHost, httpPort := splitOrigin(cfg.HttpOrigin, "8080")
+	grpcHost, grpcPort := splitOrigin(cfg.Origin, "50051")
+	opts := []weaviate.Option{
+		weaviate.WithScheme(cfg.HttpScheme),
+		weaviate.WithHTTPHost(httpHost),
+		weaviate.WithHTTPPort(httpPort),
+		weaviate.WithGRPCHost(grpcHost),
+		weaviate.WithGRPCPort(grpcPort),
+		weaviate.WithTimeout(5 * time.Minute),
 	}
 	if cfg.HttpAuth != "" {
-		wcfg.AuthConfig = auth.ApiKey{Value: cfg.HttpAuth}
-		wcfg.ConnectionClient = nil
+		opts = append(opts, weaviate.WithAPIKey(cfg.HttpAuth))
 	}
-	client, err := weaviate.NewClient(wcfg)
+	// v6 does not wait for Weaviate to come up (a single failed /v1/meta
+	// request fails NewClient), so poll like the v4 startupTimeout did.
+	startupTimeout := 60 * time.Second
+	start := time.Now()
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), startupTimeout)
+		client, err := weaviate.NewClient(ctx, opts...)
+		cancel()
+		if err == nil {
+			return client
+		}
+		if time.Since(start) > startupTimeout {
+			log.Fatalf("Error creating client: %v", err)
+		}
+		log.Infof("Waiting for Weaviate at %s: %v", cfg.HttpOrigin, err)
+		time.Sleep(time.Second)
+	}
+}
+
+// vectorName is the named vector the benchmark collection is created with.
+// The go client only creates named vectors; Weaviate also resolves "default"
+// to a legacy (unnamed) vector, so existing collections keep working.
+func (c *Config) vectorName() string {
+	if c.NamedVector != "" {
+		return c.NamedVector
+	}
+	if c.MultiVectorDimensions > 0 {
+		return "multivector"
+	}
+	return "default"
+}
+
+// rawVectorIndex passes the vectorIndexConfig map through the go client as-is
+// (compression included), so options can be used before the client models them.
+type rawVectorIndex struct {
+	indexType string
+	config    map[string]interface{}
+}
+
+func (r rawVectorIndex) Name() vectorindex.Type                     { return vectorindex.Type(r.indexType) }
+func (r rawVectorIndex) EncodeMap() (map[string]interface{}, error) { return r.config, nil }
+
+func vectorConfigFor(indexType string, config map[string]interface{}) collections.VectorConfig {
+	return collections.VectorConfig{
+		Vectorizer: selfprovided.Vectorizer,
+		Index:      rawVectorIndex{indexType: indexType, config: config},
+	}
+}
+
+// Collection updates are done on the raw JSON of the collection: the go client
+// re-encodes it through its typed structs, which drops options it does not model.
+func schemaRequest(cfg *Config, method string, body []byte) ([]byte, error) {
+	url := fmt.Sprintf("%s://%s/v1/schema/%s", cfg.HttpScheme, cfg.HttpOrigin, cfg.ClassName)
+	req, err := http.NewRequest(method, url, bytes.NewReader(body))
 	if err != nil {
-		log.Fatalf("Error creating client: %v", err)
+		return nil, err
 	}
-	return client
+	req.Header.Set("content-type", "application/json")
+	if cfg.HttpAuth != "" {
+		req.Header.Set("Authorization", "Bearer "+cfg.HttpAuth)
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	out, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode < 200 || res.StatusCode > 299 {
+		return nil, fmt.Errorf("%s %s: status %d: %s", method, url, res.StatusCode, out)
+	}
+	return out, nil
+}
+
+func getClassJSON(cfg *Config) map[string]interface{} {
+	body, err := schemaRequest(cfg, http.MethodGet, nil)
+	if err != nil {
+		panic(err)
+	}
+	var class map[string]interface{}
+	if err := json.Unmarshal(body, &class); err != nil {
+		panic(err)
+	}
+	return class
+}
+
+func putClassJSON(cfg *Config, class map[string]interface{}) {
+	body, err := json.Marshal(class)
+	if err != nil {
+		panic(err)
+	}
+	if _, err := schemaRequest(cfg, http.MethodPut, body); err != nil {
+		panic(err)
+	}
+}
+
+// vectorIndexConfigOf returns the (mutable) vectorIndexConfig of the benchmark
+// vector, falling back to a legacy class level vector index.
+func vectorIndexConfigOf(cfg *Config, class map[string]interface{}) map[string]interface{} {
+	if vectors, ok := class["vectorConfig"].(map[string]interface{}); ok {
+		if vc, ok := vectors[cfg.vectorName()].(map[string]interface{}); ok {
+			return vc["vectorIndexConfig"].(map[string]interface{})
+		}
+	}
+	return class["vectorIndexConfig"].(map[string]interface{})
 }
 
 func applyRQCentering(rqConfig map[string]interface{}, centering bool, trainingLimit int) {
@@ -229,7 +344,7 @@ func applyRQCentering(rqConfig map[string]interface{}, centering bool, trainingL
 
 // Re/create Weaviate schema
 func createSchema(cfg *Config, client *weaviate.Client) {
-	err := client.Schema().ClassDeleter().WithClassName(cfg.ClassName).Do(context.Background())
+	err := client.Collections.Delete(context.Background(), cfg.ClassName)
 	if err != nil {
 		log.Fatalf("Error deleting class: %v", err)
 	}
@@ -239,12 +354,12 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		multiTenancyEnabled = true
 	}
 
-	var classProperties []*models.Property
+	var classProperties []collections.Property
 	if cfg.PayloadBytes > 0 {
 		indexInverted := false
-		classProperties = append(classProperties, &models.Property{
+		classProperties = append(classProperties, collections.Property{
 			Name:            "payload",
-			DataType:        []string{"text"},
+			DataType:        collections.DataTypeText,
 			IndexFilterable: &indexInverted,
 			IndexSearchable: &indexInverted,
 		})
@@ -254,22 +369,23 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		classProperties = append(classProperties, cfg.catalog.schemaProperties()...)
 	}
 
-	classObj := &models.Class{
-		Class:       cfg.ClassName,
-		Properties:  classProperties,
-		Description: fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
-		MultiTenancyConfig: &models.MultiTenancyConfig{
-			Enabled: multiTenancyEnabled,
-		},
+	classObj := collections.Collection{
+		Name:         cfg.ClassName,
+		Properties:   classProperties,
+		Description:  fmt.Sprintf("Created by the Weaviate Benchmarker at %s", time.Now().String()),
+		MultiTenancy: &collections.MultiTenancyConfig{Enabled: multiTenancyEnabled},
 	}
 	if cfg.catalog != nil {
 		// per_query catalog filters are stored inverted and queried with IsNull
-		classObj.InvertedIndexConfig = &models.InvertedIndexConfig{IndexNullState: true}
+		classObj.InvertedIndex = &collections.InvertedIndexConfig{IndexNullState: true}
 	}
 
 	if cfg.Shards > 1 {
-		classObj.ShardingConfig = map[string]interface{}{
-			"desiredCount": cfg.Shards,
+		// the client sends all three fields, so pass the server default explicitly
+		classObj.Sharding = &collections.ShardingConfig{
+			DesiredCount:        cfg.Shards,
+			VirtualPerPhysical:  128,
+			DesiredVirtualCount: cfg.Shards * 128,
 		}
 	}
 
@@ -435,13 +551,9 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				},
 			}
 		}
-		vectorConfig := make(map[string]models.VectorConfig)
-		vectorConfig[cfg.NamedVector] = models.VectorConfig{
-			Vectorizer:        map[string]interface{}{"none": nil},
-			VectorIndexType:   cfg.IndexType,
-			VectorIndexConfig: vectorIndexConfig,
+		classObj.Vectors = map[string]collections.VectorConfig{
+			cfg.NamedVector: vectorConfigFor(cfg.IndexType, vectorIndexConfig),
 		}
-		classObj.VectorConfig = vectorConfig
 	} else {
 		if cfg.MultiVectorDimensions > 0 {
 			vectorIndexConfig = map[string]interface{}{}
@@ -503,31 +615,30 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				},
 			}
 
-			classObj.VectorConfig = map[string]models.VectorConfig{
-				"multivector": {
-					Vectorizer: map[string]interface{}{
-						"none": map[string]interface{}{},
-					},
-					VectorIndexConfig: vectorIndexConfig,
-					VectorIndexType:   cfg.IndexType,
-				},
+			classObj.Vectors = map[string]collections.VectorConfig{
+				"multivector": vectorConfigFor(cfg.IndexType, vectorIndexConfig),
 			}
 		} else {
-			classObj.VectorIndexType = cfg.IndexType
-			classObj.VectorIndexConfig = vectorIndexConfig
+			// the go client cannot create a legacy (unnamed) vector index
+			classObj.Vectors = map[string]collections.VectorConfig{
+				"default": vectorConfigFor(cfg.IndexType, vectorIndexConfig),
+			}
 		}
 	}
 
-	if cfg.ReplicationFactor > 1 || cfg.AsyncReplicationEnabled {
-		classObj.ReplicationConfig = &models.ReplicationConfig{
-			Factor:       int64(cfg.ReplicationFactor),
-			AsyncEnabled: cfg.AsyncReplicationEnabled,
-		}
+	if cfg.ReplicationFactor > 1 {
+		classObj.Replication = &collections.ReplicationConfig{Factor: cfg.ReplicationFactor}
 	}
 
-	err = client.Schema().ClassCreator().WithClass(classObj).Do(context.Background())
+	_, err = client.Collections.Create(context.Background(), classObj)
 	if err != nil {
 		panic(err)
+	}
+	if cfg.AsyncReplicationEnabled {
+		// not supported by the go client (yet)
+		class := getClassJSON(cfg)
+		class["replicationConfig"].(map[string]interface{})["asyncEnabled"] = true
+		putClassJSON(cfg, class)
 	}
 	log.Printf("Created class %s", cfg.ClassName)
 }
@@ -535,8 +646,8 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 func deleteChunk(chunk *Batch, client *weaviate.Client, cfg *Config) {
 	log.Debugf("Deleting chunk of %d vectors index %d", len(chunk.Vectors), chunk.Offset)
 	for i := range chunk.Vectors {
-		uuid := uuidFromInt(i + chunk.Offset + cfg.Offset)
-		err := client.Data().Deleter().WithClassName(cfg.ClassName).WithID(uuid).Do(context.Background())
+		id := uuid.MustParse(uuidFromInt(i + chunk.Offset + cfg.Offset))
+		err := client.Collections.Use(cfg.ClassName).Data.Delete(context.Background(), id)
 		if err != nil {
 			log.Fatalf("Error deleting object: %v", err)
 		}
@@ -546,7 +657,7 @@ func deleteChunk(chunk *Batch, client *weaviate.Client, cfg *Config) {
 func deleteUuidSlice(cfg *Config, client *weaviate.Client, slice []int) {
 	log.WithFields(log.Fields{"length": len(slice), "class": cfg.ClassName}).Printf("Deleting objects to trigger tombstone operations")
 	for _, i := range slice {
-		err := client.Data().Deleter().WithClassName(cfg.ClassName).WithID(uuidFromInt(i)).Do(context.Background())
+		err := client.Collections.Use(cfg.ClassName).Data.Delete(context.Background(), uuid.MustParse(uuidFromInt(i)))
 		if err != nil {
 			log.Fatalf("Error deleting object: %v", err)
 		}
@@ -566,10 +677,7 @@ func addTenantIfNeeded(cfg *Config, client *weaviate.Client) {
 	if cfg.Tenant == "" {
 		return
 	}
-	err := client.Schema().TenantsCreator().
-		WithClassName(cfg.ClassName).
-		WithTenants(models.Tenant{Name: cfg.Tenant}).
-		Do(context.Background())
+	err := client.Collections.Use(cfg.ClassName).Tenants.Create(context.Background(), tenant.Tenant{Name: cfg.Tenant})
 	if err != nil {
 		log.Printf("Error adding tenant retrying in 1 second %v", err)
 		time.Sleep(1 * time.Second)
@@ -579,20 +687,8 @@ func addTenantIfNeeded(cfg *Config, client *weaviate.Client) {
 
 // Update ef parameter on the Weaviate schema
 func updateEf(ef int, cfg *Config, client *weaviate.Client) {
-	classConfig, err := client.Schema().ClassGetter().WithClassName(cfg.ClassName).Do(context.Background())
-	if err != nil {
-		panic(err)
-	}
-
-	var vectorIndexConfig map[string]interface{}
-
-	if cfg.NamedVector != "" {
-		vectorIndexConfig = classConfig.VectorConfig[cfg.NamedVector].VectorIndexConfig.(map[string]interface{})
-	} else if cfg.MultiVectorDimensions > 0 {
-		vectorIndexConfig = classConfig.VectorConfig["multivector"].VectorIndexConfig.(map[string]interface{})
-	} else {
-		vectorIndexConfig = classConfig.VectorIndexConfig.(map[string]interface{})
-	}
+	classConfig := getClassJSON(cfg)
+	vectorIndexConfig := vectorIndexConfigOf(cfg, classConfig)
 
 	switch cfg.IndexType {
 	case "hnsw":
@@ -620,22 +716,7 @@ func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 		vectorIndexConfig["searchProbe"] = ef
 	}
 
-	if cfg.NamedVector != "" {
-		vectorConfig := classConfig.VectorConfig[cfg.NamedVector]
-		vectorConfig.VectorIndexConfig = vectorIndexConfig
-		classConfig.VectorConfig[cfg.NamedVector] = vectorConfig
-	} else if cfg.MultiVectorDimensions > 0 {
-		vectorConfig := classConfig.VectorConfig["multivector"]
-		vectorConfig.VectorIndexConfig = vectorIndexConfig
-		classConfig.VectorConfig["multivector"] = vectorConfig
-	} else {
-		classConfig.VectorIndexConfig = vectorIndexConfig
-	}
-
-	err = client.Schema().ClassUpdater().WithClass(classConfig).Do(context.Background())
-	if err != nil {
-		panic(err)
-	}
+	putClassJSON(cfg, classConfig)
 }
 
 func waitReady(cfg *Config, client *weaviate.Client, indexStart time.Time, maxDuration time.Duration, minQueueSize int64) time.Time {
@@ -644,14 +725,14 @@ func waitReady(cfg *Config, client *weaviate.Client, indexStart time.Time, maxDu
 
 	log.Infof("Waiting for queue to be empty\n")
 	for current.Sub(start) < maxDuration {
-		nodesStatus, err := client.Cluster().NodesStatusGetter().WithOutput("verbose").Do(context.Background())
+		nodes, err := client.Cluster.ListNodes(context.Background(), cluster.ListNodesOptions{Verbose: true})
 		if err != nil {
 			panic(err)
 		}
 		totalShardQueue := int64(0)
-		for _, n := range nodesStatus.Nodes {
+		for _, n := range nodes {
 			for _, s := range n.Shards {
-				if s.Class == cfg.ClassName && s.VectorQueueLength > 0 {
+				if s.Collection == cfg.ClassName && s.VectorQueueLength > 0 {
 					totalShardQueue += s.VectorQueueLength
 				}
 			}
@@ -670,22 +751,10 @@ func waitReady(cfg *Config, client *weaviate.Client, indexStart time.Time, maxDu
 
 // Update ef parameter on the Weaviate schema
 func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, compressionType CompressionType) {
-	classConfig, err := client.Schema().ClassGetter().WithClassName(cfg.ClassName).Do(context.Background())
-	if err != nil {
-		panic(err)
-	}
+	classConfig := getClassJSON(cfg)
+	vectorIndexConfig := vectorIndexConfigOf(cfg, classConfig)
 
 	var segments uint
-	var vectorIndexConfig map[string]interface{}
-
-	if cfg.NamedVector != "" {
-		vectorIndexConfig = classConfig.VectorConfig[cfg.NamedVector].VectorIndexConfig.(map[string]interface{})
-		classConfig.Vectorizer = ""
-	} else if cfg.MultiVectorDimensions > 0 {
-		vectorIndexConfig = classConfig.VectorConfig["multivector"].VectorIndexConfig.(map[string]interface{})
-	} else {
-		vectorIndexConfig = classConfig.VectorIndexConfig.(map[string]interface{})
-	}
 
 	switch compressionType {
 	case CompressionTypePQ:
@@ -728,22 +797,7 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 		vectorIndexConfig["rq"] = rqConfig
 	}
 
-	if cfg.NamedVector != "" {
-		vectorConfig := classConfig.VectorConfig[cfg.NamedVector]
-		vectorConfig.VectorIndexConfig = vectorIndexConfig
-		classConfig.VectorConfig[cfg.NamedVector] = vectorConfig
-	} else if cfg.MultiVectorDimensions > 0 {
-		vectorConfig := classConfig.VectorConfig["multivector"]
-		vectorConfig.VectorIndexConfig = vectorIndexConfig
-		classConfig.VectorConfig["multivector"] = vectorConfig
-	} else {
-		classConfig.VectorIndexConfig = vectorIndexConfig
-	}
-
-	err = client.Schema().ClassUpdater().WithClass(classConfig).Do(context.Background())
-	if err != nil {
-		panic(err)
-	}
+	putClassJSON(cfg, classConfig)
 	switch compressionType {
 	case CompressionTypePQ:
 		log.WithFields(log.Fields{"segments": segments, "dimensions": dimensions}).Printf("Enabled PQ. Waiting for shard ready.\n")
@@ -759,19 +813,17 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 		if diff.Minutes() > 50 {
 			log.Fatalf("Shard still not ready after 50 minutes, exiting..\n")
 		}
-		shards, err := client.Schema().ShardsGetter().WithClassName(cfg.ClassName).Do(context.Background())
+		shards, err := client.Collections.Use(cfg.ClassName).Config.ListShards(context.Background())
 		if err != nil || len(shards) == 0 {
-			if weaviateErr, ok := err.(*fault.WeaviateClientError); ok {
-				log.Warnf("Error getting schema: %v", weaviateErr.DerivedFromError)
-			} else {
-				log.Warnf("Error getting schema: %v", err)
-			}
+			log.Warnf("Error getting schema: %v", err)
 			continue
 		}
 		ready := true
 		for _, shard := range shards {
-			if shard.Status != "READY" {
-				ready = false
+			for _, status := range shard.PerNodeStatus {
+				if status != "READY" {
+					ready = false
+				}
 			}
 		}
 		if ready {

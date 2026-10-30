@@ -15,7 +15,8 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/spf13/cobra"
-	"github.com/weaviate/weaviate-go-client/v4/weaviate"
+	"github.com/weaviate/weaviate-go-client/v6"
+	"github.com/weaviate/weaviate-go-client/v6/query"
 	weaviategrpc "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
 	"github.com/weaviate/weaviate/usecases/byteops"
 	"google.golang.org/protobuf/proto"
@@ -85,15 +86,18 @@ func getDimensions(cfg Config, client *weaviate.Client) int {
 	if cfg.Dimensions == 0 {
 		// Try to infer dimensions from class
 
-		objects, err := client.Data().ObjectsGetter().WithClassName(cfg.ClassName).WithVector().WithLimit(10).Do(context.Background())
+		res, err := client.Collections.Use(cfg.ClassName).Query.OverAll(context.Background(), query.OverAll{
+			Limit:         10,
+			ReturnVectors: []string{cfg.vectorName()},
+		})
 		if err != nil {
 			log.Infof("Error fetching class %s, %v", cfg.ClassName, err)
-		}
-
-		for _, obj := range objects {
-			if obj.Vector != nil {
-				dimensions = len(obj.Vector)
-				break
+		} else {
+			for _, obj := range res.Objects {
+				if v, ok := obj.Vectors[cfg.vectorName()]; ok && len(v.Single) > 0 {
+					dimensions = len(v.Single)
+					break
+				}
 			}
 		}
 
