@@ -12,7 +12,7 @@ import (
 	"strconv"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 
 	"github.com/spf13/cobra"
 	"github.com/weaviate/weaviate-go-client/v6"
@@ -60,8 +60,7 @@ var randomVectorsCmd = &cobra.Command{
 			os.Exit(1)
 		}
 
-		log.WithFields(log.Fields{"queries": cfg.Queries,
-			"class": cfg.ClassName}).Info("Beginning random-vectors benchmark")
+		log.Info().Int("queries", cfg.Queries).Str("class", cfg.ClassName).Msg("Beginning random-vectors benchmark")
 
 		client := createClient(&cfg)
 		cfg.Dimensions = getDimensions(cfg, client)
@@ -74,9 +73,7 @@ var randomVectorsCmd = &cobra.Command{
 			result = benchmarkNearVector(cfg)
 		}
 
-		log.WithFields(log.Fields{"mean": result.Mean, "qps": result.QueriesPerSecond,
-			"parallel": cfg.Parallel, "limit": cfg.Limit,
-			"api": cfg.API, "count": result.Total, "failed": result.Failed}).Info("Benchmark result")
+		log.Info().Stringer("mean", result.Mean).Float64("qps", result.QueriesPerSecond).Int("parallel", cfg.Parallel).Int("limit", cfg.Limit).Str("api", cfg.API).Int("count", result.Total).Int("failed", result.Failed).Msg("Benchmark result")
 
 	},
 }
@@ -91,7 +88,7 @@ func getDimensions(cfg Config, client *weaviate.Client) int {
 			ReturnVectors: []string{cfg.vectorName()},
 		})
 		if err != nil {
-			log.Infof("Error fetching class %s, %v", cfg.ClassName, err)
+			log.Error().Str("class", cfg.ClassName).Err(err).Msg("Error fetching class")
 		} else {
 			for _, obj := range res.Objects {
 				if v, ok := obj.Vectors[cfg.vectorName()]; ok && len(v.Single) > 0 {
@@ -102,7 +99,7 @@ func getDimensions(cfg Config, client *weaviate.Client) int {
 		}
 
 		if dimensions == 0 {
-			log.Fatalf("Could not fetch dimensions from class %s", cfg.ClassName)
+			log.Fatal().Msgf("Could not fetch dimensions from class %s", cfg.ClassName)
 		}
 	}
 	return dimensions
@@ -267,7 +264,7 @@ func benchmarkNearVectorDuration(cfg Config) Results {
 	medianResult.Failed = results.Failed
 	medianResult.Parallelization = cfg.Parallel
 
-	log.WithFields(log.Fields{"iterations": iterations}).Infof("Queried for %d seconds", cfg.QueryDuration)
+	log.Info().Stringer("duration", time.Duration(cfg.QueryDuration)*time.Second).Int("iterations", iterations).Msg("Query duration finished")
 
 	return medianResult
 }

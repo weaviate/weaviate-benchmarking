@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 	"golang.org/x/exp/constraints"
 
 	"github.com/google/uuid"
@@ -127,7 +127,7 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 		}
 		if cfg.MultiVectorDimensions > 0 {
 			if len(vector)%cfg.MultiVectorDimensions != 0 {
-				log.Fatalf("Vector length %d is not a multiple of dimensions %d",
+				log.Fatal().Msgf("Vector length %d is not a multiple of dimensions %d",
 					len(vector), cfg.MultiVectorDimensions)
 			}
 			rows := len(vector) / cfg.MultiVectorDimensions
@@ -168,7 +168,7 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 			}
 			nonRefProperties, err := structpb.NewStruct(props)
 			if err != nil {
-				log.Fatalf("Error creating properties struct: %v", err)
+				log.Fatal().Msgf("Error creating properties struct: %v", err)
 			}
 			objects[i].Properties = &weaviategrpc.BatchObject_Properties{
 				NonRefProperties: nonRefProperties,
@@ -192,14 +192,14 @@ func writeChunk(chunk *Batch, client *weaviategrpc.WeaviateClient, cfg *Config) 
 
 	response, err := (*client).BatchObjects(ctx, batchRequest)
 	if err != nil {
-		log.Fatalf("could not send batch: %v", err)
+		log.Fatal().Msgf("could not send batch: %v", err)
 	}
 
 	for _, result := range response.GetErrors() {
 		if result.Error != "" {
-			log.Printf("Error for index %d: %s", result.Index, result.Error)
+			log.Error().Int32("index", result.Index).Str("err", result.Error).Msg("Batch object error")
 		} else {
-			log.Printf("Successfully processed object at index %d", result.Index)
+			log.Info().Int32("index", result.Index).Msg("Successfully processed object")
 		}
 	}
 }
@@ -238,9 +238,9 @@ func createClient(cfg *Config) *weaviate.Client {
 			return client
 		}
 		if time.Since(start) > startupTimeout {
-			log.Fatalf("Error creating client: %v", err)
+			log.Fatal().Msgf("Error creating client: %v", err)
 		}
-		log.Infof("Waiting for Weaviate at %s: %v", cfg.HttpOrigin, err)
+		log.Info().Str("httpOrigin", cfg.HttpOrigin).Err(err).Msg("Waiting for Weaviate")
 		time.Sleep(time.Second)
 	}
 }
@@ -346,7 +346,7 @@ func applyRQCentering(rqConfig map[string]interface{}, centering bool, trainingL
 func createSchema(cfg *Config, client *weaviate.Client) {
 	err := client.Collections.Delete(context.Background(), cfg.ClassName)
 	if err != nil {
-		log.Fatalf("Error deleting class: %v", err)
+		log.Fatal().Msgf("Error deleting class: %v", err)
 	}
 
 	multiTenancyEnabled := false
@@ -450,7 +450,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 	} else if cfg.IndexType == "flat" {
 		// Validate that BQ and RQ are not both enabled
 		if cfg.BQ && cfg.RQ == "auto" {
-			log.Fatalf("Cannot enable both BQ and RQ on flat index type")
+			log.Fatal().Msgf("Cannot enable both BQ and RQ on flat index type")
 		}
 
 		vectorIndexConfig = map[string]interface{}{
@@ -475,10 +475,10 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				rqConfig["rescoreLimit"] = cfg.RescoreLimit
 			}
 			vectorIndexConfig["rq"] = rqConfig
-			log.WithFields(log.Fields{"bits": cfg.RQBits, "indexType": "flat"}).Printf("Enabled RQ on flat index type")
+			log.Info().Uint("bits", cfg.RQBits).Str("indexType", "flat").Msg("Enabled RQ on flat index type")
 		}
 	} else if cfg.IndexType == "dynamic" {
-		log.WithFields(log.Fields{"threshold": cfg.DynamicThreshold}).Info("Building dynamic vector index")
+		log.Info().Int("threshold", cfg.DynamicThreshold).Msg("Building dynamic vector index")
 		vectorIndexConfig = map[string]interface{}{
 			"distance":  cfg.DistanceMetric,
 			"threshold": cfg.DynamicThreshold,
@@ -530,7 +530,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 			},
 		}
 	} else {
-		log.Fatalf("Unknown index type %s", cfg.IndexType)
+		log.Fatal().Msgf("Unknown index type %s", cfg.IndexType)
 	}
 
 	vectorIndexConfig["filterStrategy"] = cfg.FilterStrategy
@@ -640,29 +640,29 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		class["replicationConfig"].(map[string]interface{})["asyncEnabled"] = true
 		putClassJSON(cfg, class)
 	}
-	log.Printf("Created class %s", cfg.ClassName)
+	log.Info().Str("class", cfg.ClassName).Msg("Created class")
 }
 
 func deleteChunk(chunk *Batch, client *weaviate.Client, cfg *Config) {
-	log.Debugf("Deleting chunk of %d vectors index %d", len(chunk.Vectors), chunk.Offset)
+	log.Debug().Int("vectors", len(chunk.Vectors)).Int("offset", chunk.Offset).Msg("Deleting chunk")
 	for i := range chunk.Vectors {
 		id := uuid.MustParse(uuidFromInt(i + chunk.Offset + cfg.Offset))
 		err := client.Collections.Use(cfg.ClassName).Data.Delete(context.Background(), id)
 		if err != nil {
-			log.Fatalf("Error deleting object: %v", err)
+			log.Fatal().Msgf("Error deleting object: %v", err)
 		}
 	}
 }
 
 func deleteUuidSlice(cfg *Config, client *weaviate.Client, slice []int) {
-	log.WithFields(log.Fields{"length": len(slice), "class": cfg.ClassName}).Printf("Deleting objects to trigger tombstone operations")
+	log.Info().Int("length", len(slice)).Str("class", cfg.ClassName).Msg("Deleting objects to trigger tombstone operations")
 	for _, i := range slice {
 		err := client.Collections.Use(cfg.ClassName).Data.Delete(context.Background(), uuid.MustParse(uuidFromInt(i)))
 		if err != nil {
-			log.Fatalf("Error deleting object: %v", err)
+			log.Fatal().Msgf("Error deleting object: %v", err)
 		}
 	}
-	log.WithFields(log.Fields{"length": len(slice), "class": cfg.ClassName}).Printf("Completed deletes")
+	log.Info().Int("length", len(slice)).Str("class", cfg.ClassName).Msg("Completed deletes")
 }
 
 func deleteUuidRange(cfg *Config, client *weaviate.Client, start int, end int) {
@@ -679,7 +679,7 @@ func addTenantIfNeeded(cfg *Config, client *weaviate.Client) {
 	}
 	err := client.Collections.Use(cfg.ClassName).Tenants.Create(context.Background(), tenant.Tenant{Name: cfg.Tenant})
 	if err != nil {
-		log.Printf("Error adding tenant retrying in 1 second %v", err)
+		log.Warn().Err(err).Msg("Error adding tenant, retrying in 1 second")
 		time.Sleep(1 * time.Second)
 		addTenantIfNeeded(cfg, client)
 	}
@@ -723,7 +723,7 @@ func waitReady(cfg *Config, client *weaviate.Client, indexStart time.Time, maxDu
 	start := time.Now()
 	current := time.Now()
 
-	log.Infof("Waiting for queue to be empty\n")
+	log.Info().Msg("Waiting for queue to be empty")
 	for current.Sub(start) < maxDuration {
 		nodes, err := client.Cluster.ListNodes(context.Background(), cluster.ListNodesOptions{Verbose: true})
 		if err != nil {
@@ -738,14 +738,14 @@ func waitReady(cfg *Config, client *weaviate.Client, indexStart time.Time, maxDu
 			}
 		}
 		if totalShardQueue < minQueueSize {
-			log.WithFields(log.Fields{"duration": current.Sub(start)}).Printf("Queue ready\n")
-			log.WithFields(log.Fields{"duration": current.Sub(indexStart)}).Printf("Total load and queue ready\n")
+			log.Info().Stringer("duration", current.Sub(start)).Msg("Queue ready")
+			log.Info().Stringer("duration", current.Sub(indexStart)).Msg("Total load and queue ready")
 			return current
 		}
 		time.Sleep(2 * time.Second)
 		current = time.Now()
 	}
-	log.Fatalf("Queue wasn't ready in %s\n", maxDuration)
+	log.Fatal().Msgf("Queue wasn't ready in %s\n", maxDuration)
 	return current
 }
 
@@ -759,7 +759,7 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 	switch compressionType {
 	case CompressionTypePQ:
 		if dimensions%cfg.PQRatio != 0 {
-			log.Fatalf("PQ ratio of %d and dimensions of %d incompatible", cfg.PQRatio, dimensions)
+			log.Fatal().Msgf("PQ ratio of %d and dimensions of %d incompatible", cfg.PQRatio, dimensions)
 		}
 		if !cfg.MuveraEnabled {
 			segments = dimensions / cfg.PQRatio
@@ -800,9 +800,9 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 	putClassJSON(cfg, classConfig)
 	switch compressionType {
 	case CompressionTypePQ:
-		log.WithFields(log.Fields{"segments": segments, "dimensions": dimensions}).Printf("Enabled PQ. Waiting for shard ready.\n")
+		log.Info().Uint("segments", segments).Uint("dimensions", dimensions).Msg("Enabled PQ. Waiting for shard ready.")
 	case CompressionTypeSQ:
-		log.Printf("Enabled SQ. Waiting for shard ready.\n")
+		log.Info().Msg("Enabled SQ. Waiting for shard ready.")
 	}
 
 	start := time.Now()
@@ -811,11 +811,11 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 		time.Sleep(3 * time.Second)
 		diff := time.Since(start)
 		if diff.Minutes() > 50 {
-			log.Fatalf("Shard still not ready after 50 minutes, exiting..\n")
+			log.Fatal().Msgf("Shard still not ready after 50 minutes, exiting..\n")
 		}
 		shards, err := client.Collections.Use(cfg.ClassName).Config.ListShards(context.Background())
 		if err != nil || len(shards) == 0 {
-			log.Warnf("Error getting schema: %v", err)
+			log.Warn().Err(err).Msg("Error getting schema")
 			continue
 		}
 		ready := true
@@ -834,11 +834,11 @@ func enableCompression(cfg *Config, client *weaviate.Client, dimensions uint, co
 	endTime := time.Now()
 	switch compressionType {
 	case CompressionTypePQ:
-		log.WithFields(log.Fields{"segments": segments, "dimensions": dimensions}).Printf("PQ Completed in %v\n", endTime.Sub(start))
+		log.Info().Stringer("duration", endTime.Sub(start)).Uint("segments", segments).Uint("dimensions", dimensions).Msg("PQ completed")
 	case CompressionTypeSQ:
-		log.Printf("SQ Completed in %v\n", endTime.Sub(start))
+		log.Info().Stringer("duration", endTime.Sub(start)).Msg("SQ completed")
 	case CompressionTypeRQ:
-		log.Printf("RQ Completed in %v\n", endTime.Sub(start))
+		log.Info().Stringer("duration", endTime.Sub(start)).Msg("RQ completed")
 	}
 }
 
@@ -860,7 +860,7 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 
 	efCandidates, err := parseEfValues(cfg.EfArray)
 	if err != nil {
-		log.Fatalf("Error parsing efArray, expected commas separated format \"16,32,64\" but:%v\n", err)
+		log.Fatal().Msgf("Error parsing efArray, expected commas separated format \"16,32,64\" but:%v\n", err)
 	}
 
 	// Read once at this point (after import and compaction delay) to get accurate memory stats
@@ -868,7 +868,7 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 	if !cfg.SkipMemoryStats {
 		memstats, err = readMemoryMetrics(cfg)
 		if err != nil {
-			log.Warnf("Error reading memory stats: %v", err)
+			log.Warn().Err(err).Msg("Error reading memory stats")
 			memstats = &Memstats{}
 		}
 	}
@@ -901,23 +901,11 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 			}
 
 			if cfg.IndexType == "hnsw" || cfg.IndexType == "dynamic" {
-				log.WithFields(log.Fields{
-					"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall, "ndcg": result.NDCG,
-					"parallel": cfg.Parallel, "limit": cfg.Limit,
-					"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed,
-				}).Info("Benchmark result")
+				log.Info().Stringer("mean", result.Mean).Float64("qps", result.QueriesPerSecond).Float64("recall", result.Recall).Float64("ndcg", result.NDCG).Int("parallel", cfg.Parallel).Int("limit", cfg.Limit).Str("api", cfg.API).Int("ef", ef).Int("count", result.Total).Int("failed", result.Failed).Msg("Benchmark result")
 			} else if cfg.IndexType == "hfresh" {
-				log.WithFields(log.Fields{
-					"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall, "ndcg": result.NDCG,
-					"parallel": cfg.Parallel, "limit": cfg.Limit,
-					"api": cfg.API, "searchProbe": ef, "count": result.Total, "failed": result.Failed,
-				}).Info("Benchmark result")
+				log.Info().Stringer("mean", result.Mean).Float64("qps", result.QueriesPerSecond).Float64("recall", result.Recall).Float64("ndcg", result.NDCG).Int("parallel", cfg.Parallel).Int("limit", cfg.Limit).Str("api", cfg.API).Int("searchProbe", ef).Int("count", result.Total).Int("failed", result.Failed).Msg("Benchmark result")
 			} else {
-				log.WithFields(log.Fields{
-					"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall, "ndcg": result.NDCG,
-					"parallel": cfg.Parallel, "limit": cfg.Limit,
-					"api": cfg.API, "rescoreLimit": ef, "count": result.Total, "failed": result.Failed,
-				}).Info("Benchmark result")
+				log.Info().Stringer("mean", result.Mean).Float64("qps", result.QueriesPerSecond).Float64("recall", result.Recall).Float64("ndcg", result.NDCG).Int("parallel", cfg.Parallel).Int("limit", cfg.Limit).Str("api", cfg.API).Int("rescoreLimit", ef).Int("count", result.Total).Int("failed", result.Failed).Msg("Benchmark result")
 			}
 
 			dataset := filepath.Base(cfg.BenchmarkFile)
@@ -956,11 +944,11 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 
 			jsonData, err := json.Marshal(benchResult)
 			if err != nil {
-				log.Fatalf("Error converting result to json")
+				log.Fatal().Msgf("Error converting result to json")
 			}
 
 			if err := json.Unmarshal(jsonData, &resultMap); err != nil {
-				log.Fatalf("Error converting json to map")
+				log.Fatal().Msgf("Error converting json to map")
 			}
 
 			if cfg.LabelMap != nil {
@@ -979,12 +967,12 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 
 		data, err := json.MarshalIndent(benchmarkResultsMap, "", "    ")
 		if err != nil {
-			log.Fatalf("Error marshaling benchmark results: %v", err)
+			log.Fatal().Msgf("Error marshaling benchmark results: %v", err)
 		}
 
 		err = os.WriteFile(fmt.Sprintf("./results/%s.json", runID), data, 0o644)
 		if err != nil {
-			log.Fatalf("Error writing benchmark results to file: %v", err)
+			log.Fatal().Msgf("Error writing benchmark results to file: %v", err)
 		}
 
 		if !cfg.WaitForBackground {
@@ -1004,7 +992,7 @@ func shouldStopRunQueries(iteration int, cfg *Config) bool {
 
 	metrics, err := readHFreshMetrics(cfg)
 	if err != nil {
-		log.WithError(err).Warn("Failed to read HFresh pending operations metrics")
+		log.Warn().Err(err).Msg("Failed to read HFresh pending operations metrics")
 		return false
 	}
 
@@ -1013,9 +1001,7 @@ func shouldStopRunQueries(iteration int, cfg *Config) bool {
 		metrics.PendingReassignOperations == 0
 
 	if noPendingOps {
-		log.WithFields(log.Fields{
-			"iteration": iteration,
-		}).Info("All HFresh background operations complete")
+		log.Info().Int("iteration", iteration).Msg("All HFresh background operations complete")
 		return true
 	}
 
@@ -1024,16 +1010,11 @@ func shouldStopRunQueries(iteration int, cfg *Config) bool {
 	for {
 		metrics, err := readHFreshMetrics(cfg)
 		if err != nil {
-			log.WithError(err).Warn("Failed to read HFresh pending operations metrics")
+			log.Warn().Err(err).Msg("Failed to read HFresh pending operations metrics")
 			return false
 		}
 
-		log.WithFields(log.Fields{
-			"iteration":                 iteration,
-			"pendingSplitOperations":    metrics.PendingSplitOperations,
-			"pendingMergeOperations":    metrics.PendingMergeOperations,
-			"pendingReassignOperations": metrics.PendingReassignOperations,
-		}).Info("HFresh background operations still running, checking again in ", secs, " seconds")
+		log.Info().Stringer("checkAgainIn", time.Duration(secs)*time.Second).Int("iteration", iteration).Int("pendingSplitOperations", metrics.PendingSplitOperations).Int("pendingMergeOperations", metrics.PendingMergeOperations).Int("pendingReassignOperations", metrics.PendingReassignOperations).Msg("HFresh background operations still running")
 		noPendingOps := metrics.PendingSplitOperations == 0 &&
 			metrics.PendingMergeOperations == 0 &&
 			metrics.PendingReassignOperations == 0
@@ -1077,7 +1058,7 @@ var annBenchmarkCommand = &cobra.Command{
 		if cfg.FilterCatalog != "" {
 			h5, ok := dataset.(*Hdf5Dataset)
 			if !ok {
-				log.Fatal("--filterCatalog requires an hdf5 dataset")
+				log.Fatal().Msgf("--filterCatalog requires an hdf5 dataset")
 			}
 			cfg.catalog = loadFilterCatalog(cfg.FilterCatalog, h5, !cfg.QueryOnly)
 		}
@@ -1092,10 +1073,7 @@ var annBenchmarkCommand = &cobra.Command{
 				createSchema(&cfg, client)
 			}
 
-			log.WithFields(log.Fields{
-				"index": cfg.IndexType, "efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
-				"distance": cfg.DistanceMetric, "dataset": cfg.BenchmarkFile,
-			}).Info("Starting import")
+			log.Info().Str("index", cfg.IndexType).Int("efC", cfg.EfConstruction).Int("m", cfg.MaxConnections).Int("shards", cfg.Shards).Str("distance", cfg.DistanceMetric).Str("dataset", cfg.BenchmarkFile).Msg("Starting import")
 
 			if cfg.NumTenants > 0 {
 				importTime = loadANNBenchmarksDataMultiTenant(dataset, &cfg, client)
@@ -1104,14 +1082,11 @@ var annBenchmarkCommand = &cobra.Command{
 			}
 
 			sleepDuration := time.Duration(cfg.QueryDelaySeconds) * time.Second
-			log.Printf("Waiting for %s to allow for compaction etc\n", sleepDuration)
+			log.Info().Stringer("duration", sleepDuration).Msg("Waiting to allow for compaction etc")
 			time.Sleep(sleepDuration)
 		}
 
-		log.WithFields(log.Fields{
-			"index": cfg.IndexType, "efC": cfg.EfConstruction, "m": cfg.MaxConnections, "shards": cfg.Shards,
-			"distance": cfg.DistanceMetric, "dataset": cfg.BenchmarkFile,
-		}).Info("Benchmark configuration")
+		log.Info().Str("index", cfg.IndexType).Int("efC", cfg.EfConstruction).Int("m", cfg.MaxConnections).Int("shards", cfg.Shards).Str("distance", cfg.DistanceMetric).Str("dataset", cfg.BenchmarkFile).Msg("Benchmark configuration")
 
 		if cfg.SkipQuery {
 			return
@@ -1122,7 +1097,7 @@ var annBenchmarkCommand = &cobra.Command{
 		var testFilters []int
 		if cfg.catalog != nil {
 			if cfg.FilterSelect == "" {
-				log.Fatal("--filterCatalog queries need --filterSelect (or --skipQuery)")
+				log.Fatal().Msgf("--filterCatalog queries need --filterSelect (or --skipQuery)")
 			}
 			testData, neighbors, cfg.catalogQueryFilters = cfg.catalog.selectQueries(cfg.FilterSelect, dataset.(*Hdf5Dataset))
 			cfg.LabelMap["filter_select"] = cfg.FilterSelect
@@ -1139,7 +1114,7 @@ var annBenchmarkCommand = &cobra.Command{
 			totalRowCount := dataset.NumTrainVectors()
 			updateRowCount := uint(math.Floor(float64(totalRowCount) * cfg.UpdatePercentage))
 
-			log.Printf("Performing %d update iterations\n", cfg.UpdateIterations)
+			log.Info().Int("iterations", cfg.UpdateIterations).Msg("Performing update iterations")
 
 			for i := 0; i < cfg.UpdateIterations; i++ {
 
@@ -1152,12 +1127,12 @@ var annBenchmarkCommand = &cobra.Command{
 					loadTrainData(dataset, &cfg, 0, updateRowCount, 0)
 				}
 
-				log.WithFields(log.Fields{"duration": time.Since(startTime)}).Printf("Total delete and update time\n")
+				log.Info().Stringer("duration", time.Since(startTime)).Msg("Total delete and update time")
 
 				if !cfg.SkipTombstonesEmpty {
 					err := waitTombstonesEmpty(&cfg)
 					if err != nil {
-						log.Fatalf("Error waiting for tombstones to be empty: %v", err)
+						log.Fatal().Msgf("Error waiting for tombstones to be empty: %v", err)
 					}
 				}
 				if !cfg.SkipAsyncReady {

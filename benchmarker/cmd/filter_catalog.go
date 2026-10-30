@@ -6,7 +6,8 @@ import (
 	"os"
 	"strings"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
+
 	"github.com/weaviate/hdf5"
 	"github.com/weaviate/weaviate-go-client/v6/collections"
 	weaviategrpc "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
@@ -67,28 +68,28 @@ func catalogPropName(e catalogManifestEntry) string {
 func loadFilterCatalog(manifestPath string, ds *Hdf5Dataset, withBitmaps bool) *filterCatalog {
 	raw, err := os.ReadFile(manifestPath)
 	if err != nil {
-		log.Fatalf("Error reading filter catalog manifest: %v", err)
+		log.Fatal().Msgf("Error reading filter catalog manifest: %v", err)
 	}
 	var entries []catalogManifestEntry
 	if err := json.Unmarshal(raw, &entries); err != nil {
-		log.Fatalf("Error parsing filter catalog manifest: %v", err)
+		log.Fatal().Msgf("Error parsing filter catalog manifest: %v", err)
 	}
 	cat := &filterCatalog{byName: map[string]*catalogFilter{}}
 	for _, e := range entries {
 		if e.Group != "global" && e.Group != "per_query" {
-			log.Fatalf("filter %q: unknown group %q", e.Name, e.Group)
+			log.Fatal().Msgf("filter %q: unknown group %q", e.Name, e.Group)
 		}
 		f := &catalogFilter{catalogManifestEntry: e, Prop: catalogPropName(e), Inverted: e.Group == "per_query"}
 		if withBitmaps {
 			f.bitmap = loadHdf5Uint8(ds.file, "filters/"+e.Group+"/"+e.Name)
 			if len(f.bitmap)*8 < ds.trainRows {
-				log.Fatalf("filter %q: bitmap covers %d rows, train has %d", e.Name, len(f.bitmap)*8, ds.trainRows)
+				log.Fatal().Msgf("filter %q: bitmap covers %d rows, train has %d", e.Name, len(f.bitmap)*8, ds.trainRows)
 			}
 		}
 		cat.Filters = append(cat.Filters, f)
 		cat.byName[e.Name] = f
 	}
-	log.WithFields(log.Fields{"filters": len(cat.Filters), "bitmaps": withBitmaps}).Info("Loaded filter catalog")
+	log.Info().Int("filters", len(cat.Filters)).Bool("bitmaps", withBitmaps).Msg("Loaded filter catalog")
 	return cat
 }
 
@@ -122,7 +123,7 @@ func (c *filterCatalog) addProps(props map[string]interface{}, row int) {
 func (c *filterCatalog) selectQueries(spec string, ds *Hdf5Dataset) ([][]float32, [][]int, []*catalogFilter) {
 	group, arg, ok := strings.Cut(spec, ":")
 	if !ok {
-		log.Fatalf("--filterSelect must be global:<name> or per_query:<name-suffix>, got %q", spec)
+		log.Fatal().Msgf("--filterSelect must be global:<name> or per_query:<name-suffix>, got %q", spec)
 	}
 	test := ds.TestVectors()
 	gt, dims := loadHdf5Int64(ds.file, "ground_truth/"+group+"/neighbors")
@@ -133,10 +134,10 @@ func (c *filterCatalog) selectQueries(spec string, ds *Hdf5Dataset) ([][]float32
 	case "global":
 		f := c.byName[arg]
 		if f == nil || f.Group != "global" {
-			log.Fatalf("unknown global filter %q", arg)
+			log.Fatal().Msgf("unknown global filter %q", arg)
 		}
 		if len(dims) != 3 || int(dims[1]) != len(test) {
-			log.Fatalf("unexpected ground_truth/global/neighbors dims %v for %d test vectors", dims, len(test))
+			log.Fatal().Msgf("unexpected ground_truth/global/neighbors dims %v for %d test vectors", dims, len(test))
 		}
 		q, k := int(dims[1]), int(dims[2])
 		for i := 0; i < q; i++ {
@@ -147,7 +148,7 @@ func (c *filterCatalog) selectQueries(spec string, ds *Hdf5Dataset) ([][]float32
 		}
 	case "per_query":
 		if len(dims) != 2 {
-			log.Fatalf("unexpected ground_truth/per_query/neighbors dims %v", dims)
+			log.Fatal().Msgf("unexpected ground_truth/per_query/neighbors dims %v", dims)
 		}
 		k := int(dims[1])
 		for _, f := range c.Filters {
@@ -155,19 +156,19 @@ func (c *filterCatalog) selectQueries(spec string, ds *Hdf5Dataset) ([][]float32
 				continue
 			}
 			if f.QueryRow < 0 || f.QueryRow >= len(test) {
-				log.Fatalf("filter %q: query row %d out of range", f.Name, f.QueryRow)
+				log.Fatal().Msgf("filter %q: query row %d out of range", f.Name, f.QueryRow)
 			}
 			queries = append(queries, test[f.QueryRow])
 			neighbors = append(neighbors, gt[f.GTIndex*k:(f.GTIndex+1)*k])
 			filters = append(filters, f)
 		}
 		if len(filters) == 0 {
-			log.Fatalf("no per_query filter matches %q", arg)
+			log.Fatal().Msgf("no per_query filter matches %q", arg)
 		}
 	default:
-		log.Fatalf("unknown filter group %q", group)
+		log.Fatal().Msgf("unknown filter group %q", group)
 	}
-	log.WithFields(log.Fields{"spec": spec, "queries": len(queries), "filters": len(uniqueFilters(filters))}).Info("Selected catalog queries")
+	log.Info().Str("spec", spec).Int("queries", len(queries)).Int("filters", len(uniqueFilters(filters))).Msg("Selected catalog queries")
 	return queries, neighbors, filters
 }
 
@@ -183,7 +184,7 @@ func uniqueFilters(fs []*catalogFilter) map[string]bool {
 func nearVectorQueryGrpcCatalog(cfg *Config, vec []float32, tenant string, f *catalogFilter) []byte {
 	searchRequest := &weaviategrpc.SearchRequest{}
 	if err := proto.Unmarshal(nearVectorQueryGrpc(cfg, vec, tenant, -1), searchRequest); err != nil {
-		log.Fatalf("Failed to unmarshal grpc query: %v", err)
+		log.Fatal().Msgf("Failed to unmarshal grpc query: %v", err)
 	}
 	op := weaviategrpc.Filters_OPERATOR_EQUAL
 	if f.Inverted {
@@ -196,7 +197,7 @@ func nearVectorQueryGrpcCatalog(cfg *Config, vec []float32, tenant string, f *ca
 	}
 	data, err := proto.Marshal(searchRequest)
 	if err != nil {
-		log.Fatalf("grpc marshal err: %v", err)
+		log.Fatal().Msgf("grpc marshal err: %v", err)
 	}
 	return data
 }
@@ -204,20 +205,20 @@ func nearVectorQueryGrpcCatalog(cfg *Config, vec []float32, tenant string, f *ca
 func loadHdf5Uint8(file *hdf5.File, name string) []byte {
 	dataset, err := file.OpenDataset(name)
 	if err != nil {
-		log.Fatalf("Error opening dataset %s: %v", name, err)
+		log.Fatal().Msgf("Error opening dataset %s: %v", name, err)
 	}
 	defer dataset.Close()
 	dims, _, _ := dataset.Space().SimpleExtentDims()
 	datatype, err := dataset.Datatype()
 	if err != nil {
-		log.Fatalf("dataset %s: unable to read datatype: %v", name, err)
+		log.Fatal().Msgf("dataset %s: unable to read datatype: %v", name, err)
 	}
 	if len(dims) != 1 || datatype.Size() != 1 {
-		log.Fatalf("dataset %s: expected 1-D uint8, got dims %v byte size %d", name, dims, datatype.Size())
+		log.Fatal().Msgf("dataset %s: expected 1-D uint8, got dims %v byte size %d", name, dims, datatype.Size())
 	}
 	data := make([]uint8, dims[0])
 	if err := dataset.Read(&data); err != nil {
-		log.Fatalf("Error reading dataset %s: %v", name, err)
+		log.Fatal().Msgf("Error reading dataset %s: %v", name, err)
 	}
 	return data
 }
@@ -226,12 +227,12 @@ func loadHdf5Uint8(file *hdf5.File, name string) []byte {
 func loadHdf5Int64(file *hdf5.File, name string) ([]int, []uint) {
 	dataset, err := file.OpenDataset(name)
 	if err != nil {
-		log.Fatalf("Error opening dataset %s: %v", name, err)
+		log.Fatal().Msgf("Error opening dataset %s: %v", name, err)
 	}
 	defer dataset.Close()
 	dims, _, _ := dataset.Space().SimpleExtentDims()
 	if getHDF5ByteSize(dataset) != 8 {
-		log.Fatalf("dataset %s: expected int64", name)
+		log.Fatal().Msgf("dataset %s: expected int64", name)
 	}
 	n := uint(1)
 	for _, d := range dims {
@@ -239,7 +240,7 @@ func loadHdf5Int64(file *hdf5.File, name string) ([]int, []uint) {
 	}
 	data := make([]int64, n)
 	if err := dataset.Read(&data); err != nil {
-		log.Fatalf("Error reading dataset %s: %v", name, err)
+		log.Fatal().Msgf("Error reading dataset %s: %v", name, err)
 	}
 	out := make([]int, n)
 	for i, v := range data {

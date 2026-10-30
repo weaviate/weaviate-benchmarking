@@ -7,7 +7,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.0.1
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/common v0.65.0
-	github.com/sirupsen/logrus v1.9.4
+	github.com/rs/zerolog v1.35.1
 	github.com/spf13/cobra v1.8.1
 	github.com/stretchr/testify v1.12.1
 	github.com/weaviate/hdf5 v0.0.0-20230911114900-3cd888ffadcd
@@ -55,6 +55,8 @@ require (
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/klauspost/compress v1.19.1 // indirect
 	github.com/mailru/easyjson v0.9.2 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
+	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/parquet-go/parquet-go v0.29.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.21 // indirect
