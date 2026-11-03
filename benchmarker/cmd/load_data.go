@@ -8,9 +8,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog/log"
+
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
-	log "github.com/sirupsen/logrus"
-	"github.com/weaviate/weaviate-go-client/v4/weaviate"
+	"github.com/weaviate/weaviate-go-client/v6"
 	weaviategrpc "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -45,7 +46,7 @@ func loadTrainData(ds Dataset, cfg *Config, offset uint, maxRows uint, updatePer
 			}
 			grpcConn, err := grpc.DialContext(grpcCtx, cfg.Origin, httpOption, grpc.WithUnaryInterceptor(retry.UnaryClientInterceptor(opts...)))
 			if err != nil {
-				log.Fatalf("Did not connect: %v", err)
+				log.Fatal().Msgf("Did not connect: %v", err)
 			}
 			defer grpcConn.Close()
 			grpcClient := weaviategrpc.NewWeaviateClient(grpcConn)
@@ -95,14 +96,14 @@ func loadANNBenchmarksData(ds Dataset, cfg *Config, client *weaviate.Client, max
 		// Load the first TrainingLimit rows of the dataset before enabling
 		// compression and loading the remaining rows.
 		loadTrainData(ds, cfg, 0, uint(cfg.TrainingLimit), 0)
-		log.Printf("Pausing to enable compression.")
+		log.Info().Msg("Pausing to enable compression")
 		enableCompression(cfg, client, uint(ds.Dimension()), compressionType)
 		loadTrainData(ds, cfg, uint(cfg.TrainingLimit), 0, 0)
 	case CompressionTypeUncompressed:
 		loadTrainData(ds, cfg, 0, maxRows, 0)
 	}
 	endTime := time.Now()
-	log.WithFields(log.Fields{"duration": endTime.Sub(startTime)}).Printf("Total load time\n")
+	log.Info().Stringer("duration", endTime.Sub(startTime)).Msg("Total load time")
 	if !cfg.SkipAsyncReady {
 		endTime = waitReady(cfg, client, startTime, 4*time.Hour, 1000)
 	}
@@ -119,6 +120,6 @@ func loadANNBenchmarksDataMultiTenant(ds Dataset, cfg *Config, client *weaviate.
 	}
 
 	endTime := time.Now()
-	log.WithFields(log.Fields{"duration": endTime.Sub(startTime)}).Printf("Multi-tenant load time\n")
+	log.Info().Stringer("duration", endTime.Sub(startTime)).Msg("Multi-tenant load time")
 	return endTime.Sub(startTime)
 }

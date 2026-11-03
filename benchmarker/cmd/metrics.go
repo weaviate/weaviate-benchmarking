@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/expfmt"
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 )
 
 type Memstats struct {
@@ -122,7 +122,7 @@ func waitTombstonesEmpty(cfg *Config) error {
 	prometheusURL := cfg.MetricsEndpoint
 	metricName := "vector_index_tombstones"
 
-	log.Printf("Waiting to allow for tombstone cleanup\n")
+	log.Info().Msg("Waiting to allow for tombstone cleanup")
 
 	start := time.Now()
 
@@ -164,7 +164,7 @@ func waitTombstonesEmpty(cfg *Config) error {
 		time.Sleep(time.Second * 10)
 	}
 
-	log.WithFields(log.Fields{"duration": time.Since(start)}).Infof("Tombstones empty\n")
+	log.Info().Stringer("duration", time.Since(start)).Msg("Tombstones empty")
 
 	return nil
 }

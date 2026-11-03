@@ -3,9 +3,10 @@ package cmd
 import "C"
 
 import (
+	"fmt"
 	"unsafe"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 	"github.com/weaviate/hdf5"
 )
@@ -14,7 +15,7 @@ func loadHdf5StreamingColbert(dataset *hdf5.Dataset, chunks chan<- Batch, batchS
 	dataspace := dataset.Space()
 	dims, _, err := dataspace.SimpleExtentDims()
 	if err != nil {
-		log.Fatalf("Error getting dimensions: %v", err)
+		log.Fatal().Msgf("Error getting dimensions: %v", err)
 	}
 
 	rows := dims[0]
@@ -28,13 +29,13 @@ func loadHdf5StreamingColbert(dataset *hdf5.Dataset, chunks chan<- Batch, batchS
 		i = startOffset
 	}
 
-	log.WithFields(log.Fields{"rows": rows}).Printf("Reading HDF5 Colbert dataset")
+	log.Info().Uint("rows", rows).Msg("Reading HDF5 Colbert dataset")
 
 	// Create memory space for batch reading
 	memDims := []uint{1}
 	memspace, err := hdf5.CreateSimpleDataspace(memDims, nil)
 	if err != nil {
-		log.Fatalf("Error creating memory space: %v", err)
+		log.Fatal().Msgf("Error creating memory space: %v", err)
 	}
 	defer memspace.Close()
 
@@ -62,13 +63,13 @@ func loadHdf5StreamingColbert(dataset *hdf5.Dataset, chunks chan<- Batch, batchS
 			count := []uint{1}
 			err = dataspace.SelectHyperslab(offset, nil, count, nil)
 			if err != nil {
-				log.Fatalf("Error selecting hyperslab: %v", err)
+				log.Fatal().Msgf("Error selecting hyperslab: %v", err)
 			}
 
 			// Read the variable length data
 			err = dataset.ReadSubset(&vlen[0], memspace, dataspace)
 			if err != nil {
-				log.Fatalf("Error reading dataset: %v", err)
+				log.Fatal().Msgf("Error reading dataset: %v", err)
 			}
 
 			// Convert the data to []float32
@@ -79,7 +80,7 @@ func loadHdf5StreamingColbert(dataset *hdf5.Dataset, chunks chan<- Batch, batchS
 
 			// Add check length is a multiple of dimensions
 			if length%multiVectorDimension != 0 {
-				log.Fatalf("Length %d is not a multiple of dimensions %d",
+				log.Fatal().Msgf("Length %d is not a multiple of dimensions %d",
 					length, multiVectorDimension)
 			}
 
@@ -87,7 +88,7 @@ func loadHdf5StreamingColbert(dataset *hdf5.Dataset, chunks chan<- Batch, batchS
 		}
 
 		if (i+batchRows)%10000 == 0 {
-			log.Printf("Imported %d/%d rows", i+batchRows, rows)
+			log.Info().Msgf("Imported %d/%d rows", i+batchRows, rows)
 		}
 
 		filter := []int{}
@@ -108,16 +109,16 @@ func loadHdf5Colbert(file *hdf5.File, name string, dimensions int) [][]float32 {
 
 	dataset, err := file.OpenDataset(name)
 	if err != nil {
-		log.Fatalf("Error opening dataset: %v", err)
+		log.Fatal().Msgf("Error opening dataset: %v", err)
 	}
 	defer dataset.Close()
 
 	dataspace := dataset.Space()
 	fileDims, _, err := dataspace.SimpleExtentDims()
 	if err != nil {
-		log.Fatalf("Error getting dimensions: %v", err)
+		log.Fatal().Msgf("Error getting dimensions: %v", err)
 	}
-	log.Infof("Number of vectors: %v", fileDims[0])
+	log.Info().Uint("count", fileDims[0]).Msg("Number of vectors")
 
 	result = make([][]float32, fileDims[0])
 
@@ -131,7 +132,7 @@ func loadHdf5Colbert(file *hdf5.File, name string, dimensions int) [][]float32 {
 	memDims := []uint{1}
 	memspace, err := hdf5.CreateSimpleDataspace(memDims, nil)
 	if err != nil {
-		log.Fatalf("Error creating memory space: %v", err)
+		log.Fatal().Msgf("Error creating memory space: %v", err)
 	}
 	defer memspace.Close()
 
@@ -145,13 +146,13 @@ func loadHdf5Colbert(file *hdf5.File, name string, dimensions int) [][]float32 {
 		count := []uint{1}
 		err = dataspace.SelectHyperslab(offset, nil, count, nil)
 		if err != nil {
-			log.Fatalf("Error selecting hyperslab: %v", err)
+			log.Fatal().Msgf("Error selecting hyperslab: %v", err)
 		}
 
 		// Read the variable length data
 		err = dataset.ReadSubset(&vlen[0], memspace, dataspace)
 		if err != nil {
-			log.Fatalf("Error reading dataset: %v", err)
+			log.Fatal().Msgf("Error reading dataset: %v", err)
 		}
 
 		// Convert the data to []float32
@@ -162,7 +163,7 @@ func loadHdf5Colbert(file *hdf5.File, name string, dimensions int) [][]float32 {
 
 		// Add check length is a multiple of dimensions
 		if length%dimensions != 0 {
-			log.Fatalf("Length %d is not a multiple of dimensions %d", length, dimensions)
+			log.Fatal().Msgf("Length %d is not a multiple of dimensions %d", length, dimensions)
 		}
 		result[i] = data
 	}
@@ -178,15 +179,13 @@ var colbertCmd = &cobra.Command{
 
 		file, err := hdf5.OpenFile(cfg.BenchmarkFile, hdf5.F_ACC_RDONLY)
 		if err != nil {
-			log.Fatalf("Error opening file: %v\n", err)
+			log.Fatal().Msgf("Error opening file: %v\n", err)
 		}
 		defer file.Close()
 
 		res := loadHdf5Colbert(file, "train", cfg.MultiVectorDimensions)
 
-		log.Infof("First vector:")
-		log.Infof("  Length: %d", len(res[0]))
-		log.Infof("  First three values: %v, %v, %v", res[0][0], res[0][1], res[0][2])
+		log.Info().Int("length", len(res[0])).Str("values", fmt.Sprint(res[0][:3])).Msg("First vector")
 	},
 }
 

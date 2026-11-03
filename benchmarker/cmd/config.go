@@ -85,6 +85,12 @@ type Config struct {
 	Replicas                 int
 	RngFactor                float64
 	PayloadBytes             int
+	FilterCatalog            string // path to a filter-catalog manifest (see filter_catalog.go)
+	FilterSelect             string // which catalog filter(s) to query
+	TrainRows                int    // import only the first N train rows (0 = all)
+
+	catalog             *filterCatalog
+	catalogQueryFilters []*catalogFilter
 }
 
 func (c *Config) Validate() error {
@@ -203,6 +209,10 @@ func (c *Config) validateANN() error {
 		if c.RQCentering && c.RQBits != 4 {
 			return errors.Errorf("rqCentering requires rqBits=4, got %d", c.RQBits)
 		}
+	}
+
+	if err := c.validateFilterCatalog(); err != nil {
+		return err
 	}
 
 	if c.TrainingLimit == 0 {

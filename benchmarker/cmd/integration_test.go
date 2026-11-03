@@ -5,13 +5,14 @@ package cmd
 import (
 	"context"
 	"math/rand"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaviate/weaviate/entities/models"
+	"github.com/weaviate/weaviate-go-client/v6/collections"
 	weaviategrpc "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
 	"google.golang.org/grpc"
 )
@@ -22,10 +23,17 @@ const (
 	integrationVectorCount = 300
 )
 
+func envOr(name, fallback string) string {
+	if v := os.Getenv(name); v != "" {
+		return v
+	}
+	return fallback
+}
+
 func integrationCfg() Config {
 	return Config{
-		Origin:                 "localhost:50051",
-		HttpOrigin:             "localhost:8080",
+		Origin:                 envOr("WEAVIATE_GRPC_ORIGIN", "localhost:50051"),
+		HttpOrigin:             envOr("WEAVIATE_HTTP_ORIGIN", "localhost:8080"),
 		HttpScheme:             "http",
 		API:                    "grpc",
 		ClassName:              integrationClassName,
@@ -82,24 +90,25 @@ func setupTestCollection(t *testing.T, cfg *Config, vectors [][]float32) {
 	client := createClient(cfg)
 
 	// Delete first (ignore error — collection may not exist yet).
-	_ = client.Schema().ClassDeleter().WithClassName(cfg.ClassName).Do(context.Background())
+	_ = client.Collections.Delete(context.Background(), cfg.ClassName)
 
-	classObj := &models.Class{
-		Class:           cfg.ClassName,
-		VectorIndexType: "hnsw",
-		VectorIndexConfig: map[string]interface{}{
-			"distance":               cfg.DistanceMetric,
-			"efConstruction":         float64(cfg.EfConstruction),
-			"maxConnections":         float64(cfg.MaxConnections),
-			"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
-			"flatSearchCutoff":       cfg.FlatSearchCutoff,
+	classObj := collections.Collection{
+		Name: cfg.ClassName,
+		Vectors: map[string]collections.VectorConfig{
+			cfg.vectorName(): vectorConfigFor("hnsw", map[string]interface{}{
+				"distance":               cfg.DistanceMetric,
+				"efConstruction":         float64(cfg.EfConstruction),
+				"maxConnections":         float64(cfg.MaxConnections),
+				"cleanupIntervalSeconds": cfg.CleanupIntervalSeconds,
+				"flatSearchCutoff":       cfg.FlatSearchCutoff,
+			}),
 		},
 	}
-	err := client.Schema().ClassCreator().WithClass(classObj).Do(context.Background())
+	_, err := client.Collections.Create(context.Background(), classObj)
 	require.NoError(t, err, "create collection %q", cfg.ClassName)
 
 	t.Cleanup(func() {
-		_ = client.Schema().ClassDeleter().WithClassName(cfg.ClassName).Do(context.Background())
+		_ = client.Collections.Delete(context.Background(), cfg.ClassName)
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
