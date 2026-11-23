@@ -40,6 +40,8 @@ type Config struct {
 	LabelMap                 map[string]string
 	EfConstruction           int
 	EfArray                  string
+	EfMode                   string
+	RequestEf                int // runtime only: efArray value sent as vector_search_params with every query; 0 sends nothing
 	QueryOnly                bool
 	QueryDuration            int
 	BQ                       bool
@@ -189,6 +191,21 @@ func (c *Config) validateANN() error {
 
 	if c.DistanceMetric == "" {
 		return errors.Errorf("distance metric must be set")
+	}
+
+	switch c.EfMode {
+	case "auto", "request", "schema":
+	default:
+		return errors.Errorf("efMode must be auto, request or schema, got %q", c.EfMode)
+	}
+	if c.EfMode == "request" && c.IndexType == "flat" {
+		return errors.Errorf("efMode=request is not supported with indexType flat: rescoreLimit is not a per-request parameter")
+	}
+
+	switch c.FilterStrategy {
+	case "", "sweeping", "acorn", "pathseer":
+	default:
+		return errors.Errorf("filterStrategy must be sweeping, acorn or pathseer, got %q", c.FilterStrategy)
 	}
 
 	if c.RQ != "disabled" {

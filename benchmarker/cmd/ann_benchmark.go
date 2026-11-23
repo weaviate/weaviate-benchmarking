@@ -404,7 +404,9 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		log.Fatalf("Unknown index type %s", cfg.IndexType)
 	}
 
-	vectorIndexConfig["filterStrategy"] = cfg.FilterStrategy
+	if cfg.FilterStrategy != "" {
+		vectorIndexConfig["filterStrategy"] = cfg.FilterStrategy
+	}
 
 	if cfg.CacheSize > 0 {
 		vectorIndexConfig["vectorCacheMaxObjects"] = cfg.CacheSize
@@ -1158,8 +1160,10 @@ func initAnnBenchmark() {
 		"efConstruction", 256, "Set Weaviate efConstruction parameter (default 256)")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.EfArray,
 		"efArray", "16,24,32,48,64,96,128,256,512", "Array of ef parameters as comma separated list")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.EfMode,
+		"efMode", "auto", "How efArray values are applied: auto (per-request vector_search_params on Weaviate >= 1.41, schema update otherwise; flat and dynamic always use schema), request, schema")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.IndexType,
-		"indexType", "hnsw", "Index type (hnsw, flat or hfresh)")
+		"indexType", "hnsw", "Index type (hnsw, flat, dynamic or hfresh)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MaxConnections,
 		"maxConnections", 16, "Set Weaviate efConstruction parameter (default 16)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.CacheSize,
@@ -1211,7 +1215,7 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.FlatSearchCutoff,
 		"flatSearchCutoff", 40000, "Flat search cut off (default 40 000)")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.FilterStrategy,
-		"filterStrategy", "sweeping", "Use a different filter strategy (options are sweeping or acorn)")
+		"filterStrategy", "", "Filter strategy (sweeping, acorn or pathseer); written to the schema at import and, in request mode, sent with every filtered query. Empty keeps the server default")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.ReplicationFactor,
 		"replicationFactor", 1, "Replication factor (default 1)")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.AsyncReplicationEnabled,
