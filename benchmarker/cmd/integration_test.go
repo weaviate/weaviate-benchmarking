@@ -4,7 +4,11 @@ package cmd
 
 import (
 	"context"
+	"math"
 	"math/rand"
+	"slices"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +18,9 @@ import (
 	"github.com/weaviate/weaviate/entities/models"
 	weaviategrpc "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -195,4 +202,180 @@ func TestIntegration_ResultsJSON(t *testing.T) {
 	assert.Contains(t, out, `"qps"`)
 	assert.Contains(t, out, `"successful"`)
 	assert.Contains(t, out, `"recall"`)
+}
+
+// skipIfServerBelow141 skips tests that need vector_search_params on servers
+// that silently drop the field.
+func skipIfServerBelow141(t *testing.T, cfg *Config) string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	version, err := fetchServerVersion(ctx, createClient(cfg))
+	require.NoError(t, err)
+	supported, err := serverSupportsVectorSearchParams(version)
+	require.NoError(t, err)
+	if !supported {
+		t.Skipf("server %s is below 1.41 and ignores vector_search_params", version)
+	}
+	return version
+}
+
+// searchIDs sends one pre-marshalled query and returns the integer ids of the
+// hits (the collection is written with uuidFromInt). Unlike benchmark() it
+// surfaces the gRPC error instead of exiting the process.
+func searchIDs(t *testing.T, client weaviategrpc.WeaviateClient, query []byte) ([]int, error) {
+	t.Helper()
+	var req weaviategrpc.SearchRequest
+	require.NoError(t, proto.Unmarshal(query, &req))
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	reply, err := client.Search(ctx, &req)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]int, 0, len(reply.Results))
+	for _, r := range reply.Results {
+		raw := strings.ReplaceAll(r.Metadata.Id, "-", "")
+		id, err := strconv.ParseInt(raw[len(raw)-12:], 16, 64)
+		require.NoError(t, err)
+		ids = append(ids, int(id))
+	}
+	return ids, nil
+}
+
+func newGrpcSearchClient(t *testing.T, origin string) weaviategrpc.WeaviateClient {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, err := grpc.DialContext(ctx, origin, grpc.WithInsecure(), grpc.WithBlock()) //nolint:staticcheck
+	require.NoError(t, err)
+	t.Cleanup(func() { conn.Close() })
+	return weaviategrpc.NewWeaviateClient(conn)
+}
+
+// bruteForceTopK returns the ids of the k nearest vectors by cosine distance.
+func bruteForceTopK(vectors [][]float32, query []float32, k int) []int {
+	type scored struct {
+		id   int
+		dist float64
+	}
+	norm := func(v []float32) float64 {
+		var s float64
+		for _, x := range v {
+			s += float64(x) * float64(x)
+		}
+		return math.Sqrt(s)
+	}
+	qn := norm(query)
+	all := make([]scored, len(vectors))
+	for i, v := range vectors {
+		var dot float64
+		for j := range v {
+			dot += float64(v[j]) * float64(query[j])
+		}
+		all[i] = scored{id: i, dist: 1 - dot/(norm(v)*qn)}
+	}
+	sort.Slice(all, func(a, b int) bool { return all[a].dist < all[b].dist })
+	ids := make([]int, k)
+	for i := range ids {
+		ids[i] = all[i].id
+	}
+	return ids
+}
+
+func recallOf(got, truth []int) float64 {
+	set := make(map[int]struct{}, len(truth))
+	for _, id := range truth {
+		set[id] = struct{}{}
+	}
+	hits := 0
+	for _, id := range got {
+		if _, ok := set[id]; ok {
+			hits++
+		}
+	}
+	return float64(hits) / float64(len(truth))
+}
+
+// TestIntegration_VectorSearchParams_RejectedAboveCap is the deterministic proof
+// that the server parses vector_search_params: an ef above HNSW_MAX_SEARCH_EF is
+// rejected with InvalidArgument naming the cap. A pre-1.41 server would accept it.
+func TestIntegration_VectorSearchParams_RejectedAboveCap(t *testing.T) {
+	cfg := integrationCfg()
+	skipIfWeaviateUnavailable(t, cfg.Origin)
+	skipIfServerBelow141(t, &cfg)
+
+	vectors := generateVectors(integrationVectorCount, integrationDimensions, 11)
+	setupTestCollection(t, &cfg, vectors)
+	client := newGrpcSearchClient(t, cfg.Origin)
+
+	cfg.RequestEf = 1_000_000
+	_, err := searchIDs(t, client, nearVectorQueryGrpc(&cfg, vectors[0], "", -1))
+	require.Error(t, err)
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+	assert.Contains(t, err.Error(), "HNSW_MAX_SEARCH_EF")
+
+	cfg.RequestEf = 64
+	ids, err := searchIDs(t, client, nearVectorQueryGrpc(&cfg, vectors[0], "", -1))
+	require.NoError(t, err)
+	assert.Equal(t, 0, ids[0], "the query vector itself must be the top hit")
+}
+
+// TestIntegration_VectorSearchParams_EfChangesResults sweeps ef per request on
+// an unchanged collection: the floor (ef = limit) and a generous value must
+// produce different result sets for at least one query, and the generous value
+// must not lose recall.
+func TestIntegration_VectorSearchParams_EfChangesResults(t *testing.T) {
+	cfg := integrationCfg()
+	cfg.Dimensions = 32
+	skipIfWeaviateUnavailable(t, cfg.Origin)
+	skipIfServerBelow141(t, &cfg)
+
+	const n = 3000
+	vectors := generateVectors(n, cfg.Dimensions, 2024)
+	setupTestCollection(t, &cfg, vectors)
+	client := newGrpcSearchClient(t, cfg.Origin)
+
+	queries := generateVectors(50, cfg.Dimensions, 77)
+	var differ int
+	var recallLow, recallHigh float64
+	for _, q := range queries {
+		truth := bruteForceTopK(vectors, q, cfg.Limit)
+
+		cfg.RequestEf = cfg.Limit
+		low, err := searchIDs(t, client, nearVectorQueryGrpc(&cfg, q, "", -1))
+		require.NoError(t, err)
+
+		cfg.RequestEf = 512
+		high, err := searchIDs(t, client, nearVectorQueryGrpc(&cfg, q, "", -1))
+		require.NoError(t, err)
+
+		if !slices.Equal(low, high) {
+			differ++
+		}
+		recallLow += recallOf(low, truth)
+		recallHigh += recallOf(high, truth)
+	}
+	recallLow /= float64(len(queries))
+	recallHigh /= float64(len(queries))
+	t.Logf("ef=%d recall %.3f, ef=512 recall %.3f, %d/%d result sets differ", cfg.Limit, recallLow, recallHigh, differ, len(queries))
+
+	assert.Greater(t, differ, 0, "per-request ef had no effect on any query")
+	assert.GreaterOrEqual(t, recallHigh, recallLow)
+	assert.Greater(t, recallHigh, 0.95)
+}
+
+// TestIntegration_EfModeAuto checks the mode decision against the live server.
+func TestIntegration_EfModeAuto(t *testing.T) {
+	cfg := integrationCfg()
+	cfg.EfMode = "auto"
+	skipIfWeaviateUnavailable(t, cfg.Origin)
+	version := skipIfServerBelow141(t, &cfg)
+
+	mode, reason := resolveEfMode(&cfg, version)
+	assert.Equal(t, efModeRequest, mode, reason)
+
+	cfg.IndexType = "flat"
+	mode, _ = resolveEfMode(&cfg, version)
+	assert.Equal(t, efModeSchema, mode)
 }
