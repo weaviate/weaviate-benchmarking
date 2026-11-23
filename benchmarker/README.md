@@ -39,16 +39,17 @@ Flags:
   -d, --distance string              Set distance metric (mandatory)
       --dynamicThreshold int         Threshold to trigger the update in the dynamic index (default 10 000) (default 10000)
       --efArray string               Array of ef parameters as comma separated list (default "16,24,32,48,64,96,128,256,512")
+      --efMode string                How efArray values are applied: auto (per-request vector_search_params on Weaviate >= 1.41, schema update otherwise; flat and dynamic always use schema), request, schema (default "auto")
       --efConstruction int           Set Weaviate efConstruction parameter (default 256) (default 256)
       --existingSchema               Leave the schema as-is (default false)
       --filter                       Whether to use filtering for the dataset (default false)
-      --filterStrategy               Use a different filter strategy such as "acorn"
+      --filterStrategy string        Filter strategy (sweeping, acorn or pathseer); written to the schema at import and, in request mode, sent with every filtered query. Empty keeps the server default
       --flatSearchCutoff int         Flat search cut off (default 40 000) (default 40000)
   -f, --format string                Output format, one of [text, json] (default "text")
   -h, --help                         help for ann-benchmark
       --httpOrigin string            The http origin for Weaviate (only used if grpc enabled) (default "localhost:8080")
       --httpScheme string            The http scheme (http or https) (default "http")
-      --indexType string             Index type (hnsw, flat, hfresh) (default "hnsw")
+      --indexType string             Index type (hnsw, flat, dynamic or hfresh) (default "hnsw")
       --labels string                Labels of format key1=value1,key2=value2,...
   -l, --limit int                    Set the query limit / k (default 10) (default 10)
       --maxConnections int           Set Weaviate efConstruction parameter (default 16) (default 16)
@@ -77,6 +78,17 @@ Flags:
 
 
 ```
+
+### How `ef` is applied
+
+Every value of `--efArray` is benchmarked in turn. On Weaviate 1.41 and newer the value travels with each query as
+`vector_search_params` (`ef` for `hnsw`, `searchProbe` for `hfresh`), so the collection is never modified between
+runs. On older servers, for `--indexType flat` (whose `rescoreLimit` is not a per-request knob) and for
+`--indexType dynamic` in `auto` mode, the benchmarker falls back to rewriting `vectorIndexConfig` before each run,
+as it always did. `--efMode request` or `--efMode schema` forces one behaviour; the mode in effect is logged once
+(`ef application mode`) and written to every row of `results/<run_id>.json` as `efMode`, next to `serverVersion`.
+Values above the server caps (`HNSW_MAX_SEARCH_EF`, `HFRESH_MAX_SEARCH_PROBE`, default 10000) are rejected by the
+server in request mode.
 
 ## Memory Monitoring Feature 🆕
 
