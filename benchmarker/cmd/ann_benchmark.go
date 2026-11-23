@@ -719,9 +719,7 @@ func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 	putClassJSON(cfg, classConfig)
 }
 
-// indexingProgress returns how many vectors are still queued for async
-// indexing in className's shards, and how many of those shards still report
-// INDEXING. className must be the canonical (server-side) collection name.
+// indexingProgress returns the queued vectors and INDEXING shards of className.
 func indexingProgress(nodes []cluster.Node, className string) (queued int64, indexingShards int) {
 	for _, n := range nodes {
 		for _, s := range n.Shards {
@@ -737,9 +735,7 @@ func indexingProgress(nodes []cluster.Node, className string) (queued int64, ind
 	return queued, indexingShards
 }
 
-// waitReady blocks until every shard of the collection has an empty vector
-// queue and no longer reports INDEXING, so queries run against a fully built
-// index and the reported import time includes async indexing.
+// waitReady blocks until the collection's queue is empty and no shard is INDEXING.
 func waitReady(cfg *Config, client *weaviate.Client, indexStart time.Time, maxDuration time.Duration) time.Time {
 	start := time.Now()
 	current := time.Now()
