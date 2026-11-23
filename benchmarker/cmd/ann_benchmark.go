@@ -529,6 +529,8 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 				"rescoreLimit": cfg.RescoreLimit,
 			},
 		}
+	} else if cfg.IndexType == "postingedge" {
+		vectorIndexConfig = postingEdgeIndexConfig(cfg)
 	} else {
 		log.Fatal().Msgf("Unknown index type %s", cfg.IndexType)
 	}
@@ -714,9 +716,36 @@ func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 		}
 	case "hfresh":
 		vectorIndexConfig["searchProbe"] = ef
+	case "postingedge":
+		vectorIndexConfig["ef"] = ef
 	}
 
 	putClassJSON(cfg, classConfig)
+}
+
+// postingEdgeIndexConfig is the vectorIndexConfig of a postingedge class. An
+// option the run did not set is left to Weaviate: efConstruction and
+// maxPostingSizeKB go in only when their flags were given, since the flags'
+// defaults are those of HNSW and HFresh, and rq.rescoreLimit only when it is
+// not -1, which is automatic in the index as well.
+func postingEdgeIndexConfig(cfg *Config) map[string]interface{} {
+	rq := map[string]interface{}{
+		"cacheMode": cfg.CacheMode,
+	}
+	if cfg.RescoreLimit > -1 {
+		rq["rescoreLimit"] = cfg.RescoreLimit
+	}
+	config := map[string]interface{}{
+		"distance": cfg.DistanceMetric,
+		"rq":       rq,
+	}
+	if cfg.EfConstructionSet {
+		config["efConstruction"] = cfg.EfConstruction
+	}
+	if cfg.MaxPostingSizeKBSet {
+		config["maxPostingSizeKB"] = cfg.MaxPostingSizeKB
+	}
+	return config
 }
 
 func waitReady(cfg *Config, client *weaviate.Client, indexStart time.Time, maxDuration time.Duration, minQueueSize int64) time.Time {
@@ -900,7 +929,7 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 				result = benchmarkANN(*cfg, testData, neighbors, filters)
 			}
 
-			if cfg.IndexType == "hnsw" || cfg.IndexType == "dynamic" {
+			if cfg.IndexType == "hnsw" || cfg.IndexType == "dynamic" || cfg.IndexType == "postingedge" {
 				log.Info().Stringer("mean", result.Mean).Float64("qps", result.QueriesPerSecond).Float64("recall", result.Recall).Float64("ndcg", result.NDCG).Int("parallel", cfg.Parallel).Int("limit", cfg.Limit).Str("api", cfg.API).Int("ef", ef).Int("count", result.Total).Int("failed", result.Failed).Msg("Benchmark result")
 			} else if cfg.IndexType == "hfresh" {
 				log.Info().Stringer("mean", result.Mean).Float64("qps", result.QueriesPerSecond).Float64("recall", result.Recall).Float64("ndcg", result.NDCG).Int("parallel", cfg.Parallel).Int("limit", cfg.Limit).Str("api", cfg.API).Int("searchProbe", ef).Int("count", result.Total).Int("failed", result.Failed).Msg("Benchmark result")
@@ -936,7 +965,7 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 			switch cfg.IndexType {
 			case "flat":
 				benchResult.RescoreLimit = ef
-			case "hnsw", "dynamic":
+			case "hnsw", "dynamic", "postingedge":
 				benchResult.Ef = ef
 			case "hfresh":
 				benchResult.SearchProbe = ef
@@ -1035,6 +1064,8 @@ var annBenchmarkCommand = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := globalConfig
 		cfg.Mode = "ann-benchmark"
+		cfg.EfConstructionSet = cmd.Flags().Changed("efConstruction")
+		cfg.MaxPostingSizeKBSet = cmd.Flags().Changed("maxPostingSizeKB")
 
 		if err := cfg.Validate(); err != nil {
 			fatal(err)
@@ -1216,7 +1247,7 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.EfArray,
 		"efArray", "16,24,32,48,64,96,128,256,512", "Array of ef parameters as comma separated list")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.IndexType,
-		"indexType", "hnsw", "Index type (hnsw, flat or hfresh)")
+		"indexType", "hnsw", "Index type (hnsw, flat, hfresh or postingedge)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MaxConnections,
 		"maxConnections", 16, "Set Weaviate efConstruction parameter (default 16)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.CacheSize,
@@ -1290,11 +1321,13 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.Dataset,
 		"dataset", "", "Dataset name e.g. dbpedia-openai-ada002-1536-float32-angular-100k")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MaxPostingSizeKB,
-		"maxPostingSizeKB", 48, "Max posting size for HFresh index (default 48)")
+		"maxPostingSizeKB", 48, "Max posting size for HFresh index (default 48); a postingedge index takes it only when given, and is automatic otherwise")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.Replicas,
 		"replicas", 4, "Number of replicas for HFresh index (default 4)")
 	annBenchmarkCommand.PersistentFlags().Float64Var(&globalConfig.RngFactor,
 		"rngFactor", 10.0, "RNG factor for HFresh index (default 10.0)")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.CacheMode,
+		"cacheMode", "routing", "rq.cacheMode of a postingedge index: routing (the codes the postings are ranked by stay in memory) or none (no code in memory)")
 }
 
 func benchmarkANN(cfg Config, queries Queries, neighbors Neighbors, filters []int) Results {

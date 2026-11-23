@@ -84,10 +84,16 @@ type Config struct {
 	MaxPostingSizeKB         int
 	Replicas                 int
 	RngFactor                float64
-	PayloadBytes             int
-	FilterCatalog            string // path to a filter-catalog manifest (see filter_catalog.go)
-	FilterSelect             string // which catalog filter(s) to query
-	TrainRows                int    // import only the first N train rows (0 = all)
+	CacheMode                string // rq.cacheMode of a postingedge index: routing or none
+	// EfConstructionSet and MaxPostingSizeKBSet tell whether those flags were
+	// given. The defaults of the flags are HNSW's and HFresh's; a postingedge
+	// class takes Weaviate's own when they were not.
+	EfConstructionSet   bool
+	MaxPostingSizeKBSet bool
+	PayloadBytes        int
+	FilterCatalog       string // path to a filter-catalog manifest (see filter_catalog.go)
+	FilterSelect        string // which catalog filter(s) to query
+	TrainRows           int    // import only the first N train rows (0 = all)
 
 	catalog             *filterCatalog
 	catalogQueryFilters []*catalogFilter
@@ -211,6 +217,12 @@ func (c *Config) validateANN() error {
 		}
 	}
 
+	if c.IndexType == "postingedge" {
+		if err := c.validatePostingEdge(); err != nil {
+			return err
+		}
+	}
+
 	if err := c.validateFilterCatalog(); err != nil {
 		return err
 	}
@@ -223,5 +235,28 @@ func (c *Config) validateANN() error {
 		}
 	}
 
+	return nil
+}
+
+// validatePostingEdge checks the options of a postingedge index. Its codes are
+// always its own 1-bit RQ, so the compression flags of the other indexes do not
+// apply; what is left is rq.rescoreLimit (--rescoreLimit) and rq.cacheMode
+// (--cacheMode). Its first version only supports cosine and a single vector.
+func (c *Config) validatePostingEdge() error {
+	if c.DistanceMetric != "cosine" {
+		return errors.Errorf("indexType postingedge only supports distance cosine, got %q", c.DistanceMetric)
+	}
+	if c.PQ != "disabled" || c.BQ || c.SQ != "disabled" || c.RQ != "disabled" {
+		return errors.Errorf("indexType postingedge always uses its own 1-bit RQ codes: " +
+			"leave --pq, --bq, --sq and --rq unset, and use --rescoreLimit and --cacheMode")
+	}
+	if c.MultiVectorDimensions > 0 {
+		return errors.Errorf("indexType postingedge does not support multi-vectors")
+	}
+	switch c.CacheMode {
+	case "routing", "none":
+	default:
+		return errors.Errorf("cacheMode must be routing or none, got %q", c.CacheMode)
+	}
 	return nil
 }

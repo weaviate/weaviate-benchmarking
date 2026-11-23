@@ -48,7 +48,8 @@ Flags:
   -h, --help                         help for ann-benchmark
       --httpOrigin string            The http origin for Weaviate (only used if grpc enabled) (default "localhost:8080")
       --httpScheme string            The http scheme (http or https) (default "http")
-      --indexType string             Index type (hnsw, flat, hfresh) (default "hnsw")
+      --cacheMode string             rq.cacheMode of a postingedge index: routing or none (default "routing")
+      --indexType string             Index type (hnsw, flat, hfresh, postingedge) (default "hnsw")
       --labels string                Labels of format key1=value1,key2=value2,...
   -l, --limit int                    Set the query limit / k (default 10) (default 10)
       --maxConnections int           Set Weaviate efConstruction parameter (default 16) (default 16)
@@ -76,6 +77,26 @@ Flags:
   -v, --vectors string               Path to the hdf5 file containing the vectors
 
 
+```
+
+## The postingedge index type
+
+`--indexType postingedge` benchmarks Weaviate's posting+edges index. Its codes are always its own centered 1-bit RQ, so `--pq`, `--bq`, `--sq` and `--rq` must stay unset. The options it takes:
+
+- `--efArray`: the `ef` values the queries are swept over.
+- `--efConstruction`: the ef of the search an insert finds its edges with. Sent only when given; otherwise Weaviate's default (160) applies, not this flag's default.
+- `--rescoreLimit`: `rq.rescoreLimit`. `-1`, the default, is automatic in the index too.
+- `--maxPostingSizeKB`: sent only when given; otherwise the index's automatic size applies, not HFresh's 48.
+- `--cacheMode`: `rq.cacheMode`, `routing` (the codes the postings are ranked by stay in memory, the default) or `none` (no code in memory).
+
+Only `--distance cosine` is supported for now.
+
+```bash
+./weaviate-benchmarker ann-benchmark \
+  --indexType postingedge \
+  --vectors dbpedia-100k-openai-ada002.hdf5 \
+  --distance cosine \
+  --efArray 10,14,20,28,40,56,80,113,160,226,320
 ```
 
 ## Memory Monitoring Feature 🆕
