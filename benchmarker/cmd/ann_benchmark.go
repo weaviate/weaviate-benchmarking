@@ -719,28 +719,45 @@ func updateEf(ef int, cfg *Config, client *weaviate.Client) {
 	putClassJSON(cfg, classConfig)
 }
 
-func waitReady(cfg *Config, client *weaviate.Client, indexStart time.Time, maxDuration time.Duration, minQueueSize int64) time.Time {
+// indexingProgress returns how many vectors are still queued for async
+// indexing in className's shards, and how many of those shards still report
+// INDEXING. className must be the canonical (server-side) collection name.
+func indexingProgress(nodes []cluster.Node, className string) (queued int64, indexingShards int) {
+	for _, n := range nodes {
+		for _, s := range n.Shards {
+			if s.Collection != className {
+				continue
+			}
+			queued += s.VectorQueueLength
+			if s.VectorIndexingStatus == "INDEXING" {
+				indexingShards++
+			}
+		}
+	}
+	return queued, indexingShards
+}
+
+// waitReady blocks until every shard of the collection has an empty vector
+// queue and no longer reports INDEXING, so queries run against a fully built
+// index and the reported import time includes async indexing.
+func waitReady(cfg *Config, client *weaviate.Client, indexStart time.Time, maxDuration time.Duration) time.Time {
 	start := time.Now()
 	current := time.Now()
 
-	log.Info().Msg("Waiting for queue to be empty")
-	for current.Sub(start) < maxDuration {
+	log.Info().Str("collection", cfg.ClassName).Msg("Waiting for queue to be empty")
+	for polls := 0; current.Sub(start) < maxDuration; polls++ {
 		nodes, err := client.Cluster.ListNodes(context.Background(), cluster.ListNodesOptions{Verbose: true})
 		if err != nil {
 			panic(err)
 		}
-		totalShardQueue := int64(0)
-		for _, n := range nodes {
-			for _, s := range n.Shards {
-				if s.Collection == cfg.ClassName && s.VectorQueueLength > 0 {
-					totalShardQueue += s.VectorQueueLength
-				}
-			}
-		}
-		if totalShardQueue < minQueueSize {
+		queued, indexing := indexingProgress(nodes, cfg.ClassName)
+		if queued == 0 && indexing == 0 {
 			log.Info().Stringer("duration", current.Sub(start)).Msg("Queue ready")
 			log.Info().Stringer("duration", current.Sub(indexStart)).Msg("Total load and queue ready")
 			return current
+		}
+		if polls%15 == 0 {
+			log.Info().Int64("queued", queued).Int("indexingShards", indexing).Stringer("elapsed", current.Sub(start)).Msg("Still indexing")
 		}
 		time.Sleep(2 * time.Second)
 		current = time.Now()
@@ -1137,7 +1154,7 @@ var annBenchmarkCommand = &cobra.Command{
 				}
 				if !cfg.SkipAsyncReady {
 					startTime := time.Now()
-					waitReady(&cfg, client, startTime, 30*time.Minute, 1000)
+					waitReady(&cfg, client, startTime, 30*time.Minute)
 				}
 
 				runQueries(&cfg, importTime, testData, neighbors, testFilters)

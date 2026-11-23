@@ -122,6 +122,11 @@ func (c *Config) validateCommon() error {
 		return errors.Errorf("origin must be set")
 	}
 
+	// Weaviate stores collection names with an uppercased first letter. Use
+	// that canonical form everywhere, so comparisons against names returned by
+	// the server (e.g. in waitReady) match a lowercase --className.
+	c.ClassName = canonicalClassName(c.ClassName)
+
 	switch c.API {
 	case "graphql", "grpc":
 	default:
@@ -224,4 +229,22 @@ func (c *Config) validateANN() error {
 	}
 
 	return nil
+}
+
+// canonicalClassName mirrors Weaviate's entities/schema.UppercaseClassName:
+// the first letter of the class is uppercased, and for a namespace-qualified
+// name ("<namespace>:<Class>") only the class part is. It is copied rather
+// than imported because entities/schema drags in the go-openapi dependencies.
+func canonicalClassName(name string) string {
+	if ns, cls, ok := strings.Cut(name, ":"); ok {
+		return ns + ":" + uppercaseFirst(cls)
+	}
+	return uppercaseFirst(name)
+}
+
+func uppercaseFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }

@@ -105,7 +105,7 @@ func loadANNBenchmarksData(ds Dataset, cfg *Config, client *weaviate.Client, max
 	endTime := time.Now()
 	log.Info().Stringer("duration", endTime.Sub(startTime)).Msg("Total load time")
 	if !cfg.SkipAsyncReady {
-		endTime = waitReady(cfg, client, startTime, 4*time.Hour, 1000)
+		endTime = waitReady(cfg, client, startTime, 4*time.Hour)
 	}
 	return endTime.Sub(startTime)
 }
