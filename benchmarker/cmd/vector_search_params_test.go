@@ -218,3 +218,21 @@ func TestResultsJSONBenchmark_EfModeKeys(t *testing.T) {
 	require.Contains(t, string(data), `"efMode":"request"`)
 	require.Contains(t, string(data), `"serverVersion":"1.41.0"`)
 }
+
+func TestSchemaFilterStrategy(t *testing.T) {
+	tests := []struct {
+		flag string
+		want string
+	}{
+		{flag: "", want: "sweeping"},
+		{flag: "sweeping", want: "sweeping"},
+		{flag: "acorn", want: "acorn"},
+		{flag: "pathseer", want: "pathseer"},
+	}
+	for _, tt := range tests {
+		t.Run("flag="+tt.flag, func(t *testing.T) {
+			cfg := Config{FilterStrategy: tt.flag}
+			require.Equal(t, tt.want, schemaFilterStrategy(&cfg))
+		})
+	}
+}

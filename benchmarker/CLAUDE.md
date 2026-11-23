@@ -89,7 +89,7 @@ All flags are defined in `cmd/config.go`. Key ones for `ann-benchmark`:
 | `--efConstruction` | `256` | HNSW build parameter |
 | `--efArray` | `16,...,512` | Values benchmarked in turn: `ef` for hnsw/dynamic, `searchProbe` for hfresh, `rescoreLimit` for flat |
 | `--efMode` | `auto` | `request` sends the value as `vector_search_params` per query (Weaviate >= 1.41); `schema` rewrites `vectorIndexConfig`; `auto` picks by server version, flat and dynamic stay on `schema` |
-| `--filterStrategy` | empty | `sweeping`, `acorn` or `pathseer`; written to the schema at import and sent per filtered query in request mode |
+| `--filterStrategy` | empty | `sweeping`, `acorn` or `pathseer`; the schema gets `sweeping` when unset (the server default is `acorn` since 1.35); when set it is also sent per filtered query in request mode |
 | `--maxConnections` | `16` | HNSW build parameter |
 | `--queryDuration` | `0` | Run queries for N seconds instead of one pass |
 | `--updatePercentage` | `0` | Percentage of vectors to update after loading |

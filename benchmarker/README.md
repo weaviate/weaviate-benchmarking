@@ -39,11 +39,11 @@ Flags:
   -d, --distance string              Set distance metric (mandatory)
       --dynamicThreshold int         Threshold to trigger the update in the dynamic index (default 10 000) (default 10000)
       --efArray string               Array of ef parameters as comma separated list (default "16,24,32,48,64,96,128,256,512")
-      --efMode string                How efArray values are applied: auto (per-request vector_search_params on Weaviate >= 1.41, schema update otherwise; flat and dynamic always use schema), request, schema (default "auto")
+      --efMode string                How efArray values are applied: auto (per-request vector_search_params on Weaviate >= 1.41, schema update otherwise; flat always and dynamic in auto use schema), request, schema (default "auto")
       --efConstruction int           Set Weaviate efConstruction parameter (default 256) (default 256)
       --existingSchema               Leave the schema as-is (default false)
       --filter                       Whether to use filtering for the dataset (default false)
-      --filterStrategy string        Filter strategy (sweeping, acorn or pathseer); written to the schema at import and, in request mode, sent with every filtered query. Empty keeps the server default
+      --filterStrategy string        Filter strategy (sweeping, acorn or pathseer). Written to the schema at import (sweeping when unset, as before) and, when set, sent with every filtered query in request mode
       --flatSearchCutoff int         Flat search cut off (default 40 000) (default 40000)
   -f, --format string                Output format, one of [text, json] (default "text")
   -h, --help                         help for ann-benchmark

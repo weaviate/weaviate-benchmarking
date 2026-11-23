@@ -46,3 +46,14 @@ func filterStrategyEnum(s string) (weaviategrpc.FilterStrategy, bool) {
 		return weaviategrpc.FilterStrategy_FILTER_STRATEGY_UNSPECIFIED, false
 	}
 }
+
+// schemaFilterStrategy is the value createSchema writes into vectorIndexConfig.
+// The benchmarker has always pinned sweeping explicitly; the server default
+// moved to acorn in 1.35, so an unset flag keeps writing sweeping to leave
+// historical filtered numbers comparable. --filterStrategy overrides it.
+func schemaFilterStrategy(cfg *Config) string {
+	if cfg.FilterStrategy == "" {
+		return "sweeping"
+	}
+	return cfg.FilterStrategy
+}
