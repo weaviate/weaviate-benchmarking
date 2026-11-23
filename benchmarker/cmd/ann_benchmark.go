@@ -54,6 +54,8 @@ type ResultsJSONBenchmark struct {
 	Ef               int     `json:"ef,omitempty"`
 	RescoreLimit     int     `json:"rescoreLimit,omitempty"`
 	SearchProbe      int     `json:"searchProbe,omitempty"`
+	EfMode           string  `json:"efMode"`
+	ServerVersion    string  `json:"serverVersion,omitempty"`
 	EfConstruction   int     `json:"efConstruction"`
 	MaxConnections   int     `json:"maxConnections"`
 	Mean             float64 `json:"meanLatency"`
@@ -815,6 +817,28 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 	client := createClient(cfg)
 	os.Mkdir("./results", 0o755)
 
+	versionCtx, cancelVersion := context.WithTimeout(context.Background(), 10*time.Second)
+	serverVersion, err := fetchServerVersion(versionCtx, client)
+	cancelVersion()
+	if err != nil {
+		log.Warnf("Could not read the server version from /v1/meta: %v", err)
+	}
+	mode, reason := resolveEfMode(cfg, serverVersion)
+	log.WithFields(log.Fields{
+		"efMode": mode, "serverVersion": serverVersion, "indexType": cfg.IndexType, "reason": reason,
+	}).Info("ef application mode")
+	if mode == efModeRequest {
+		if supported, err := serverSupportsVectorSearchParams(serverVersion); err != nil || !supported {
+			log.Warnf("Server %q does not support vector_search_params: the per-request ef values will be dropped and queries run at the collection defaults", serverVersion)
+		}
+		for _, ef := range efCandidates {
+			if ef > 10000 {
+				log.Warnf("ef %d exceeds the default server cap of 10000 (HNSW_MAX_SEARCH_EF / HFRESH_MAX_SEARCH_PROBE); the server rejects such queries unless the cap is raised", ef)
+				break
+			}
+		}
+	}
+
 	iteration := 0
 	for {
 		shouldStop := shouldStopRunQueries(iteration, cfg)
@@ -829,7 +853,14 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 
 		benchmarkResultsMap := make([]map[string]interface{}, 0, len(efCandidates))
 		for _, ef := range efCandidates {
-			updateEf(ef, cfg, client)
+			if mode == efModeSchema || cfg.IndexType == "dynamic" {
+				updateEf(ef, cfg, client)
+			}
+			if mode == efModeRequest {
+				cfg.RequestEf = ef
+			} else {
+				cfg.RequestEf = 0
+			}
 
 			var result Results
 
@@ -843,19 +874,19 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 				log.WithFields(log.Fields{
 					"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall, "ndcg": result.NDCG,
 					"parallel": cfg.Parallel, "limit": cfg.Limit,
-					"api": cfg.API, "ef": ef, "count": result.Total, "failed": result.Failed,
+					"api": cfg.API, "efMode": mode, "ef": ef, "count": result.Total, "failed": result.Failed,
 				}).Info("Benchmark result")
 			} else if cfg.IndexType == "hfresh" {
 				log.WithFields(log.Fields{
 					"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall, "ndcg": result.NDCG,
 					"parallel": cfg.Parallel, "limit": cfg.Limit,
-					"api": cfg.API, "searchProbe": ef, "count": result.Total, "failed": result.Failed,
+					"api": cfg.API, "efMode": mode, "searchProbe": ef, "count": result.Total, "failed": result.Failed,
 				}).Info("Benchmark result")
 			} else {
 				log.WithFields(log.Fields{
 					"mean": result.Mean, "qps": result.QueriesPerSecond, "recall": result.Recall, "ndcg": result.NDCG,
 					"parallel": cfg.Parallel, "limit": cfg.Limit,
-					"api": cfg.API, "rescoreLimit": ef, "count": result.Total, "failed": result.Failed,
+					"api": cfg.API, "efMode": mode, "rescoreLimit": ef, "count": result.Total, "failed": result.Failed,
 				}).Info("Benchmark result")
 			}
 
@@ -865,6 +896,8 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 
 			benchResult := ResultsJSONBenchmark{
 				Api:              cfg.API,
+				EfMode:           string(mode),
+				ServerVersion:    serverVersion,
 				EfConstruction:   cfg.EfConstruction,
 				MaxConnections:   cfg.MaxConnections,
 				Mean:             result.Mean.Seconds(),

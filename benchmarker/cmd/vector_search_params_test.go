@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -148,4 +149,72 @@ func TestNearVectorQueryGrpc_VectorSearchParams(t *testing.T) {
 			require.Empty(t, req.VectorSearchParamsForTargets)
 		})
 	}
+}
+
+func TestServerSupportsVectorSearchParams(t *testing.T) {
+	tests := []struct {
+		version string
+		want    bool
+		wantErr bool
+	}{
+		{version: "1.40.6", want: false},
+		{version: "1.41.0-rc.1", want: true},
+		{version: "1.41.0", want: true},
+		{version: "v1.41.0", want: true},
+		{version: "1.41.0-rc.1-352208b", want: true},
+		{version: "2.0.0", want: true},
+		{version: "1.9.9", want: false},
+		{version: "1.41", want: true},
+		{version: "latest", wantErr: true},
+		{version: "", wantErr: true},
+		{version: "1.x", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.version, func(t *testing.T) {
+			got, err := serverSupportsVectorSearchParams(tt.version)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestResolveEfMode(t *testing.T) {
+	tests := []struct {
+		name      string
+		efMode    string
+		indexType string
+		version   string
+		want      efMode
+	}{
+		{name: "auto hnsw old server", efMode: "auto", indexType: "hnsw", version: "1.40.6", want: efModeSchema},
+		{name: "auto hnsw new server", efMode: "auto", indexType: "hnsw", version: "1.41.0-rc.1", want: efModeRequest},
+		{name: "auto hfresh new server", efMode: "auto", indexType: "hfresh", version: "1.41.0", want: efModeRequest},
+		{name: "auto flat new server", efMode: "auto", indexType: "flat", version: "1.41.0", want: efModeSchema},
+		{name: "auto dynamic new server", efMode: "auto", indexType: "dynamic", version: "1.41.0", want: efModeSchema},
+		{name: "auto unknown version", efMode: "auto", indexType: "hnsw", version: "", want: efModeSchema},
+		{name: "auto unparsable version", efMode: "auto", indexType: "hnsw", version: "latest", want: efModeSchema},
+		{name: "request forces request on old server", efMode: "request", indexType: "hnsw", version: "1.40.0", want: efModeRequest},
+		{name: "request on dynamic", efMode: "request", indexType: "dynamic", version: "1.41.0", want: efModeRequest},
+		{name: "request on flat still schema", efMode: "request", indexType: "flat", version: "1.41.0", want: efModeSchema},
+		{name: "schema forces schema on new server", efMode: "schema", indexType: "hnsw", version: "1.41.0", want: efModeSchema},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{EfMode: tt.efMode, IndexType: tt.indexType}
+			mode, reason := resolveEfMode(&cfg, tt.version)
+			require.Equal(t, tt.want, mode)
+			require.NotEmpty(t, reason)
+		})
+	}
+}
+
+func TestResultsJSONBenchmark_EfModeKeys(t *testing.T) {
+	data, err := json.Marshal(ResultsJSONBenchmark{EfMode: "request", ServerVersion: "1.41.0"})
+	require.NoError(t, err)
+	require.Contains(t, string(data), `"efMode":"request"`)
+	require.Contains(t, string(data), `"serverVersion":"1.41.0"`)
 }
