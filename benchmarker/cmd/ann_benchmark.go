@@ -21,9 +21,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
-	"github.com/weaviate/weaviate-go-client/v4/weaviate"
-	"github.com/weaviate/weaviate-go-client/v4/weaviate/auth"
-	"github.com/weaviate/weaviate-go-client/v4/weaviate/fault"
+	"github.com/weaviate/weaviate-go-client/v5/weaviate"
+	"github.com/weaviate/weaviate-go-client/v5/weaviate/auth"
+	"github.com/weaviate/weaviate-go-client/v5/weaviate/fault"
 	"github.com/weaviate/weaviate/entities/models"
 	weaviategrpc "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
 	"github.com/weaviate/weaviate/usecases/byteops"
@@ -505,10 +505,12 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		}
 	}
 
-	if cfg.ReplicationFactor > 1 || cfg.AsyncReplicationEnabled {
+	if cfg.AsyncReplicationEnabled {
+		log.Warn("--asyncReplicationEnabled has no effect: async replication is always on since Weaviate 1.38 and the schema toggle was removed")
+	}
+	if cfg.ReplicationFactor > 1 {
 		classObj.ReplicationConfig = &models.ReplicationConfig{
-			Factor:       int64(cfg.ReplicationFactor),
-			AsyncEnabled: cfg.AsyncReplicationEnabled,
+			Factor: int64(cfg.ReplicationFactor),
 		}
 	}
 
@@ -1213,7 +1215,7 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.ReplicationFactor,
 		"replicationFactor", 1, "Replication factor (default 1)")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.AsyncReplicationEnabled,
-		"asyncReplicationEnabled", false, "Enable asynchronous replication (default false)")
+		"asyncReplicationEnabled", false, "Deprecated, no effect: async replication is always enabled since Weaviate 1.38")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.MemoryMonitoringEnabled,
 		"memoryMonitoringEnabled", false, "Enable continuous memory monitoring (default false)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MemoryMonitoringInterval,

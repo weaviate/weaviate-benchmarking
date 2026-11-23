@@ -1,6 +1,6 @@
 ### BUILDER STAGE ###
-FROM golang:1.24-bookworm AS builder
-# or: FROM golang:1.24-ubuntu24.04
+FROM golang:1.26-bookworm AS builder
+# or: FROM golang:1.26-ubuntu24.04
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \

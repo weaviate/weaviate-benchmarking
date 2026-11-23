@@ -15,7 +15,7 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/spf13/cobra"
-	"github.com/weaviate/weaviate-go-client/v4/weaviate"
+	"github.com/weaviate/weaviate-go-client/v5/weaviate"
 	weaviategrpc "github.com/weaviate/weaviate/grpc/generated/protocol/v1"
 	"github.com/weaviate/weaviate/usecases/byteops"
 	"google.golang.org/protobuf/proto"
