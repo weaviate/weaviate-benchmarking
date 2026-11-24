@@ -39,7 +39,7 @@ Flags:
   -d, --distance string              Set distance metric (mandatory)
       --dynamicThreshold int         Threshold to trigger the update in the dynamic index (default 10 000) (default 10000)
       --efArray string               Array of ef parameters as comma separated list (default "16,24,32,48,64,96,128,256,512")
-      --efMode string                How efArray values are applied: auto (per-request vector_search_params on Weaviate >= 1.41, schema update otherwise; flat always and dynamic in auto use schema), request, schema (default "auto")
+      --efMode string                How efArray values are applied: auto (per-request vector_search_params on Weaviate >= 1.42, schema update otherwise; flat always and dynamic in auto use schema), request, schema (default "auto")
       --efConstruction int           Set Weaviate efConstruction parameter (default 256) (default 256)
       --existingSchema               Leave the schema as-is (default false)
       --filter                       Whether to use filtering for the dataset (default false)
@@ -81,7 +81,7 @@ Flags:
 
 ### How `ef` is applied
 
-Every value of `--efArray` is benchmarked in turn. On Weaviate 1.41 and newer the value travels with each query as
+Every value of `--efArray` is benchmarked in turn. On Weaviate 1.42 and newer the value travels with each query as
 `vector_search_params` (`ef` for `hnsw`, `searchProbe` for `hfresh`), so the collection is never modified between
 runs. On older servers, for `--indexType flat` (whose `rescoreLimit` is not a per-request knob) and for
 `--indexType dynamic` in `auto` mode, the benchmarker falls back to rewriting `vectorIndexConfig` before each run,

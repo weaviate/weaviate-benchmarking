@@ -1192,7 +1192,7 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.EfArray,
 		"efArray", "16,24,32,48,64,96,128,256,512", "Array of ef parameters as comma separated list")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.EfMode,
-		"efMode", "auto", "How efArray values are applied: auto (per-request vector_search_params on Weaviate >= 1.41, schema update otherwise; flat always and dynamic in auto use schema), request, schema")
+		"efMode", "auto", "How efArray values are applied: auto (per-request vector_search_params on Weaviate >= 1.42, schema update otherwise; flat always and dynamic in auto use schema), request, schema")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.IndexType,
 		"indexType", "hnsw", "Index type (hnsw, flat, dynamic or hfresh)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MaxConnections,

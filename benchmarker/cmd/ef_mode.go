@@ -15,10 +15,10 @@ type efMode string
 
 const (
 	// efModeRequest sends the value as vector_search_params with every query
-	// (ef for hnsw/dynamic, searchProbe for hfresh). Weaviate >= 1.41.
+	// (ef for hnsw/dynamic, searchProbe for hfresh). Weaviate >= 1.42.
 	efModeRequest efMode = "request"
 	// efModeSchema rewrites the collection's vectorIndexConfig before each
-	// batch of queries (the pre-1.41 behaviour, and the only option for flat).
+	// batch of queries (the pre-1.42 behaviour, and the only option for flat).
 	efModeSchema efMode = "schema"
 )
 
@@ -35,7 +35,7 @@ func fetchServerVersion(ctx context.Context, client *weaviate.Client) (string, e
 }
 
 // serverSupportsVectorSearchParams reports whether a server version string
-// (e.g. "1.41.0-rc.1", "v1.40.6", "1.41.0-rc.1-352208b") is at least 1.41 by
+// (e.g. "1.42.0-rc.1", "v1.40.6", "1.42.0-rc.1-352208b") is at least 1.42 by
 // major.minor. Anything that does not start with two numeric components is an
 // error so callers can fall back deliberately.
 func serverSupportsVectorSearchParams(version string) (bool, error) {
@@ -58,7 +58,7 @@ func serverSupportsVectorSearchParams(version string) (bool, error) {
 	if major != 1 {
 		return major > 1, nil
 	}
-	return minor >= 41, nil
+	return minor >= 42, nil
 }
 
 // resolveEfMode decides how efArray values are applied for this run.
@@ -74,7 +74,7 @@ func resolveEfMode(cfg *Config, serverVersion string) (efMode, string) {
 		return efModeSchema, "--efMode=schema"
 	case "request":
 		if parseErr != nil || !supported {
-			return efModeRequest, fmt.Sprintf("--efMode=request forced although server version %q is below 1.41 or unknown", serverVersion)
+			return efModeRequest, fmt.Sprintf("--efMode=request forced although server version %q is below 1.42 or unknown", serverVersion)
 		}
 		return efModeRequest, "--efMode=request"
 	}
@@ -85,7 +85,7 @@ func resolveEfMode(cfg *Config, serverVersion string) (efMode, string) {
 		return efModeSchema, fmt.Sprintf("server version %q could not be parsed, falling back to schema updates", serverVersion)
 	}
 	if !supported {
-		return efModeSchema, fmt.Sprintf("server %s is below 1.41, using schema updates", serverVersion)
+		return efModeSchema, fmt.Sprintf("server %s is below 1.42, using schema updates", serverVersion)
 	}
 	return efModeRequest, fmt.Sprintf("server %s supports vector_search_params", serverVersion)
 }

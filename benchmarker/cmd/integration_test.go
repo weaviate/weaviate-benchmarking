@@ -204,9 +204,9 @@ func TestIntegration_ResultsJSON(t *testing.T) {
 	assert.Contains(t, out, `"recall"`)
 }
 
-// skipIfServerBelow141 skips tests that need vector_search_params on servers
+// skipIfServerBelow142 skips tests that need vector_search_params on servers
 // that silently drop the field.
-func skipIfServerBelow141(t *testing.T, cfg *Config) string {
+func skipIfServerBelow142(t *testing.T, cfg *Config) string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -215,7 +215,7 @@ func skipIfServerBelow141(t *testing.T, cfg *Config) string {
 	supported, err := serverSupportsVectorSearchParams(version)
 	require.NoError(t, err)
 	if !supported {
-		t.Skipf("server %s is below 1.41 and ignores vector_search_params", version)
+		t.Skipf("server %s is below 1.42 and ignores vector_search_params", version)
 	}
 	return version
 }
@@ -299,11 +299,11 @@ func recallOf(got, truth []int) float64 {
 
 // TestIntegration_VectorSearchParams_RejectedAboveCap is the deterministic proof
 // that the server parses vector_search_params: an ef above HNSW_MAX_SEARCH_EF is
-// rejected with InvalidArgument naming the cap. A pre-1.41 server would accept it.
+// rejected with InvalidArgument naming the cap. A pre-1.42 server would accept it.
 func TestIntegration_VectorSearchParams_RejectedAboveCap(t *testing.T) {
 	cfg := integrationCfg()
 	skipIfWeaviateUnavailable(t, cfg.Origin)
-	skipIfServerBelow141(t, &cfg)
+	skipIfServerBelow142(t, &cfg)
 
 	vectors := generateVectors(integrationVectorCount, integrationDimensions, 11)
 	setupTestCollection(t, &cfg, vectors)
@@ -329,7 +329,7 @@ func TestIntegration_VectorSearchParams_EfChangesResults(t *testing.T) {
 	cfg := integrationCfg()
 	cfg.Dimensions = 32
 	skipIfWeaviateUnavailable(t, cfg.Origin)
-	skipIfServerBelow141(t, &cfg)
+	skipIfServerBelow142(t, &cfg)
 
 	const n = 3000
 	vectors := generateVectors(n, cfg.Dimensions, 2024)
@@ -370,7 +370,7 @@ func TestIntegration_EfModeAuto(t *testing.T) {
 	cfg := integrationCfg()
 	cfg.EfMode = "auto"
 	skipIfWeaviateUnavailable(t, cfg.Origin)
-	version := skipIfServerBelow141(t, &cfg)
+	version := skipIfServerBelow142(t, &cfg)
 
 	mode, reason := resolveEfMode(&cfg, version)
 	assert.Equal(t, efModeRequest, mode, reason)

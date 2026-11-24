@@ -158,13 +158,15 @@ func TestServerSupportsVectorSearchParams(t *testing.T) {
 		wantErr bool
 	}{
 		{version: "1.40.6", want: false},
-		{version: "1.41.0-rc.1", want: true},
-		{version: "1.41.0", want: true},
-		{version: "v1.41.0", want: true},
-		{version: "1.41.0-rc.1-352208b", want: true},
+		{version: "1.41.0", want: false},
+		{version: "1.41.9", want: false},
+		{version: "1.42.0-rc.1", want: true},
+		{version: "1.42.0", want: true},
+		{version: "v1.42.0", want: true},
+		{version: "1.42.0-rc.1-352208b", want: true},
 		{version: "2.0.0", want: true},
 		{version: "1.9.9", want: false},
-		{version: "1.41", want: true},
+		{version: "1.42", want: true},
 		{version: "latest", wantErr: true},
 		{version: "", wantErr: true},
 		{version: "1.x", wantErr: true},
@@ -191,16 +193,17 @@ func TestResolveEfMode(t *testing.T) {
 		want      efMode
 	}{
 		{name: "auto hnsw old server", efMode: "auto", indexType: "hnsw", version: "1.40.6", want: efModeSchema},
-		{name: "auto hnsw new server", efMode: "auto", indexType: "hnsw", version: "1.41.0-rc.1", want: efModeRequest},
-		{name: "auto hfresh new server", efMode: "auto", indexType: "hfresh", version: "1.41.0", want: efModeRequest},
-		{name: "auto flat new server", efMode: "auto", indexType: "flat", version: "1.41.0", want: efModeSchema},
-		{name: "auto dynamic new server", efMode: "auto", indexType: "dynamic", version: "1.41.0", want: efModeSchema},
+		{name: "auto hnsw 1.41 release", efMode: "auto", indexType: "hnsw", version: "1.41.0", want: efModeSchema},
+		{name: "auto hnsw new server", efMode: "auto", indexType: "hnsw", version: "1.42.0-rc.1", want: efModeRequest},
+		{name: "auto hfresh new server", efMode: "auto", indexType: "hfresh", version: "1.42.0", want: efModeRequest},
+		{name: "auto flat new server", efMode: "auto", indexType: "flat", version: "1.42.0", want: efModeSchema},
+		{name: "auto dynamic new server", efMode: "auto", indexType: "dynamic", version: "1.42.0", want: efModeSchema},
 		{name: "auto unknown version", efMode: "auto", indexType: "hnsw", version: "", want: efModeSchema},
 		{name: "auto unparsable version", efMode: "auto", indexType: "hnsw", version: "latest", want: efModeSchema},
 		{name: "request forces request on old server", efMode: "request", indexType: "hnsw", version: "1.40.0", want: efModeRequest},
-		{name: "request on dynamic", efMode: "request", indexType: "dynamic", version: "1.41.0", want: efModeRequest},
-		{name: "request on flat still schema", efMode: "request", indexType: "flat", version: "1.41.0", want: efModeSchema},
-		{name: "schema forces schema on new server", efMode: "schema", indexType: "hnsw", version: "1.41.0", want: efModeSchema},
+		{name: "request on dynamic", efMode: "request", indexType: "dynamic", version: "1.42.0", want: efModeRequest},
+		{name: "request on flat still schema", efMode: "request", indexType: "flat", version: "1.42.0", want: efModeSchema},
+		{name: "schema forces schema on new server", efMode: "schema", indexType: "hnsw", version: "1.42.0", want: efModeSchema},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -213,10 +216,10 @@ func TestResolveEfMode(t *testing.T) {
 }
 
 func TestResultsJSONBenchmark_EfModeKeys(t *testing.T) {
-	data, err := json.Marshal(ResultsJSONBenchmark{EfMode: "request", ServerVersion: "1.41.0"})
+	data, err := json.Marshal(ResultsJSONBenchmark{EfMode: "request", ServerVersion: "1.42.0"})
 	require.NoError(t, err)
 	require.Contains(t, string(data), `"efMode":"request"`)
-	require.Contains(t, string(data), `"serverVersion":"1.41.0"`)
+	require.Contains(t, string(data), `"serverVersion":"1.42.0"`)
 }
 
 func TestSchemaFilterStrategy(t *testing.T) {

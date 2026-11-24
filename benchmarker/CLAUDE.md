@@ -33,7 +33,7 @@ go test -v -run TestAnalyzer ./cmd/...   # run a specific test
 docker run -p 8080:8080 -p 50051:50051 semitechnologies/weaviate:latest
 go test -tags integration ./cmd/...
 go test -tags integration -v -run TestIntegration_RecallForExactNeighbors ./cmd/...
-# The TestIntegration_VectorSearchParams_* and TestIntegration_EfModeAuto tests need Weaviate >= 1.41 and skip otherwise
+# The TestIntegration_VectorSearchParams_* and TestIntegration_EfModeAuto tests need Weaviate >= 1.42 and skip otherwise
 ```
 
 Unit tests live in `cmd/benchmark_run_test.go` and cover UUID conversions, NDCG calculation, and results analysis. Integration tests live in `cmd/integration_test.go` and exercise the full insert→query cycle against a real Weaviate instance; they skip automatically if Weaviate is not reachable.
@@ -88,7 +88,7 @@ All flags are defined in `cmd/config.go`. Key ones for `ann-benchmark`:
 | `--pq` / `--sq` / `--rq` | `disabled` | Compression: `disabled`, `auto`, or `enabled` |
 | `--efConstruction` | `256` | HNSW build parameter |
 | `--efArray` | `16,...,512` | Values benchmarked in turn: `ef` for hnsw/dynamic, `searchProbe` for hfresh, `rescoreLimit` for flat |
-| `--efMode` | `auto` | `request` sends the value as `vector_search_params` per query (Weaviate >= 1.41); `schema` rewrites `vectorIndexConfig`; `auto` picks by server version, flat and dynamic stay on `schema` |
+| `--efMode` | `auto` | `request` sends the value as `vector_search_params` per query (Weaviate >= 1.42); `schema` rewrites `vectorIndexConfig`; `auto` picks by server version, flat and dynamic stay on `schema` |
 | `--filterStrategy` | empty | `sweeping`, `acorn` or `pathseer`; the schema gets `sweeping` when unset (the server default is `acorn` since 1.35); when set it is also sent per filtered query in request mode |
 | `--maxConnections` | `16` | HNSW build parameter |
 | `--queryDuration` | `0` | Run queries for N seconds instead of one pass |
