@@ -87,6 +87,12 @@ type Config struct {
 	Replicas                 int
 	RngFactor                float64
 	PayloadBytes             int
+	FilterCatalog            string // path to a filter-catalog manifest (see filter_catalog.go)
+	FilterSelect             string // which catalog filter(s) to query
+	TrainRows                int    // import only the first N train rows (0 = all)
+
+	catalog             *filterCatalog
+	catalogQueryFilters []*catalogFilter
 }
 
 func (c *Config) Validate() error {
@@ -117,6 +123,9 @@ func (c *Config) validateCommon() error {
 	if c.Origin == "" {
 		return errors.Errorf("origin must be set")
 	}
+
+	// Match the name Weaviate stores (first letter uppercased).
+	c.ClassName = canonicalClassName(c.ClassName)
 
 	switch c.API {
 	case "graphql", "grpc":
@@ -222,6 +231,10 @@ func (c *Config) validateANN() error {
 		}
 	}
 
+	if err := c.validateFilterCatalog(); err != nil {
+		return err
+	}
+
 	if c.TrainingLimit == 0 {
 		if c.RQ != "disabled" && c.RQBits == 4 {
 			c.TrainingLimit = 10000
@@ -231,4 +244,19 @@ func (c *Config) validateANN() error {
 	}
 
 	return nil
+}
+
+// canonicalClassName mirrors Weaviate's schema.UppercaseClassName.
+func canonicalClassName(name string) string {
+	if ns, cls, ok := strings.Cut(name, ":"); ok {
+		return ns + ":" + uppercaseFirst(cls)
+	}
+	return uppercaseFirst(name)
+}
+
+func uppercaseFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }

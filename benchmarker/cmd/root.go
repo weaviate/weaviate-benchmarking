@@ -3,30 +3,28 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 )
 
 var globalConfig Config
 
 func init() {
-
-	logLevel, ok := os.LookupEnv("LOG_LEVEL")
-
-	if ok {
-		// If the environment variable is set, parse it to set the log level
-		level, err := log.ParseLevel(logLevel)
-		if err == nil {
-			log.SetLevel(level)
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr, TimeFormat: time.TimeOnly})
+	level := zerolog.InfoLevel
+	if s, ok := os.LookupEnv("LOG_LEVEL"); ok {
+		parsed, err := zerolog.ParseLevel(strings.ToLower(s))
+		if err != nil || parsed == zerolog.NoLevel {
+			log.Warn().Str("value", s).Msg("Invalid LOG_LEVEL, defaulting to info")
 		} else {
-			log.Warn("Invalid log level. Defaulting to Info level.")
-			log.SetLevel(log.InfoLevel)
+			level = parsed
 		}
-	} else {
-		// If the environment variable is not set, default to Info level
-		log.SetLevel(log.InfoLevel)
 	}
+	zerolog.SetGlobalLevel(level)
 
 	initRandomVectors()
 	initRandomText()

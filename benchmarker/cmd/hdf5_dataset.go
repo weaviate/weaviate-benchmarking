@@ -1,7 +1,8 @@
 package cmd
 
 import (
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
+
 	"github.com/weaviate/hdf5"
 )
 
@@ -16,12 +17,12 @@ type Hdf5Dataset struct {
 func NewHdf5Dataset(filePath string, multiVectorDimension int, filters bool) *Hdf5Dataset {
 	file, err := hdf5.OpenFile(filePath, hdf5.F_ACC_RDONLY)
 	if err != nil {
-		log.Fatalf("Error opening file: %v\n", err)
+		log.Fatal().Msgf("Error opening file: %v\n", err)
 	}
 
 	dataset, err := file.OpenDataset("train")
 	if err != nil {
-		log.Fatalf("Error opening dataset: %v", err)
+		log.Fatal().Msgf("Error opening dataset: %v", err)
 	}
 	defer dataset.Close()
 	dataspace := dataset.Space()
@@ -87,7 +88,7 @@ func (ds *Hdf5Dataset) StreamTrainData(chunks chan<- Batch, batchSize int, start
 	trainFilters := ds.TrainFilters()
 	dataset, err := ds.file.OpenDataset("train")
 	if err != nil {
-		log.Fatalf("Error opening dataset: %v", err)
+		log.Fatal().Msgf("Error opening dataset: %v", err)
 	}
 	defer dataset.Close()
 
@@ -112,13 +113,12 @@ func convert1DChunk[D float32 | float64](input []D, dimensions int, batchRows in
 func getHDF5ByteSize(dataset *hdf5.Dataset) uint {
 	datatype, err := dataset.Datatype()
 	if err != nil {
-		log.Fatalf("Unabled to read datatype\n")
+		log.Fatal().Msgf("Unabled to read datatype\n")
 	}
 
-	// log.WithFields(log.Fields{"size": datatype.Size()}).Printf("Parsing HDF5 byte format\n")
 	byteSize := datatype.Size()
 	if byteSize != 4 && byteSize != 8 && byteSize != 16 {
-		log.Fatalf("Unable to load dataset with byte size %d\n", byteSize)
+		log.Fatal().Msgf("Unable to load dataset with byte size %d\n", byteSize)
 	}
 	return byteSize
 }
@@ -130,7 +130,7 @@ func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, batchSize uin
 	dims, _, _ := dataspace.SimpleExtentDims()
 
 	if len(dims) != 2 {
-		log.Fatal("expected 2 dimensions")
+		log.Fatal().Msgf("expected 2 dimensions")
 	}
 
 	byteSize := getHDF5ByteSize(dataset)
@@ -148,12 +148,11 @@ func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, batchSize uin
 		i = startOffset
 	}
 
-	log.WithFields(log.Fields{"rows": rows, "dimensions": dimensions}).Printf(
-		"Reading HDF5 dataset")
+	log.Info().Uint("rows", rows).Uint("dimensions", dimensions).Msg("Reading HDF5 dataset")
 
 	memspace, err := hdf5.CreateSimpleDataspace([]uint{batchSize, dimensions}, []uint{batchSize, dimensions})
 	if err != nil {
-		log.Fatalf("Error creating memspace: %v", err)
+		log.Fatal().Msgf("Error creating memspace: %v", err)
 	}
 	defer memspace.Close()
 
@@ -165,7 +164,7 @@ func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, batchSize uin
 			batchRows = rows - i
 			memspace, err = hdf5.CreateSimpleDataspace([]uint{batchRows, dimensions}, []uint{batchRows, dimensions})
 			if err != nil {
-				log.Fatalf("Error creating final memspace: %v", err)
+				log.Fatal().Msgf("Error creating final memspace: %v", err)
 			}
 		}
 
@@ -173,7 +172,7 @@ func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, batchSize uin
 		count := []uint{batchRows, dimensions}
 
 		if err := dataspace.SelectHyperslab(offset, nil, count, nil); err != nil {
-			log.Fatalf("Error selecting hyperslab: %v", err)
+			log.Fatal().Msgf("Error selecting hyperslab: %v", err)
 		}
 
 		var chunkData [][]float32
@@ -182,8 +181,8 @@ func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, batchSize uin
 			chunkData1D := make([]float32, batchRows*dimensions)
 
 			if err := dataset.ReadSubset(&chunkData1D, memspace, dataspace); err != nil {
-				log.Printf("BatchRows = %d, i = %d, rows = %d", batchRows, i, rows)
-				log.Fatalf("Error reading subset: %v", err)
+				log.Error().Uint("batchRows", batchRows).Uint("i", i).Uint("rows", rows).Msg("Reading subset failed")
+				log.Fatal().Msgf("Error reading subset: %v", err)
 			}
 
 			chunkData = convert1DChunk[float32](chunkData1D, int(dimensions), int(batchRows))
@@ -192,8 +191,8 @@ func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, batchSize uin
 			chunkData1D := make([]float64, batchRows*dimensions)
 
 			if err := dataset.ReadSubset(&chunkData1D, memspace, dataspace); err != nil {
-				log.Printf("BatchRows = %d, i = %d, rows = %d", batchRows, i, rows)
-				log.Fatalf("Error reading subset: %v", err)
+				log.Error().Uint("batchRows", batchRows).Uint("i", i).Uint("rows", rows).Msg("Reading subset failed")
+				log.Fatal().Msgf("Error reading subset: %v", err)
 			}
 
 			chunkData = convert1DChunk[float64](chunkData1D, int(dimensions), int(batchRows))
@@ -201,7 +200,7 @@ func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, batchSize uin
 		}
 
 		if (i+batchRows)%10000 == 0 {
-			log.Printf("Imported %d/%d rows", i+batchRows, rows)
+			log.Info().Msgf("Imported %d/%d rows", i+batchRows, rows)
 		}
 
 		filter := []int{}
@@ -217,7 +216,7 @@ func loadHdf5Streaming(dataset *hdf5.Dataset, chunks chan<- Batch, batchSize uin
 func loadHdf5Float32(file *hdf5.File, name string) [][]float32 {
 	dataset, err := file.OpenDataset(name)
 	if err != nil {
-		log.Fatalf("Error opening loadHdf5Float32 dataset: %v", err)
+		log.Fatal().Msgf("Error opening loadHdf5Float32 dataset: %v", err)
 	}
 	defer dataset.Close()
 	dataspace := dataset.Space()
@@ -226,7 +225,7 @@ func loadHdf5Float32(file *hdf5.File, name string) [][]float32 {
 	byteSize := getHDF5ByteSize(dataset)
 
 	if len(dims) != 2 {
-		log.Fatal("expected 2 dimensions")
+		log.Fatal().Msgf("expected 2 dimensions")
 	}
 	rows := dims[0]
 	dimensions := dims[1]
@@ -249,14 +248,14 @@ func loadHdf5Float32(file *hdf5.File, name string) [][]float32 {
 func loadHdf5Categories(file *hdf5.File, name string) []int {
 	dataset, err := file.OpenDataset(name)
 	if err != nil {
-		log.Fatalf("Error opening neighbors dataset: %v", err)
+		log.Fatal().Msgf("Error opening neighbors dataset: %v", err)
 	}
 	defer dataset.Close()
 
 	dataspace := dataset.Space()
 	dims, _, _ := dataspace.SimpleExtentDims()
 	if len(dims) != 1 {
-		log.Fatal("expected 1 dimension")
+		log.Fatal().Msgf("expected 1 dimension")
 	}
 
 	elements := dims[0]
@@ -281,14 +280,14 @@ func loadHdf5Categories(file *hdf5.File, name string) []int {
 func loadHdf5Neighbors(file *hdf5.File, name string) [][]int {
 	dataset, err := file.OpenDataset(name)
 	if err != nil {
-		log.Fatalf("Error opening neighbors dataset: %v", err)
+		log.Fatal().Msgf("Error opening neighbors dataset: %v", err)
 	}
 	defer dataset.Close()
 	dataspace := dataset.Space()
 	dims, _, _ := dataspace.SimpleExtentDims()
 
 	if len(dims) != 2 {
-		log.Fatal("expected 2 dimensions")
+		log.Fatal().Msgf("expected 2 dimensions")
 	}
 
 	rows := dims[0]

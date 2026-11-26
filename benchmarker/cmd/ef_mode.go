@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
-	"github.com/weaviate/weaviate-go-client/v5/weaviate"
+	"github.com/weaviate/weaviate-go-client/v6"
 )
 
 // efMode says how the efArray values reach the server during runQueries.
@@ -22,9 +22,9 @@ const (
 	efModeSchema efMode = "schema"
 )
 
-// fetchServerVersion returns models.Meta.Version from GET /v1/meta.
+// fetchServerVersion returns the server version reported by GET /v1/meta.
 func fetchServerVersion(ctx context.Context, client *weaviate.Client) (string, error) {
-	meta, err := client.Misc().MetaGetter().Do(ctx)
+	meta, err := client.Metadata(ctx)
 	if err != nil {
 		return "", err
 	}

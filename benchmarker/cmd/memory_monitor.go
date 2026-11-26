@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/rs/zerolog/log"
 )
 
 type MemoryMetricEntry struct {
@@ -55,10 +55,7 @@ func (m *MemoryMonitor) Start() {
 		interval = 5 * time.Second
 	}
 
-	log.WithFields(log.Fields{
-		"interval": interval,
-		"file":     m.filename,
-	}).Info("Starting memory monitoring")
+	log.Info().Stringer("interval", interval).Str("file", m.filename).Msg("Starting memory monitoring")
 
 	m.wg.Add(1)
 	go m.monitorLoop(interval)
@@ -69,17 +66,14 @@ func (m *MemoryMonitor) Stop() {
 		return
 	}
 
-	log.Info("Stopping memory monitoring")
+	log.Info().Msg("Stopping memory monitoring")
 	m.cancel()
 	m.wg.Wait()
 
 	if err := m.writeToFile(); err != nil {
-		log.WithError(err).Error("Failed to write memory metrics to file")
+		log.Error().Err(err).Msg("Failed to write memory metrics to file")
 	} else {
-		log.WithFields(log.Fields{
-			"file":    m.filename,
-			"entries": len(m.metrics),
-		}).Info("Memory metrics written to file")
+		log.Info().Str("file", m.filename).Int("entries", len(m.metrics)).Msg("Memory metrics written to file")
 	}
 }
 
@@ -105,7 +99,7 @@ func (m *MemoryMonitor) monitorLoop(interval time.Duration) {
 func (m *MemoryMonitor) recordMetric() {
 	memstats, err := readMemoryMetrics(m.cfg)
 	if err != nil {
-		log.WithError(err).Warn("Failed to read memory metrics")
+		log.Warn().Err(err).Msg("Failed to read memory metrics")
 		return
 	}
 
@@ -120,11 +114,7 @@ func (m *MemoryMonitor) recordMetric() {
 	m.metrics = append(m.metrics, entry)
 	m.mutex.Unlock()
 
-	log.WithFields(log.Fields{
-		"heap_alloc_mb": entry.HeapAllocBytes / 1024 / 1024,
-		"heap_inuse_mb": entry.HeapInuseBytes / 1024 / 1024,
-		"heap_sys_mb":   entry.HeapSysBytes / 1024 / 1024,
-	}).Debug("Recorded memory metric")
+	log.Debug().Float64("heap_alloc_mb", entry.HeapAllocBytes/1024/1024).Float64("heap_inuse_mb", entry.HeapInuseBytes/1024/1024).Float64("heap_sys_mb", entry.HeapSysBytes/1024/1024).Msg("Recorded memory metric")
 }
 
 func (m *MemoryMonitor) writeToFile() error {
