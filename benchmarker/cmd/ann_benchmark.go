@@ -59,6 +59,8 @@ type ResultsJSONBenchmark struct {
 	Ef               int     `json:"ef,omitempty"`
 	RescoreLimit     int     `json:"rescoreLimit,omitempty"`
 	SearchProbe      int     `json:"searchProbe,omitempty"`
+	EfMode           string  `json:"efMode"`
+	ServerVersion    string  `json:"serverVersion,omitempty"`
 	EfConstruction   int     `json:"efConstruction"`
 	MaxConnections   int     `json:"maxConnections"`
 	Mean             float64 `json:"meanLatency"`
@@ -533,7 +535,7 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		log.Fatal().Msgf("Unknown index type %s", cfg.IndexType)
 	}
 
-	vectorIndexConfig["filterStrategy"] = cfg.FilterStrategy
+	vectorIndexConfig["filterStrategy"] = schemaFilterStrategy(cfg)
 
 	if cfg.CacheSize > 0 {
 		vectorIndexConfig["vectorCacheMaxObjects"] = cfg.CacheSize
@@ -626,6 +628,9 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 		}
 	}
 
+	if cfg.AsyncReplicationEnabled {
+		log.Warn().Msg("--asyncReplicationEnabled has no effect: async replication is always on since Weaviate 1.38 and the schema toggle was removed")
+	}
 	if cfg.ReplicationFactor > 1 {
 		classObj.Replication = &collections.ReplicationConfig{Factor: cfg.ReplicationFactor}
 	}
@@ -633,12 +638,6 @@ func createSchema(cfg *Config, client *weaviate.Client) {
 	_, err = client.Collections.Create(context.Background(), classObj)
 	if err != nil {
 		panic(err)
-	}
-	if cfg.AsyncReplicationEnabled {
-		// not supported by the go client (yet)
-		class := getClassJSON(cfg)
-		class["replicationConfig"].(map[string]interface{})["asyncEnabled"] = true
-		putClassJSON(cfg, class)
 	}
 	log.Info().Str("class", cfg.ClassName).Msg("Created class")
 }
@@ -889,6 +888,26 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 	client := createClient(cfg)
 	os.Mkdir("./results", 0o755)
 
+	versionCtx, cancelVersion := context.WithTimeout(context.Background(), 10*time.Second)
+	serverVersion, err := fetchServerVersion(versionCtx, client)
+	cancelVersion()
+	if err != nil {
+		log.Warn().Err(err).Msg("Could not read the server version from /v1/meta")
+	}
+	mode, reason := resolveEfMode(cfg, serverVersion)
+	log.Info().Str("efMode", string(mode)).Str("serverVersion", serverVersion).Str("indexType", cfg.IndexType).Str("reason", reason).Msg("ef application mode")
+	if mode == efModeRequest {
+		if supported, err := serverSupportsVectorIndexParams(serverVersion); err != nil || !supported {
+			log.Warn().Msgf("Server %q does not support vector_index_params: the per-request ef values will be dropped and queries run at the collection defaults", serverVersion)
+		}
+		for _, ef := range efCandidates {
+			if ef > 10000 {
+				log.Warn().Msgf("ef %d exceeds the default server cap of 10000 (HNSW_MAX_SEARCH_EF / HFRESH_MAX_SEARCH_PROBE); the server rejects such queries unless the cap is raised", ef)
+				break
+			}
+		}
+	}
+
 	iteration := 0
 	for {
 		shouldStop := shouldStopRunQueries(iteration, cfg)
@@ -903,7 +922,14 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 
 		benchmarkResultsMap := make([]map[string]interface{}, 0, len(efCandidates))
 		for _, ef := range efCandidates {
-			updateEf(ef, cfg, client)
+			if mode == efModeSchema || cfg.IndexType == "dynamic" {
+				updateEf(ef, cfg, client)
+			}
+			if mode == efModeRequest {
+				cfg.RequestEf = ef
+			} else {
+				cfg.RequestEf = 0
+			}
 
 			var result Results
 
@@ -914,11 +940,11 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 			}
 
 			if cfg.IndexType == "hnsw" || cfg.IndexType == "dynamic" {
-				log.Info().Stringer("mean", result.Mean).Float64("qps", result.QueriesPerSecond).Float64("recall", result.Recall).Float64("ndcg", result.NDCG).Int("parallel", cfg.Parallel).Int("limit", cfg.Limit).Str("api", cfg.API).Int("ef", ef).Int("count", result.Total).Int("failed", result.Failed).Msg("Benchmark result")
+				log.Info().Stringer("mean", result.Mean).Float64("qps", result.QueriesPerSecond).Float64("recall", result.Recall).Float64("ndcg", result.NDCG).Int("parallel", cfg.Parallel).Int("limit", cfg.Limit).Str("api", cfg.API).Str("efMode", string(mode)).Int("ef", ef).Int("count", result.Total).Int("failed", result.Failed).Msg("Benchmark result")
 			} else if cfg.IndexType == "hfresh" {
-				log.Info().Stringer("mean", result.Mean).Float64("qps", result.QueriesPerSecond).Float64("recall", result.Recall).Float64("ndcg", result.NDCG).Int("parallel", cfg.Parallel).Int("limit", cfg.Limit).Str("api", cfg.API).Int("searchProbe", ef).Int("count", result.Total).Int("failed", result.Failed).Msg("Benchmark result")
+				log.Info().Stringer("mean", result.Mean).Float64("qps", result.QueriesPerSecond).Float64("recall", result.Recall).Float64("ndcg", result.NDCG).Int("parallel", cfg.Parallel).Int("limit", cfg.Limit).Str("api", cfg.API).Str("efMode", string(mode)).Int("searchProbe", ef).Int("count", result.Total).Int("failed", result.Failed).Msg("Benchmark result")
 			} else {
-				log.Info().Stringer("mean", result.Mean).Float64("qps", result.QueriesPerSecond).Float64("recall", result.Recall).Float64("ndcg", result.NDCG).Int("parallel", cfg.Parallel).Int("limit", cfg.Limit).Str("api", cfg.API).Int("rescoreLimit", ef).Int("count", result.Total).Int("failed", result.Failed).Msg("Benchmark result")
+				log.Info().Stringer("mean", result.Mean).Float64("qps", result.QueriesPerSecond).Float64("recall", result.Recall).Float64("ndcg", result.NDCG).Int("parallel", cfg.Parallel).Int("limit", cfg.Limit).Str("api", cfg.API).Str("efMode", string(mode)).Int("rescoreLimit", ef).Int("count", result.Total).Int("failed", result.Failed).Msg("Benchmark result")
 			}
 
 			dataset := filepath.Base(cfg.BenchmarkFile)
@@ -927,6 +953,8 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 
 			benchResult := ResultsJSONBenchmark{
 				Api:              cfg.API,
+				EfMode:           string(mode),
+				ServerVersion:    serverVersion,
 				EfConstruction:   cfg.EfConstruction,
 				MaxConnections:   cfg.MaxConnections,
 				Mean:             result.Mean.Seconds(),
@@ -1228,8 +1256,10 @@ func initAnnBenchmark() {
 		"efConstruction", 256, "Set Weaviate efConstruction parameter (default 256)")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.EfArray,
 		"efArray", "16,24,32,48,64,96,128,256,512", "Array of ef parameters as comma separated list")
+	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.EfMode,
+		"efMode", "auto", "How efArray values are applied: auto (per-request vector_index_params on Weaviate >= 1.42, schema update otherwise; flat always and dynamic in auto use schema), request, schema")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.IndexType,
-		"indexType", "hnsw", "Index type (hnsw, flat or hfresh)")
+		"indexType", "hnsw", "Index type (hnsw, flat, dynamic or hfresh)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MaxConnections,
 		"maxConnections", 16, "Set Weaviate efConstruction parameter (default 16)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.CacheSize,
@@ -1287,11 +1317,11 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.TrainRows,
 		"trainRows", 0, "Import only the first N train rows (0 = all)")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.FilterStrategy,
-		"filterStrategy", "sweeping", "Use a different filter strategy (options are sweeping or acorn)")
+		"filterStrategy", "", "Filter strategy (sweeping, acorn or pathseer). Written to the schema at import (sweeping when unset, as before) and, when set, sent with every filtered query in request mode")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.ReplicationFactor,
 		"replicationFactor", 1, "Replication factor (default 1)")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.AsyncReplicationEnabled,
-		"asyncReplicationEnabled", false, "Enable asynchronous replication (default false)")
+		"asyncReplicationEnabled", false, "Deprecated, no effect: async replication is always enabled since Weaviate 1.38")
 	annBenchmarkCommand.PersistentFlags().BoolVar(&globalConfig.MemoryMonitoringEnabled,
 		"memoryMonitoringEnabled", false, "Enable continuous memory monitoring (default false)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MemoryMonitoringInterval,

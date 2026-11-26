@@ -5,6 +5,8 @@ global_parameters:
   - -v=~/Downloads/dbpedia-100k-openai-ada002-euclidean.hdf5
   - -d=l2-squared
   - --queryDuration=1
+  # - --efMode=schema  # force the pre-1.42 behaviour when control and candidate straddle Weaviate 1.42,
+  #                    # otherwise auto applies ef per request on one side and via the schema on the other
 runs:
   - name: OpenAI 100k PQ
     ingest_on: control # one of control, candidate

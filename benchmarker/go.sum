@@ -157,8 +157,8 @@ github.com/weaviate/weaviate v1.40.2 h1:co5Hn81KP5xHaPSqa4mnHUggn4f6rFT/vz0676CT
 github.com/weaviate/weaviate v1.40.2/go.mod h1:favK65L0wvKnh7V0EMbXczid9DBVfte5d4ffmJzbzzU=
 github.com/weaviate/weaviate-go-client/v6 v6.0.0-rc.0.0.20261021133446-32344349954f h1:TTITLOnkW0uOOtwsf0tzaomxu5AE40uXEpKcKCCUnhg=
 github.com/weaviate/weaviate-go-client/v6 v6.0.0-rc.0.0.20261021133446-32344349954f/go.mod h1:HSMzxWoE4e1TOITfnol+Aqn+ohFFTdEdhb7D8t0wTTw=
-github.com/weaviate/weaviate/grpc/generated/protocol v0.0.0-20260910114322-ea6fe86ddafd h1:6BOI4wjaYZC9OqZgrBbEi7Q6AX/LysFT+fztruyKLPg=
-github.com/weaviate/weaviate/grpc/generated/protocol v0.0.0-20260910114322-ea6fe86ddafd/go.mod h1:1RncLOcarCYyc3fUu12nFuvVvcm+87Mf9g6gXgvfEA4=
+github.com/weaviate/weaviate/grpc/generated/protocol v0.0.0-20261126092324-de1eaa59e431 h1:v5aUk3BsQdrpT7wc70ldtqGIwF9xbAwz+Lb3yljIYP4=
+github.com/weaviate/weaviate/grpc/generated/protocol v0.0.0-20261126092324-de1eaa59e431/go.mod h1:1RncLOcarCYyc3fUu12nFuvVvcm+87Mf9g6gXgvfEA4=
 github.com/xyproto/randomstring v1.0.5 h1:YtlWPoRdgMu3NZtP45drfy1GKoojuR7hmRcnhZqKjWU=
 github.com/xyproto/randomstring v1.0.5/go.mod h1:rgmS5DeNXLivK7YprL0pY+lTuhNQW3iGxZ18UQApw/E=
 github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=

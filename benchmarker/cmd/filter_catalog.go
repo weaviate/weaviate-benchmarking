@@ -195,6 +195,7 @@ func nearVectorQueryGrpcCatalog(cfg *Config, vec []float32, tenant string, f *ca
 		On:        []string{f.Prop},
 		Operator:  op,
 	}
+	searchRequest.VectorIndexParams = vectorIndexParams(cfg, true)
 	data, err := proto.Marshal(searchRequest)
 	if err != nil {
 		log.Fatal().Msgf("grpc marshal err: %v", err)

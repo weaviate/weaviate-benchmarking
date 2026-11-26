@@ -4,3 +4,4 @@ venv/
 plan.yml
 results_archive/
 __pycache__/
+vendor/

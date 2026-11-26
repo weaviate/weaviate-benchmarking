@@ -66,6 +66,7 @@ require (
 )
 
 // The gRPC protocol lives in a nested module of the weaviate repo, which the
-// server only references through a local replace; pin it to the revision the
-// go client was built against.
-replace github.com/weaviate/weaviate/grpc/generated/protocol => github.com/weaviate/weaviate/grpc/generated/protocol v0.0.0-20260910114322-ea6fe86ddafd
+// server only references through a local replace. Pin it to the revision of
+// weaviate/weaviate#13947 that adds SearchRequest.vector_index_params (a
+// superset of the protos the go client was built against).
+replace github.com/weaviate/weaviate/grpc/generated/protocol => github.com/weaviate/weaviate/grpc/generated/protocol v0.0.0-20261126092324-de1eaa59e431

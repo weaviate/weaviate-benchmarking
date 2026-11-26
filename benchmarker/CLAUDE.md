@@ -8,7 +8,7 @@ This is a multi-threaded benchmarking CLI for Weaviate (a vector database), writ
 
 ## Build & Run
 
-**Prerequisite:** HDF5 library must be installed (`brew install hdf5` on macOS, `apt install libhdf5-dev` on Linux). CGO is required.
+**Prerequisite:** Go 1.26+, and the HDF5 library (`brew install hdf5` on macOS, `apt install libhdf5-dev` on Linux). CGO is required.
 
 ```bash
 # Run directly (no compile step)
@@ -29,13 +29,15 @@ docker build -t weaviate-benchmarker .
 go test ./cmd/...
 go test -v -run TestAnalyzer ./cmd/...   # run a specific test
 
-# Integration tests (require Weaviate at localhost:8080 / localhost:50051)
+# Integration tests (require Weaviate at localhost:8080 / localhost:50051;
+# override with WEAVIATE_HTTP_ORIGIN / WEAVIATE_GRPC_ORIGIN)
 docker run -p 8080:8080 -p 50051:50051 semitechnologies/weaviate:latest
 go test -tags integration ./cmd/...
 go test -tags integration -v -run TestIntegration_RecallForExactNeighbors ./cmd/...
+# The TestIntegration_VectorIndexParams_* and TestIntegration_EfModeAuto tests need Weaviate >= 1.42 and skip otherwise
 ```
 
-Unit tests live in `cmd/benchmark_run_test.go` and cover UUID conversions, NDCG calculation, and results analysis. Integration tests live in `cmd/integration_test.go` and exercise the full insert→query cycle against a real Weaviate instance; they skip automatically if Weaviate is not reachable.
+Unit tests live in `cmd/*_test.go` (no build tag): `benchmark_run_test.go` covers UUID conversions, NDCG calculation and results analysis, `vector_index_params_test.go` the `--efMode` decision and the per-request params, `wait_ready_test.go` the async indexing wait. Integration tests live in `cmd/integration_test.go` and exercise the full insert→query cycle against a real Weaviate instance; they skip automatically if Weaviate is not reachable.
 
 ## Architecture
 
@@ -86,10 +88,21 @@ All flags are defined in `cmd/config.go`. Key ones for `ann-benchmark`:
 | `-l` / `--limit` | `10` | Top-k results |
 | `--pq` / `--sq` / `--rq` | `disabled` | Compression: `disabled`, `auto`, or `enabled` |
 | `--efConstruction` | `256` | HNSW build parameter |
+| `--efArray` | `16,...,512` | Values benchmarked in turn: `ef` for hnsw/dynamic, `searchProbe` for hfresh, `rescoreLimit` for flat |
+| `--efMode` | `auto` | `request` sends the value as `vector_index_params` per query (Weaviate >= 1.42); `schema` rewrites `vectorIndexConfig`; `auto` picks by server version, flat and dynamic stay on `schema` |
+| `--filterStrategy` | empty | `sweeping`, `acorn` or `pathseer`; the schema gets `sweeping` when unset (the server default is `acorn` since 1.35); when set it is also sent per filtered query in request mode |
 | `--maxConnections` | `16` | HNSW build parameter |
 | `--queryDuration` | `0` | Run queries for N seconds instead of one pass |
 | `--updatePercentage` | `0` | Percentage of vectors to update after loading |
 | `--numTenants` | `0` | Multi-tenancy: number of tenants |
+
+## Dependencies
+
+`go.mod` pins `github.com/weaviate/weaviate` (models, byteops, datasets) and the standalone proto module
+`github.com/weaviate/weaviate/grpc/generated/protocol` through a `replace` directive, because the server requires that
+module at `v0.0.0`. Bump the replace target to pick up new proto fields; it must stay a superset of the protos the
+v6 go-client (`github.com/weaviate/weaviate-go-client/v6`) was built against. Do not keep a `vendor/` directory: Go builds
+with `-mod=vendor` when one exists and it silently shadows `go.mod`.
 
 ## Automated Benchmark Plans
 
