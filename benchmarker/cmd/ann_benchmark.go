@@ -826,8 +826,8 @@ func runQueries(cfg *Config, importTime time.Duration, testData [][]float32, nei
 		"efMode": mode, "serverVersion": serverVersion, "indexType": cfg.IndexType, "reason": reason,
 	}).Info("ef application mode")
 	if mode == efModeRequest {
-		if supported, err := serverSupportsVectorSearchParams(serverVersion); err != nil || !supported {
-			log.Warnf("Server %q does not support vector_search_params: the per-request ef values will be dropped and queries run at the collection defaults", serverVersion)
+		if supported, err := serverSupportsVectorIndexParams(serverVersion); err != nil || !supported {
+			log.Warnf("Server %q does not support vector_index_params: the per-request ef values will be dropped and queries run at the collection defaults", serverVersion)
 		}
 		for _, ef := range efCandidates {
 			if ef > 10000 {
@@ -1192,7 +1192,7 @@ func initAnnBenchmark() {
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.EfArray,
 		"efArray", "16,24,32,48,64,96,128,256,512", "Array of ef parameters as comma separated list")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.EfMode,
-		"efMode", "auto", "How efArray values are applied: auto (per-request vector_search_params on Weaviate >= 1.42, schema update otherwise; flat always and dynamic in auto use schema), request, schema")
+		"efMode", "auto", "How efArray values are applied: auto (per-request vector_index_params on Weaviate >= 1.42, schema update otherwise; flat always and dynamic in auto use schema), request, schema")
 	annBenchmarkCommand.PersistentFlags().StringVar(&globalConfig.IndexType,
 		"indexType", "hnsw", "Index type (hnsw, flat, dynamic or hfresh)")
 	annBenchmarkCommand.PersistentFlags().IntVar(&globalConfig.MaxConnections,

@@ -184,11 +184,11 @@ func nearVectorQueryGrpc(cfg *Config, vec []float32, tenant string, filter int) 
 	}
 
 	searchRequest := &weaviategrpc.SearchRequest{
-		Collection:         cfg.ClassName,
-		Limit:              uint32(cfg.Limit),
-		NearVector:         nearVector,
-		Metadata:           metadata,
-		VectorSearchParams: vectorSearchParams(cfg, filter),
+		Collection:        cfg.ClassName,
+		Limit:             uint32(cfg.Limit),
+		NearVector:        nearVector,
+		Metadata:          metadata,
+		VectorIndexParams: vectorIndexParams(cfg, filter),
 	}
 
 	if tenant != "" {

@@ -41,7 +41,7 @@ type Config struct {
 	EfConstruction           int
 	EfArray                  string
 	EfMode                   string
-	RequestEf                int // runtime only: efArray value sent as vector_search_params with every query; 0 sends nothing
+	RequestEf                int // runtime only: efArray value sent as vector_index_params with every query; 0 sends nothing
 	QueryOnly                bool
 	QueryDuration            int
 	BQ                       bool

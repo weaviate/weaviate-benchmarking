@@ -14,7 +14,7 @@ import (
 type efMode string
 
 const (
-	// efModeRequest sends the value as vector_search_params with every query
+	// efModeRequest sends the value as vector_index_params with every query
 	// (ef for hnsw/dynamic, searchProbe for hfresh). Weaviate >= 1.42.
 	efModeRequest efMode = "request"
 	// efModeSchema rewrites the collection's vectorIndexConfig before each
@@ -34,11 +34,11 @@ func fetchServerVersion(ctx context.Context, client *weaviate.Client) (string, e
 	return meta.Version, nil
 }
 
-// serverSupportsVectorSearchParams reports whether a server version string
+// serverSupportsVectorIndexParams reports whether a server version string
 // (e.g. "1.42.0-rc.1", "v1.40.6", "1.42.0-rc.1-352208b") is at least 1.42 by
 // major.minor. Anything that does not start with two numeric components is an
 // error so callers can fall back deliberately.
-func serverSupportsVectorSearchParams(version string) (bool, error) {
+func serverSupportsVectorIndexParams(version string) (bool, error) {
 	core := strings.TrimPrefix(strings.TrimSpace(version), "v")
 	if i := strings.IndexAny(core, "-+"); i >= 0 {
 		core = core[:i]
@@ -68,7 +68,7 @@ func resolveEfMode(cfg *Config, serverVersion string) (efMode, string) {
 	if cfg.IndexType == "flat" {
 		return efModeSchema, "flat has no per-request knob: rescoreLimit is updated in the schema"
 	}
-	supported, parseErr := serverSupportsVectorSearchParams(serverVersion)
+	supported, parseErr := serverSupportsVectorIndexParams(serverVersion)
 	switch cfg.EfMode {
 	case "schema":
 		return efModeSchema, "--efMode=schema"
@@ -87,5 +87,5 @@ func resolveEfMode(cfg *Config, serverVersion string) (efMode, string) {
 	if !supported {
 		return efModeSchema, fmt.Sprintf("server %s is below 1.42, using schema updates", serverVersion)
 	}
-	return efModeRequest, fmt.Sprintf("server %s supports vector_search_params", serverVersion)
+	return efModeRequest, fmt.Sprintf("server %s supports vector_index_params", serverVersion)
 }

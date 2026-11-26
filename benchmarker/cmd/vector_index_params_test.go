@@ -79,7 +79,7 @@ func TestFilterStrategyEnum(t *testing.T) {
 	}
 }
 
-func TestNearVectorQueryGrpc_VectorSearchParams(t *testing.T) {
+func TestNearVectorQueryGrpc_VectorIndexParams(t *testing.T) {
 	acorn := weaviategrpc.FilterStrategy_FILTER_STRATEGY_ACORN
 	pathseer := weaviategrpc.FilterStrategy_FILTER_STRATEGY_PATHSEER
 	sweeping := weaviategrpc.FilterStrategy_FILTER_STRATEGY_SWEEPING
@@ -137,7 +137,7 @@ func TestNearVectorQueryGrpc_VectorSearchParams(t *testing.T) {
 				require.Nil(t, req.Filters)
 			}
 
-			params := req.GetVectorSearchParams()
+			params := req.GetVectorIndexParams()
 			if tt.wantNil {
 				require.Nil(t, params)
 				return
@@ -146,12 +146,12 @@ func TestNearVectorQueryGrpc_VectorSearchParams(t *testing.T) {
 			require.Equal(t, tt.wantEf, params.Ef)
 			require.Equal(t, tt.wantProbe, params.SearchProbe)
 			require.Equal(t, tt.wantStrategy, params.FilterStrategy)
-			require.Empty(t, req.VectorSearchParamsForTargets)
+			require.Empty(t, req.VectorIndexParamsForTargets)
 		})
 	}
 }
 
-func TestServerSupportsVectorSearchParams(t *testing.T) {
+func TestServerSupportsVectorIndexParams(t *testing.T) {
 	tests := []struct {
 		version string
 		want    bool
@@ -173,7 +173,7 @@ func TestServerSupportsVectorSearchParams(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.version, func(t *testing.T) {
-			got, err := serverSupportsVectorSearchParams(tt.version)
+			got, err := serverSupportsVectorIndexParams(tt.version)
 			if tt.wantErr {
 				require.Error(t, err)
 				return

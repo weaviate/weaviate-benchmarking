@@ -78,4 +78,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/weaviate/weaviate/grpc/generated/protocol => github.com/weaviate/weaviate/grpc/generated/protocol v0.0.0-20261123081759-4ed69cc93384
+replace github.com/weaviate/weaviate/grpc/generated/protocol => github.com/weaviate/weaviate/grpc/generated/protocol v0.0.0-20261126092324-de1eaa59e431

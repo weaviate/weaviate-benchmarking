@@ -142,8 +142,8 @@ github.com/weaviate/weaviate v1.40.6 h1:NiK3A5T+ip0SGHTDclpozGL7BWreX+nawfK6u7xu
 github.com/weaviate/weaviate v1.40.6/go.mod h1:CvvQo53ZXRZjSUuoBHKu5yisyivOggYsrN/eZe1am6I=
 github.com/weaviate/weaviate-go-client/v5 v5.7.4 h1:I4x8sW0sUcL598iNjGScLX7MZYX/lE21cZquoeYV+x4=
 github.com/weaviate/weaviate-go-client/v5 v5.7.4/go.mod h1:H3eSia8pWCGeqQo+SvEUY+53McJLykdXhmVvhAW44f0=
-github.com/weaviate/weaviate/grpc/generated/protocol v0.0.0-20261123081759-4ed69cc93384 h1:+x8XSugnpMiSGoSYy6PrJUWF2MpRn398myvIpi/fTRk=
-github.com/weaviate/weaviate/grpc/generated/protocol v0.0.0-20261123081759-4ed69cc93384/go.mod h1:1RncLOcarCYyc3fUu12nFuvVvcm+87Mf9g6gXgvfEA4=
+github.com/weaviate/weaviate/grpc/generated/protocol v0.0.0-20261126092324-de1eaa59e431 h1:v5aUk3BsQdrpT7wc70ldtqGIwF9xbAwz+Lb3yljIYP4=
+github.com/weaviate/weaviate/grpc/generated/protocol v0.0.0-20261126092324-de1eaa59e431/go.mod h1:1RncLOcarCYyc3fUu12nFuvVvcm+87Mf9g6gXgvfEA4=
 github.com/xyproto/randomstring v1.0.5 h1:YtlWPoRdgMu3NZtP45drfy1GKoojuR7hmRcnhZqKjWU=
 github.com/xyproto/randomstring v1.0.5/go.mod h1:rgmS5DeNXLivK7YprL0pY+lTuhNQW3iGxZ18UQApw/E=
 go.mongodb.org/mongo-driver v1.17.7 h1:a9w+U3Vt67eYzcfq3k/OAv284/uUUkL0uP75VE5rCOU=
