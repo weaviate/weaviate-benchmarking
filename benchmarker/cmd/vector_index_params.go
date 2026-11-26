@@ -11,15 +11,15 @@ import (
 // per-request knob (flat). efArray values mean ef for hnsw and dynamic and
 // searchProbe for hfresh, matching updateEf. The filter strategy is HNSW-only
 // and only meaningful on a filtered query, so it is sent for hnsw and dynamic
-// when filter >= 0 and --filterStrategy is set.
-func vectorIndexParams(cfg *Config, filter int) *weaviategrpc.VectorIndexParams {
+// when filtered is true and --filterStrategy is set.
+func vectorIndexParams(cfg *Config, filtered bool) *weaviategrpc.VectorIndexParams {
 	if cfg.RequestEf <= 0 {
 		return nil
 	}
 	switch cfg.IndexType {
 	case "hnsw", "dynamic":
 		params := &weaviategrpc.VectorIndexParams{Ef: proto.Uint32(uint32(cfg.RequestEf))}
-		if filter >= 0 {
+		if filtered {
 			if strategy, ok := filterStrategyEnum(cfg.FilterStrategy); ok {
 				params.FilterStrategy = &strategy
 			}

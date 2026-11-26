@@ -189,7 +189,7 @@ func nearVectorQueryGrpc(cfg *Config, vec []float32, tenant string, filter int) 
 		Limit:             uint32(cfg.Limit),
 		NearVector:        nearVector,
 		Metadata:          metadata,
-		VectorIndexParams: vectorIndexParams(cfg, filter),
+		VectorIndexParams: vectorIndexParams(cfg, filter >= 0),
 	}
 
 	if tenant != "" {

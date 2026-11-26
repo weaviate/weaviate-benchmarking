@@ -151,6 +151,52 @@ func TestNearVectorQueryGrpc_VectorIndexParams(t *testing.T) {
 	}
 }
 
+// The filter-catalog path builds an unfiltered query and adds its own filter,
+// so it must still carry the filter strategy of a filtered query.
+func TestNearVectorQueryGrpcCatalog_VectorIndexParams(t *testing.T) {
+	acorn := weaviategrpc.FilterStrategy_FILTER_STRATEGY_ACORN
+	tests := []struct {
+		name         string
+		indexType    string
+		requestEf    int
+		inverted     bool
+		wantNil      bool
+		wantEf       *uint32
+		wantProbe    *uint32
+		wantStrategy *weaviategrpc.FilterStrategy
+	}{
+		{name: "hnsw sends ef and strategy", indexType: "hnsw", requestEf: 64, wantEf: proto.Uint32(64), wantStrategy: &acorn},
+		{name: "inverted filter sends ef and strategy", indexType: "hnsw", requestEf: 64, inverted: true, wantEf: proto.Uint32(64), wantStrategy: &acorn},
+		{name: "dynamic sends ef and strategy", indexType: "dynamic", requestEf: 64, wantEf: proto.Uint32(64), wantStrategy: &acorn},
+		{name: "hfresh sends search probe only", indexType: "hfresh", requestEf: 64, wantProbe: proto.Uint32(64)},
+		{name: "schema mode sends nothing", indexType: "hnsw", requestEf: 0, wantNil: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{
+				ClassName:      "Vector",
+				Limit:          10,
+				IndexType:      tt.indexType,
+				RequestEf:      tt.requestEf,
+				FilterStrategy: "acorn",
+			}
+			f := &catalogFilter{Prop: "filter_a", Inverted: tt.inverted}
+			req := decodeSearchRequest(t, nearVectorQueryGrpcCatalog(&cfg, []float32{0.1, 0.2, 0.3, 0.4}, "", f))
+
+			require.Equal(t, []string{"filter_a"}, req.Filters.On)
+			params := req.GetVectorIndexParams()
+			if tt.wantNil {
+				require.Nil(t, params)
+				return
+			}
+			require.NotNil(t, params)
+			require.Equal(t, tt.wantEf, params.Ef)
+			require.Equal(t, tt.wantProbe, params.SearchProbe)
+			require.Equal(t, tt.wantStrategy, params.FilterStrategy)
+		})
+	}
+}
+
 func TestServerSupportsVectorIndexParams(t *testing.T) {
 	tests := []struct {
 		version string
