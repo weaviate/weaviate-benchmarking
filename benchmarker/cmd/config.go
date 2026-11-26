@@ -128,6 +128,9 @@ func (c *Config) validateCommon() error {
 		return errors.Errorf("origin must be set")
 	}
 
+	// Match the name Weaviate stores (first letter uppercased).
+	c.ClassName = canonicalClassName(c.ClassName)
+
 	switch c.API {
 	case "graphql", "grpc":
 	default:
@@ -259,4 +262,19 @@ func (c *Config) validatePostingEdge() error {
 		return errors.Errorf("cacheMode must be routing or none, got %q", c.CacheMode)
 	}
 	return nil
+}
+
+// canonicalClassName mirrors Weaviate's schema.UppercaseClassName.
+func canonicalClassName(name string) string {
+	if ns, cls, ok := strings.Cut(name, ":"); ok {
+		return ns + ":" + uppercaseFirst(cls)
+	}
+	return uppercaseFirst(name)
+}
+
+func uppercaseFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
