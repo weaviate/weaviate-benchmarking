@@ -35,7 +35,7 @@ function build_and_push_tag() {
     tag_git="$DOCKER_REPO:$branch_name"
 
     echo "Tag & Push $tag_git"
-    docker buildx build --platform=linux/arm64,linux/amd64 \
+    docker buildx build --platform=linux/amd64 \
       --push \
       --tag "$tag_git" \
       ./benchmarker
