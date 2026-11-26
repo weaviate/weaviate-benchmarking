@@ -29,14 +29,15 @@ docker build -t weaviate-benchmarker .
 go test ./cmd/...
 go test -v -run TestAnalyzer ./cmd/...   # run a specific test
 
-# Integration tests (require Weaviate at localhost:8080 / localhost:50051)
+# Integration tests (require Weaviate at localhost:8080 / localhost:50051;
+# override with WEAVIATE_HTTP_ORIGIN / WEAVIATE_GRPC_ORIGIN)
 docker run -p 8080:8080 -p 50051:50051 semitechnologies/weaviate:latest
 go test -tags integration ./cmd/...
 go test -tags integration -v -run TestIntegration_RecallForExactNeighbors ./cmd/...
 # The TestIntegration_VectorIndexParams_* and TestIntegration_EfModeAuto tests need Weaviate >= 1.42 and skip otherwise
 ```
 
-Unit tests live in `cmd/benchmark_run_test.go` and cover UUID conversions, NDCG calculation, and results analysis. Integration tests live in `cmd/integration_test.go` and exercise the full insert→query cycle against a real Weaviate instance; they skip automatically if Weaviate is not reachable.
+Unit tests live in `cmd/*_test.go` (no build tag): `benchmark_run_test.go` covers UUID conversions, NDCG calculation and results analysis, `vector_index_params_test.go` the `--efMode` decision and the per-request params, `wait_ready_test.go` the async indexing wait. Integration tests live in `cmd/integration_test.go` and exercise the full insert→query cycle against a real Weaviate instance; they skip automatically if Weaviate is not reachable.
 
 ## Architecture
 
@@ -99,7 +100,8 @@ All flags are defined in `cmd/config.go`. Key ones for `ann-benchmark`:
 
 `go.mod` pins `github.com/weaviate/weaviate` (models, byteops, datasets) and the standalone proto module
 `github.com/weaviate/weaviate/grpc/generated/protocol` through a `replace` directive, because the server requires that
-module at `v0.0.0`. Bump the replace target to pick up new proto fields. Do not keep a `vendor/` directory: Go builds
+module at `v0.0.0`. Bump the replace target to pick up new proto fields; it must stay a superset of the protos the
+v6 go-client (`github.com/weaviate/weaviate-go-client/v6`) was built against. Do not keep a `vendor/` directory: Go builds
 with `-mod=vendor` when one exists and it silently shadows `go.mod`.
 
 ## Automated Benchmark Plans
